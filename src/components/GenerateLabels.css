@@ -1,0 +1,376 @@
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+  }
+  
+  .formsWrapper {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr); /* 3 คอลัมน์ */
+    grid-template-rows: repeat(3, 1fr); /* 3 แถว */
+    gap: 0;
+    width: 297mm; /* ความกว้างของกระดาษ A4 แนวนอน */
+    height: 210mm; /* ความสูงของกระดาษ A4 แนวนอน */
+    box-sizing: border-box;
+  }
+  
+  .formContainer {
+    border: 1px solid black; /* ใช้ mm แทน px */
+    padding: 2mm; /* ลดขนาด padding */
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  th,
+  td {
+    border: 1px solid black; 
+    padding: 3px; 
+    text-align: left;
+  }
+  
+  .largeText {
+    font-size: 45px; 
+    font-weight: bold;
+  }
+  
+  .mediumText {
+    font-size: 15px; 
+    font-weight: normal;
+    text-align: center;
+  }
+  
+  .mediumTexts {
+    font-size: 15px;
+    font-weight: normal;
+    text-align: left;
+  }
+  
+  .mediumTextbig {
+    font-size: 18px; 
+    font-weight: bold;
+    text-align: center;
+  }
+  
+  .smallText {
+    font-size: 13px;
+    font-weight: bold;
+    text-align: left;
+  }
+  
+  .pictureText {
+    font-size: 12px; 
+    font-weight: bold;
+  }
+
+  .smallssText {
+    font-size: 10px; 
+    font-weight: bold;
+  }
+
+  td.leftAlign {
+    flex-direction: row;
+    justify-content: flex-end; 
+    align-items: center; 
+    text-align: left;
+  }
+
+  td.unitAlign {
+    text-align: left;
+    vertical-align: bottom;
+    flex-direction: column;
+    justify-content: space-between; 
+  }
+  
+  .pcsText {
+    font-size: 12px;
+    margin-top: auto; 
+    align-self: flex-end; 
+  }
+
+  .qText {
+    font-size: 14px;
+    font-weight: bold;
+    text-align: left;
+  }
+  
+  .customerTitle {
+    font-size: 14px; 
+    font-weight: bold;
+    text-align: left;
+  }
+  
+  .qrCode {
+    display: flex;
+    text-align: top;
+    float: inline-end;
+  }
+  
+  .imageBase {
+    margin-top: 0;
+    margin-left: 0;
+    margin-bottom: 0;
+    margin-right: 0;
+    text-align: left;
+    justify-content: space-between; 
+  }
+  
+  .rightAlignSpan {
+    vertical-align: middle;
+    float: right;
+  }
+  
+  .centerAlignSpan {
+    font-size: 50px; 
+    font-weight: bold;
+    text-align: center;
+  }
+  
+  .modelBox {
+    padding: 3px;
+    border: 1px solid black;
+    width: 25px;
+    height: 15px;
+    vertical-align: middle;
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+    float: right;
+  }
+  
+  button {
+    display: inline-block; 
+    width: auto; 
+    padding: 5px;
+    background-color: #28a745;
+    color: white;
+    font-size: 14px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-left: 10px; 
+  }
+  
+  button:hover {
+    background-color: #218838;
+  }
+  
+  input[type="number"] {
+    width: 20%;
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  
+  .container {
+    text-align: center;
+  }
+  
+  .picturetext {
+    font-size: 10px; 
+    font-weight: normal;
+    float: left;
+  }
+  
+  .picture {
+    float: left;
+  }
+
+  img {
+    width: 27mm;
+    height: 27mm;
+  }
+  
+  /* @media print {
+    @page {
+      size: A4 landscape; 
+      margin: 0;
+    }
+  
+    body {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      transform: scale(1); 
+      transform-origin: top left;
+    }
+  
+    .formsWrapper {
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      width: 297mm;
+      height: 210mm;
+      margin: 0;
+    }
+  
+    .formContainer {
+      padding: 1mm; 
+      height: 100%;
+    }
+  
+    .qrCode img {
+      width: 16.3mm;
+      height: 16.3mm;
+    }
+  
+    img {
+      width: 15mm;
+      height: 12mm;
+    }
+  
+    .centerAlignSpan {
+      font-size: 8mm; 
+    }
+  
+    .largeText {
+      font-size: 6mm; 
+    }
+
+    .qText {
+      font-size: 3.5mm;
+      font-weight: bold;
+      text-align: left;
+      padding: 1px;
+      margin-bottom: 3px;
+    }
+
+    .customerTitle {
+      font-size: 3mm; 
+      font-weight: bold;
+      text-align: left;
+    }
+
+    .smallText {
+      font-size: 2.5mm;
+      font-weight: bold;
+      text-align: left;
+    }
+
+    .mediumTextbig {
+      font-size: 3mm; 
+      font-weight: bold;
+      text-align: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    th,
+    td {
+      border: 1px solid black; 
+      padding: 3px; 
+      text-align: left;
+      width: 150px
+    }
+
+    th:nth-child(3), td:nth-child(3) {
+      width: 150px; 
+      height: 15px; 
+    }
+
+    th:nth-child(5), td:nth-child(5) {
+      width: 150px; 
+      height: 15px; 
+    }
+
+    .mediumText {
+      font-size: 3mm; 
+      font-weight: normal;
+      text-align: center;
+    }
+  } */
+  
+
+  @media print {
+    @page {
+        size: 100mm 100mm portrait;
+        margin: 0; 
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: start;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    .formsWrapper {
+        display: block;
+        width: 101.5mm; 
+        height: 100mm; 
+        padding: 0mm;
+        box-sizing: border-box;
+        page-break-before: always; 
+        page-break-after: always; 
+    }
+
+    .formContainer {
+        padding: 0mm;
+        height: 95%;
+        margin-top: 5px;
+        margin-bottom: 400px;
+        border: none;
+    }
+
+    .qrCode img, img {
+        width: 25mm;
+        height: 25mm;
+    }
+
+    .centerAlignSpan {
+        font-size: 10mm;
+    }
+
+    .largeText {
+        font-size: 3mm;
+    }
+
+    .qText {
+        font-size: 3mm;
+        font-weight: bold;
+        text-align: left;
+        padding: 0.1mm;
+        margin-bottom: 2px;
+    }
+
+    .customerTitle,
+    .mediumTextbig,
+    .smallText {
+        font-size: 3.2mm;
+        font-weight: bold;
+    }
+
+    table {
+        width: 100%;
+        height: 95%;
+        border-collapse: collapse;
+        margin-top: 30px;
+    }
+
+    th, td {
+        border: 0.4mm solid black;
+        padding: 1px;
+        text-align: left;
+    }
+
+    .mediumText {
+        font-size: 3.3mm;
+        font-weight: normal;
+        text-align: center;
+    }
+}

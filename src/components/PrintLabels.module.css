@@ -1,0 +1,261 @@
+body {
+    margin: 5px; /* เพิ่มระยะขอบให้ทั้งหน้า */
+    padding: 5px;
+    font-family: Arial, sans-serif;
+}
+
+.formsWrapper {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 10px; /* เพิ่มระยะห่างระหว่างกริด */
+    width: 297mm;
+    height: 210mm;
+    box-sizing: border-box;
+}
+
+.formContainert {
+    border: 1px solid rgb(0, 0, 0);
+    padding: 3mm; /* เพิ่ม padding ภายใน formContainer */
+    margin: 10px; /* เพิ่ม margin รอบ formContainer */
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+}
+
+
+table {
+    width: 100%;
+    height: 100%;
+    border-collapse: separate;
+    border-spacing: 1px;
+    margin-top: 5px;
+    box-sizing: border-box;
+}
+
+th, td {
+    border: 1px solid rgb(0, 0, 0) !important;
+    border-style: solid !important;
+    border-width: 1px !important;
+    outline: 1px solid black !important;
+    padding: 1px;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+.largeText {
+    font-size: 45px;
+    font-weight: bold;
+    margin-bottom: 10px; /* เพิ่มระยะห่างด้านล่าง */
+}
+
+.mediumText {
+    font-size: 15px;
+    font-weight: normal;
+    text-align: center;
+    margin-bottom: 5px; /* เพิ่มระยะห่างด้านล่าง */
+}
+
+.smallText {
+    font-size: 13px;
+    font-weight: bold;
+    text-align: left;
+    margin-top: 5px; /* เพิ่มระยะห่างด้านบน */
+}
+
+.qText {
+    font-size: 14px;
+    font-weight: bold;
+    text-align: left;
+    margin-bottom: 8px; /* เพิ่มระยะห่างด้านล่าง */
+}
+
+.customerTitle {
+    font-size: 14px;
+    font-weight: bold;
+    text-align: left;
+    margin-bottom: 10px; /* เพิ่มระยะห่างด้านล่าง */
+}
+
+.qrCode {
+    display: flex;
+    text-align: top;
+    float: inline-end;
+    margin-top: 10px; /* เพิ่มระยะห่างด้านบนของ qrCode */
+}
+
+.imageBase {
+    margin-top: 10px; /* เพิ่มระยะห่างด้านบนของรูปภาพ */
+    text-align: left;
+    justify-content: space-between;
+}
+
+.centerAlignSpan {
+    font-size: 50px;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 5px; /* เพิ่มระยะห่างด้านบน */
+}
+
+.modelBox {
+    padding: 3px;
+    border: 1px solid black;
+    width: 25px;
+    height: 20px;
+    vertical-align: middle;
+    text-align: center;
+    font-size: 10px;
+    font-weight: bold;
+    float: right;
+    margin-left: 10px; 
+}
+
+button {
+    display: inline-block;
+    width: auto;
+    padding: 5px;
+    background-color: #28a745;
+    color: white;
+    font-size: 14px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-left: 10px;
+}
+
+button:hover {
+    background-color: #218838;
+}
+
+input[type="number"] {
+    width: 20%;
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.container {
+    text-align: center;
+}
+
+.picturetext {
+    font-size: 10px;
+    font-weight: normal;
+    float: left;
+}
+
+.picture {
+    float: left;
+}
+
+img {
+    width: 27mm;
+    height: 27mm;
+}
+
+.rightAlignSpan {
+    vertical-align: middle;
+    float: right;
+}
+
+@media print {
+    @page {
+        size: 100mm 100mm portrait;
+        margin: 0; 
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: start;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    .formsWrapper {
+        display: block;
+        width: 101.5mm; 
+        height: 100mm; 
+        padding: 0mm;
+        box-sizing: border-box;
+        page-break-before: always; 
+        page-break-after: always; 
+    }
+
+    .formContainer {
+        padding: 0mm;
+        height: 95%;
+        margin-top: 10px;
+        margin-bottom: 400px;
+        border: none;
+    }
+
+    .qrCode img, img {
+        width: 25mm;
+        height: 25mm;
+    }
+
+    .centerAlignSpan {
+        font-size: 10mm;
+    }
+
+    .largeText {
+        font-size: 3mm;
+    }
+
+    .qText {
+        font-size: 3mm;
+        font-weight: bold;
+        text-align: left;
+        padding: 0.1mm;
+        margin-bottom: 2px;
+    }
+    
+    .mediumTextbig{
+        font-size: 3.2mm;
+        font-weight: bold;
+        text-align: center;
+    }
+    
+    .customerTitle,
+    .smallText {
+        font-size: 3.2mm;
+        font-weight: bold;
+    }
+
+    table {
+        width: 100%;
+        height: 95%;
+        border-collapse: collapse;
+        margin-top: 30px;
+        box-sizing: border-box; /* เพิ่ม box-sizing */
+    }
+
+    th, td {
+        border: 1px solid black !important; /* เพิ่ม !important เพื่อบังคับให้แสดง */
+        outline: 1px solid black; /* เพิ่ม outline เพื่อช่วยให้เส้นขอบชัดเจนขึ้น */
+        padding: 1px;
+        text-align: left;
+        box-sizing: border-box; /* เพิ่ม box-sizing */
+    }
+
+    .mediumText {
+        font-size: 3.3mm;
+        font-weight: normal;
+        text-align: center;
+    }
+
+    .rightAlignSpan {
+        vertical-align: middle;
+        float: right;
+    }
+}
+
+

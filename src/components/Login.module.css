@@ -1,0 +1,72 @@
+.wrapper {
+  display: flex;
+  justify-content: center; /* จัดให้อยู่กึ่งกลางแนวนอน */
+  align-items: center;     /* จัดให้อยู่กึ่งกลางแนวตั้ง */
+  height: 100vh;           /* ใช้ความสูงเต็มหน้าจอ */
+  background: linear-gradient(140deg, #c9c9c9, #6cfb78); /* สีพื้นหลังแบบไล่เฉด */
+  font-family: 'Prompt', sans-serif;
+}
+
+.loginContainer {
+  background-color: rgba(106, 143, 255, 0.2); /* สีพื้นหลังโปร่งใส */
+  padding: 40px;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2); /* เพิ่มเงา */
+  backdrop-filter: blur(20px); /* เบลอพื้นหลัง */
+  width: 100%;
+  max-width: 400px; /* เพิ่มขนาดสูงสุดให้กับฟอร์ม */
+  text-align: center;
+  color: rgb(0, 0, 0);
+}
+
+.loginContainer h2 {
+  margin-bottom: 20px;
+  font-size: 24px;
+}
+
+.loginContainer input {
+  width: 95%;
+  padding: 15px;
+  margin: 15px 10px;
+  border: 1px solid #000000;
+  border-radius: 30px;
+  font-size: 20px;
+  background: rgba(194, 194, 194, 0.3); /* เพิ่มความโปร่งใส */
+  color: rgb(12, 12, 12);
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); 
+}
+
+.loginContainer input::placeholder {
+  color: #acacac;
+}
+
+.loginContainer button {
+  width: 95%;
+  padding: 15px;
+  margin-top: 25px;
+  background-color: #ffffff;
+  color: #444344;
+  font-size: 16px;
+  border: none;
+  border-radius: 30px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); 
+}
+
+.loginContainer button:hover {
+  color: black;
+  background-color: #e6e6e6;
+}
+
+.error {
+  color: red; 
+  font-size: 16px; 
+  margin-top: 10px; 
+  /* background-color: rgba(255, 0, 0, 0.1);  */
+  padding: 10px;
+  /* border-radius: 5px;  */
+  /* box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);  */
+  text-align: center;
+}

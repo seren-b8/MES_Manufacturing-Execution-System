@@ -1,0 +1,17 @@
+.custom-button {
+    background: #2c79f7;
+    width: 75%;
+    align-items: center;
+    font-family: 'Prompt, sans-serif';
+    font-weight: light;
+    color: white;
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 5px;
+  }
+  
+  .custom-button:hover {
+    background: #1b5fc2; /* Change background on hover */
+    color: white;
+  }

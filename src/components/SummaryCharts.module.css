@@ -1,0 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;600&display=swap');
+
+.container {
+    font-family: 'Prompt', sans-serif;
+    text-align: center;
+    margin: auto;
+}
+
+.header {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.chartRow {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 20px; /* Adjust gap between the charts */
+    margin-top: 5px;
+}
+
+.chartContainer {
+    width: 55%; /* Adjust width for bar chart */
+}
+
+.smallPieChart {
+    width: 25%; /* Adjust width for pie chart */
+    /* border: 2px solid #ccc; */
+    padding: 5px;
+    border-radius: 8px;
+}
+
+.selectDropdown {
+    font-family: 'Prompt', sans-serif;
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 4px;
+    background-color: #ffffff;
+    color: #313131;
+    font-size: 16px;
+    margin-top: 10px;
+    text-align: center;
+}
+
+.selectContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.loadingContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Prompt', sans-serif;
+    font-size: 24px;
+    color: #000000;
+    margin-top: 200px;
+}
+
+.loadingLetter {
+    display: inline-block;
+    animation: wave 1.5s infinite;
+    animation-delay: calc(0.1s * var(--index));
+}
+
+@keyframes wave {
+    0%, 50%, 100% {
+        transform: translateY(0);
+    }
+    30% {
+        transform: translateY(-10px);
+    }
+}

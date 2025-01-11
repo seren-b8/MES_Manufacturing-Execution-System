@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Prompt:wght@400;700&display=swap');
+
+.wrapper {
+  display: flex;
+  justify-content: center; 
+  align-items: center; 
+  height: 30vh;        
+  background: rgb(255, 255, 255);
+  font-family: 'Prompt', sans-serif;
+  margin-top: 220px;
+}
+
+.card {
+  background-color: white;
+  padding: 25px; 
+  border-radius: 10px; 
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2); 
+  display: flex;
+  flex-direction: column; 
+  gap: 10px;
+  width: 590px;
+}
+
+.formRow {
+  display: flex;
+  justify-content: space-between; 
+  width: 100%;
+  gap: 10px; 
+}
+
+.formGroupHalf {
+  display: flex;
+  flex-direction: column;
+  width: 48%; 
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-bottom: 2px; 
+}
+
+.label-title {
+  font-weight: bold;
+  margin-bottom: 5px;
+  font-size: 16px;
+}
+
+.input, .select {
+  padding: 10px;
+  border-radius: 5px;
+  font-family: 'Prompt', sans-serif;
+  font-size: 16px;
+  border: 1px solid #cfcdcd;
+  width: 95%; 
+}
+
+.button {
+  width: 130px;
+  border-radius: 5px;
+  background-color: #7ed5f5;
+  color: white;
+  cursor: pointer;
+  border: none;
+  font-size: 16px;
+  font-family: 'Prompt', sans-serif;
+  margin-top: 5px; 
+  margin-bottom: 0px;
+  align-self: center;
+}
+
+.button:hover {
+  background-color: #5f7591;
+  transition: background-color 0.3s ease;
+}
