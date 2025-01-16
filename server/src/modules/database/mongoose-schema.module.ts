@@ -16,25 +16,9 @@ import {
 } from 'src/schema/master-not-good.schema';
 import { Employee, EmployeeSchema } from 'src/schema/employee.schema';
 import {
-  LogAssignEmployee,
-  LogAssignEmployeeSchema,
-} from 'src/schema/log-assign-employee.schema';
-import {
-  LogAssignNotGood,
-  LogAssignNotGoodSchema,
-} from 'src/schema/log-assign-not-good.schema';
-import {
-  LogAssignOrder,
-  LogAssignOrderSchema,
-} from 'src/schema/log-assign-order.schema';
-import {
   MasterCavity,
   MasterCavitySchema,
 } from 'src/schema/master-cavity.schema';
-// import {
-//   ProductionComponent,
-//   ProductionComponentSchema,
-// } from 'src/schema/production-component.schema';
 import {
   ProductionOrder,
   ProductionOrderSchema,
@@ -60,9 +44,6 @@ import {
     ]),
     MongooseModule.forFeature([
       { name: Employee.name, schema: EmployeeSchema },
-      { name: LogAssignEmployee.name, schema: LogAssignEmployeeSchema },
-      { name: LogAssignNotGood.name, schema: LogAssignNotGoodSchema },
-      { name: LogAssignOrder.name, schema: LogAssignOrderSchema },
       { name: MasterCavity.name, schema: MasterCavitySchema },
       { name: TemporaryEmployee.name, schema: TemporaryEmployeeSchema },
     ]),

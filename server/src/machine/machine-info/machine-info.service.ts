@@ -2,6 +2,7 @@
 
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { create } from 'domain';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/interface';
 import { MachineInfo } from 'src/schema/machine-info.schema';
@@ -39,7 +40,7 @@ export class MachineInfoService {
 
   async createMachine(
     machineInfo: MachineInfo,
-  ): Promise<ResponseFormat<MachineInfo>> {
+  ): Promise<ResponseFormat<MachineInfo[]>> {
     try {
       // Validate required fields
       if (
@@ -76,7 +77,17 @@ export class MachineInfoService {
         );
       }
 
-      const newMachine = new this.machineInfoModel(machineInfo);
+      const create = {
+        ...machineInfo,
+        status: 'OFF',
+        counter: 0,
+        sleep_count: 0,
+        cycletime: '0',
+        logtime_count: '0',
+        logtime_status: '0',
+      };
+
+      const newMachine = new this.machineInfoModel(create);
       await newMachine.save();
 
       // Create new machine with timestamps
@@ -84,7 +95,7 @@ export class MachineInfoService {
       return {
         status: 'success',
         message: 'Machine created successfully',
-        data: [],
+        data: [newMachine],
       };
     } catch (error) {
       // Log unexpected errors if not HttpException
