@@ -45,13 +45,15 @@ export class MachineInfoService {
       if (
         !machineInfo.machine_name ||
         !machineInfo.machine_number ||
-        !machineInfo.work_center
+        !machineInfo.work_center ||
+        !machineInfo.line ||
+        !machineInfo.tonnage
       ) {
         throw new HttpException(
           {
             status: 'error',
             message:
-              'Machine name, machine number, and work center are required',
+              'Machine name, machine number, work center, line, and tonnage are required',
             data: [],
           },
           HttpStatus.BAD_REQUEST,
@@ -74,24 +76,15 @@ export class MachineInfoService {
         );
       }
 
-      // Create new machine with timestamps
-      const newMachine = new this.machineInfoModel({
-        ...machineInfo,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      const newMachine = new this.machineInfoModel(machineInfo);
+      await newMachine.save();
 
-      // Save to database within transaction
-      const savedMachine = await this.connection.transaction(
-        async (session) => {
-          return await newMachine.save({ session });
-        },
-      );
+      // Create new machine with timestamps
 
       return {
         status: 'success',
         message: 'Machine created successfully',
-        data: savedMachine,
+        data: [],
       };
     } catch (error) {
       // Log unexpected errors if not HttpException

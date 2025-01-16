@@ -1,6 +1,14 @@
 // src/machine/machine-info/machine-info.controller.ts
 
-import { Controller, Get, Put, Param, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Put,
+  Param,
+  Body,
+  UseGuards,
+  Post,
+} from '@nestjs/common';
 import { MachineInfoService } from './machine-info.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 
@@ -14,6 +22,11 @@ export class MachineInfoController {
   @Get('get-all-machines')
   async getAllMachines() {
     return this.machineInfoService.findAll();
+  }
+
+  @Post('create-machine')
+  async createMachine(@Body() body) {
+    return this.machineInfoService.createMachine(body);
   }
 
   @Get('get-machine-info')

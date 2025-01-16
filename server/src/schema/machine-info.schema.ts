@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ collection: 'machine_info' })
+@Schema({ timestamps: true, collection: 'machine_info' })
 export class MachineInfo extends Document {
   @Prop({ default: null })
   line: string; // changed from Line
@@ -35,6 +35,9 @@ export class MachineInfo extends Document {
 
   @Prop({ default: null })
   logtime_status: string; // changed from LogtimeStatus
+
+  @Prop({ default: null })
+  updated_at: Date;
 }
 
 export const MachineInfoSchema = SchemaFactory.createForClass(MachineInfo);
