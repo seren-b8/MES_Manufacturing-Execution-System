@@ -18,7 +18,7 @@ import { UpdateAssignOrderDto } from '../dto/update-assign-order-dto';
 import { AssignOrder } from 'src/schema/assign-order.schema';
 import { ResponseFormat } from 'src/interface';
 
-@Controller('assign-orders')
+@Controller('/assign-orders')
 export class AssignOrderController {
   constructor(private readonly assignOrderService: AssignOrderService) {}
 

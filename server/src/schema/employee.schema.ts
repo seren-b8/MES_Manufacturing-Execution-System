@@ -4,7 +4,7 @@ import { Document } from 'mongoose';
 @Schema({ collection: 'employee' })
 export class Employee extends Document {
   @Prop({ default: null })
-  employee_id: number;
+  employee_id: string;
 
   @Prop({ default: null })
   prior_name: string;

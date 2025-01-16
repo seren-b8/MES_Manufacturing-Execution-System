@@ -18,8 +18,9 @@ import { Employee } from 'src/schema/employee.schema';
 import { LoginDto } from './dto/login.dto';
 import { ResponseFormat } from '../interface';
 import { TLoginResponse } from 'src/interface/auth';
+import { use } from 'passport';
 
-@Controller('auth')
+@Controller('/auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -32,6 +33,7 @@ export class AuthController {
   }
 
   @Get('users')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   // @UseGuards(JwtAuthGuard)
   async findAllUsers(): Promise<ResponseFormat<Employee[]>> {
@@ -40,7 +42,7 @@ export class AuthController {
 
   @Put('users/:id')
   @HttpCode(HttpStatus.OK)
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async updateUser(
     @Param('id') id: string,
     @Body() updateData: Partial<CreateUserDto>,
@@ -50,7 +52,7 @@ export class AuthController {
 
   @Delete('users/:id')
   @HttpCode(HttpStatus.OK)
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   async deleteUser(@Param('id') id: string): Promise<ResponseFormat<any>> {
     return this.authService.deleteUser(id);
   }

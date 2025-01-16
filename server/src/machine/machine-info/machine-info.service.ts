@@ -113,22 +113,32 @@ export class MachineInfoService {
             as: 'machines',
           },
         },
-        // Filter for machines exist
         {
           $match: {
             'machines.0': { $exists: true },
           },
         },
-        // Lookup assign_order for current orders
+        // Lookup assign_order for active orders
         {
           $lookup: {
             from: 'assign_order',
-            localField: 'order_id',
-            foreignField: 'order_id',
-            as: 'current_orders',
+            let: { work_center: '$work_center' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$work_center', '$$work_center'] },
+                      { $eq: ['$status', 'pending'] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'active_orders',
           },
         },
-        // Lookup assign_employee for current assignments
+        // Lookup assign_employee for active assignments
         {
           $lookup: {
             from: 'assign_employee',
@@ -145,24 +155,33 @@ export class MachineInfoService {
                 },
               },
             ],
-            as: 'current_assignments',
+            as: 'active_assignments',
+          },
+        },
+        // Lookup all orders for this work center
+        {
+          $lookup: {
+            from: 'production_order',
+            let: { work_center: '$work_center' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$work_center', '$$work_center'] },
+                },
+              },
+            ],
+            as: 'all_orders',
           },
         },
         // Group by work_center
         {
           $group: {
             _id: '$work_center',
-            count: { $sum: 1 },
+            total_orders: { $sum: 1 },
             machines: { $first: '$machines' },
-            orders: {
-              $push: {
-                order_id: '$order_id',
-                material_number: '$material_number',
-                target_quantity: '$target_quantity',
-                current_order: { $first: '$current_orders' },
-              },
-            },
-            assignments: { $first: '$current_assignments' },
+            active_orders: { $first: '$active_orders' },
+            active_assignments: { $first: '$active_assignments' },
+            all_orders: { $first: '$all_orders' },
           },
         },
         // Format the results
@@ -170,18 +189,12 @@ export class MachineInfoService {
           $project: {
             _id: 0,
             work_center: '$_id',
-            total_orders: '$count',
-            total_machines: { $size: '$machines' },
-            active_orders: {
-              $size: {
-                $filter: {
-                  input: '$orders',
-                  as: 'order',
-                  cond: { $ne: ['$$order.current_order', null] },
-                },
-              },
+            summary: {
+              total_orders: '$total_orders',
+              total_machines: { $size: '$machines' },
+              assign_orders_count: { $size: '$active_orders' },
+              assign_enployee_count: { $size: '$active_assignments' },
             },
-            active_assignments: { $size: '$assignments' },
             machines: {
               $map: {
                 input: '$machines',
@@ -192,68 +205,80 @@ export class MachineInfoService {
                   machine_name: '$$machine.machine_name',
                   tonnage: '$$machine.tonnage',
                   status: '$$machine.status',
-                  current_assignment: {
-                    $filter: {
-                      input: '$assignments',
-                      as: 'assignment',
-                      cond: {
-                        $eq: [
-                          '$$assignment.machine_number',
-                          '$$machine.machine_number',
-                        ],
+                  orders_count: {
+                    $size: {
+                      $filter: {
+                        input: '$all_orders',
+                        as: 'order',
+                        cond: {
+                          $eq: ['$$order.work_center', '$$machine.work_center'],
+                        },
                       },
                     },
                   },
-                  current_order: {
-                    $filter: {
-                      input: '$orders',
-                      as: 'order',
-                      cond: {
-                        $ne: [
-                          '$$order.current_order.machine_number',
-                          '$$machine.machine_number',
-                        ],
+                  active_orders_count: {
+                    $size: {
+                      $filter: {
+                        input: '$active_orders',
+                        as: 'order',
+                        cond: {
+                          $eq: [
+                            '$$order.machine_number',
+                            '$$machine.machine_number',
+                          ],
+                        },
+                      },
+                    },
+                  },
+                  active_assignments_count: {
+                    $size: {
+                      $filter: {
+                        input: '$active_assignments',
+                        as: 'assign',
+                        cond: {
+                          $eq: [
+                            '$$assign.machine_number',
+                            '$$machine.machine_number',
+                          ],
+                        },
                       },
                     },
                   },
                 },
               },
             },
-            // Add detailed order and assignment information
-            orders_detail: {
+            assign_orders: {
               $map: {
-                input: '$orders',
+                input: '$active_orders',
                 as: 'order',
                 in: {
                   order_id: '$$order.order_id',
+                  machine_number: '$$order.machine_number',
                   material_number: '$$order.material_number',
                   target_quantity: '$$order.target_quantity',
-                  status: {
-                    $cond: {
-                      if: { $ne: ['$$order.current_order', null] },
-                      then: 'active',
-                      else: 'pending',
-                    },
-                  },
+                  actual_quantity: '$$order.actual_quantity',
+                  datetime_open_order: '$$order.datetime_open_order',
+                  production_parameters: '$$order.production_parameters',
                 },
               },
             },
-            assignments_detail: {
+            active_assignments: {
               $map: {
-                input: '$assignments',
+                input: '$active_assignments',
                 as: 'assign',
                 in: {
                   employee_id: '$$assign.employee_id',
                   full_name: '$$assign.full_name',
                   machine_number: '$$assign.machine_number',
+                  order_id: '$$assign.order_id',
                   datetime_open_order: '$$assign.datetime_open_order',
                   shift: '$$assign.shift',
+                  assignment_details: '$$assign.assignment_details',
                 },
               },
             },
           },
         },
-        // Sort by work_center
         {
           $sort: {
             work_center: 1,

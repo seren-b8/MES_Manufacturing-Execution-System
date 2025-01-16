@@ -16,7 +16,7 @@ import { QueryAssignEmployeeDto } from '../dto/query-assign-employee.dto';
 import { UpdateAssignEmployeeDto } from '../dto/update-assign-employee.dto';
 import { CreateAssignEmployeeDto } from '../dto/create-assign-eployee.dto';
 
-@Controller('assign-employee')
+@Controller('/assign-employee')
 // @UseGuards(JwtAuthGuard)
 export class AssignEmployeeController {
   constructor(private readonly assignEmployeeService: AssignEmployeeService) {}

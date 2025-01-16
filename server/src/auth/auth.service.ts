@@ -19,8 +19,6 @@ import { catchError, firstValueFrom, timeout } from 'rxjs';
 import { ResponseFormat } from '../interface';
 import { JwtService } from '@nestjs/jwt';
 import { TLoginResponse, TUser } from 'src/interface/auth';
-import e from 'express';
-import { IsNumber } from 'class-validator';
 
 @Injectable()
 export class AuthService {
@@ -248,7 +246,9 @@ export class AuthService {
   private async findUserData(employeeId: number) {
     const [user, employee, temporaryEmployee] = await Promise.all([
       this.userModel.findOne({ employee_id: employeeId }),
-      this.employeeModel.findOne({ employee_id: employeeId }),
+      this.employeeModel.findOne({
+        employee_id: employeeId,
+      }),
       this.temporaryEmployeeModel.findOne({ employee_id: employeeId }),
     ]);
 

@@ -4,7 +4,7 @@ import { Controller, Get, Put, Param, Body, UseGuards } from '@nestjs/common';
 import { MachineInfoService } from './machine-info.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 
-@Controller('machine-info')
+@Controller('/machine-info')
 // @UseGuards(JwtAuthGuard) // เพิ่ม Guard เพื่อป้องกัน endpoints
 export class MachineInfoController {
   constructor(private readonly machineInfoService: MachineInfoService) {}
