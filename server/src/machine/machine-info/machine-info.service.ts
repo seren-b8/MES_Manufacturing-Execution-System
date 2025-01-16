@@ -1,19 +1,116 @@
 // src/machine/machine-info/machine-info.service.ts
 
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { ResponseFormat } from 'src/interface';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { ProductionOrder } from 'src/schema/production-order.schema';
 
 @Injectable()
 export class MachineInfoService {
+  connection: any;
   constructor(
     @InjectModel(ProductionOrder.name)
     private readonly productionOrderModel: Model<ProductionOrder>,
     @InjectModel(MachineInfo.name)
     private readonly machineInfoModel: Model<MachineInfo>,
   ) {}
+
+  async findAll(query: any = {}) {
+    try {
+      const machines = await this.machineInfoModel.find(query).lean();
+      return {
+        status: 'success',
+        message: 'Retrieved machines successfully',
+        data: machines,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to retrieve machines: ' + error.message,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async createMachine(
+    machineInfo: MachineInfo,
+  ): Promise<ResponseFormat<MachineInfo>> {
+    try {
+      // Validate required fields
+      if (
+        !machineInfo.machine_name ||
+        !machineInfo.machine_number ||
+        !machineInfo.work_center
+      ) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message:
+              'Machine name, machine number, and work center are required',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Check for duplicate machine
+      const existingMachine = await this.machineInfoModel.findOne({
+        name: machineInfo.machine_number,
+      });
+
+      if (existingMachine) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine with this name already exists',
+            data: [],
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      // Create new machine with timestamps
+      const newMachine = new this.machineInfoModel({
+        ...machineInfo,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Save to database within transaction
+      const savedMachine = await this.connection.transaction(
+        async (session) => {
+          return await newMachine.save({ session });
+        },
+      );
+
+      return {
+        status: 'success',
+        message: 'Machine created successfully',
+        data: savedMachine,
+      };
+    } catch (error) {
+      // Log unexpected errors if not HttpException
+      if (!(error instanceof HttpException)) {
+        console.error('Error creating machine:', error);
+
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'An error occurred while creating the machine',
+            data: [],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      throw error; // Re-throw HttpException errors
+    }
+  }
 
   // ดึงข้อมูลเครื่องจักรตาม machine number
   async findByMachineNumber(machineNumber: string) {

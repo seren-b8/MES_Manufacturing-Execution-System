@@ -1,9 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ collection: 'employee' })
+@Schema({ timestamps: true, collection: 'employee' })
 export class Employee extends Document {
-  @Prop({ default: null })
+  @Prop({ required: true, unique: true, index: true })
   employee_id: string;
 
   @Prop({ default: null })
@@ -18,7 +18,7 @@ export class Employee extends Document {
   @Prop({ default: null })
   section: string;
 
-  @Prop({ default: null })
+  @Prop({ index: true })
   department: string;
 
   @Prop({ default: null })
@@ -32,6 +32,9 @@ export class Employee extends Document {
 
   @Prop({ default: null })
   job_start: string;
+
+  @Prop({ index: true })
+  updated_at: Date;
 }
 
 export const EmployeeSchema = SchemaFactory.createForClass(Employee);

@@ -5,14 +5,19 @@ import { MachineInfoService } from './machine-info.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 
 @Controller('/machine-info')
-// @UseGuards(JwtAuthGuard) // เพิ่ม Guard เพื่อป้องกัน endpoints
+@UseGuards(JwtAuthGuard)
 export class MachineInfoController {
   constructor(private readonly machineInfoService: MachineInfoService) {}
 
   // GET /machine-info
   // ดึงข้อมูลเครื่องจักรทั้งหมด
-  @Get()
+  @Get('get-all-machines')
   async getAllMachines() {
+    return this.machineInfoService.findAll();
+  }
+
+  @Get('get-machine-info')
+  async getMachineInfo() {
     return this.machineInfoService.getWorkCenterSummary();
   }
 

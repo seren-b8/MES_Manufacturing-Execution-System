@@ -21,6 +21,9 @@ export class MachineCavityService {
         data: cavities,
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
       throw new HttpException(
         {
           status: 'error',
@@ -53,6 +56,9 @@ export class MachineCavityService {
         data: cavity,
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
       throw new HttpException(
         {
           status: 'error',
@@ -75,6 +81,9 @@ export class MachineCavityService {
         data: newCavity,
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
       throw new HttpException(
         {
           status: 'error',
@@ -112,6 +121,9 @@ export class MachineCavityService {
         data: updatedCavity,
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
       throw new HttpException(
         {
           status: 'error',
@@ -146,6 +158,9 @@ export class MachineCavityService {
         data: deletedCavity,
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
       throw new HttpException(
         {
           status: 'error',
