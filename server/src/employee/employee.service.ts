@@ -14,6 +14,7 @@ export class EmployeeService {
     private readonly temporaryEmployeeModel: Model<TemporaryEmployee>,
     @Inject(SqlService) private readonly sqlService: SqlService,
   ) {}
+
   private transformEmployeeData(sqlEmployee: any): Partial<Employee> {
     return {
       employee_id: sqlEmployee.EMP_Code,

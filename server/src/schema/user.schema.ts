@@ -9,6 +9,9 @@ export class User extends Document {
   @Prop()
   role: string;
 
+  @Prop({ default: false })
+  external_auth: boolean;
+
   @Prop({ required: true })
   password: string;
 }

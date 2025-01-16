@@ -12,13 +12,17 @@ import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from 'src/schema/user.schema';
-import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcryptjs';
 import { LoginDto } from './dto/login.dto';
 import { catchError, firstValueFrom, timeout } from 'rxjs';
 import { ResponseFormat } from '../interface';
 import { JwtService } from '@nestjs/jwt';
 import { TLoginResponse, TUser } from 'src/interface/auth';
+import { CreateUserDto } from './dto/create-user.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { CreateTempEmployeeDto } from './dto/create-temp-employee.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
+import e from 'express';
 
 @Injectable()
 export class AuthService {
@@ -41,7 +45,7 @@ export class AuthService {
 
       // Step 1: Try external authentication
       const externalAuth = await this.attemptExternalAuth(
-        `${loginDto.employee_id}`,
+        loginDto.employee_id,
         loginDto.password,
       );
 
@@ -53,11 +57,25 @@ export class AuthService {
       // Step 3: Create user if doesn't exist
       let currentUser: any = user;
       if (!user) {
-        const newUser = await this.createUser({
-          employee_id: loginDto.employee_id,
-          password: hashedPassword,
-        });
-        currentUser = newUser.data;
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'User not found',
+            data: [],
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      if (user.role === 'block') {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'User is blocked',
+            data: [],
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
       }
 
       // Step 4: Check password
@@ -102,13 +120,161 @@ export class AuthService {
 
   async findAllEmployee(): Promise<ResponseFormat<Employee[]>> {
     try {
-      const Employee = await this.employeeModel.find();
+      const employees = await this.employeeModel.aggregate([
+        {
+          $lookup: {
+            from: 'users', // collection name
+            localField: 'employee_id', // field from employee collection
+            foreignField: 'employee_id', // field from users collection
+            as: 'user_data', // alias for the joined data
+          },
+        },
+        {
+          $unwind: {
+            path: '$user_data',
+            preserveNullAndEmptyArrays: true, // keep employees even if they don't have user accounts
+          },
+        },
+        {
+          $project: {
+            employee_id: 1,
+            prior_name: 1,
+            first_name: 1,
+            last_name: 1,
+            section: 1,
+            department: 1,
+            position: 1,
+            company_code: 1,
+            resign_status: 1,
+            job_start: 1,
+            role: {
+              $ifNull: ['$user_data.role', null], // MongoDB's way of handling null coalescing
+            }, // include user role
+            // exclude password for security
+          },
+        },
+      ]);
       return {
         status: 'success',
         message: 'Users retrieved successfully',
-        data: Employee,
+        data: employees,
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
+      return {
+        status: 'error',
+        message: 'Failed to retrieve users',
+        data: [],
+      };
+    }
+  }
+
+  async createTempEmpolyee(
+    createTempEmployeeDto: CreateTempEmployeeDto,
+  ): Promise<ResponseFormat<TemporaryEmployee>> {
+    try {
+      const employee = await this.employeeModel.findOne({
+        employee_id: createTempEmployeeDto.employee_id,
+      });
+
+      if (employee) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Employee already exists',
+            data: [],
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      const tempEmployee = await this.temporaryEmployeeModel.findOne({
+        employee_id: createTempEmployeeDto.employee_id,
+      });
+
+      if (tempEmployee) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Employee already exists',
+            data: [],
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      const newTempEmployee = await this.temporaryEmployeeModel.create(
+        createTempEmployeeDto,
+      );
+      return {
+        status: 'success',
+        message: 'Temporary employee created successfully',
+        data: newTempEmployee,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to create temporary employee :' + error.message,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async findAllTemporaryEmployee(): Promise<
+    ResponseFormat<TemporaryEmployee[]>
+  > {
+    try {
+      const employees = await this.temporaryEmployeeModel.aggregate([
+        {
+          $lookup: {
+            from: 'users', // collection name
+            localField: 'employee_id', // field from employee collection
+            foreignField: 'employee_id', // field from users collection
+            as: 'user_data', // alias for the joined data
+          },
+        },
+        {
+          $unwind: {
+            path: '$user_data',
+            preserveNullAndEmptyArrays: true, // keep employees even if they don't have user accounts
+          },
+        },
+        {
+          $project: {
+            employee_id: 1,
+            prior_name: 1,
+            first_name: 1,
+            last_name: 1,
+            section: 1,
+            department: 1,
+            position: 1,
+            company_code: 1,
+            resign_status: 1,
+            job_start: 1,
+            role: {
+              $ifNull: ['$user_data.role', null], // MongoDB's way of handling null coalescing
+            }, // include user role
+            // exclude password for security
+          },
+        },
+      ]);
+      return {
+        status: 'success',
+        message: 'Users retrieved successfully',
+        data: employees,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
       return {
         status: 'error',
         message: 'Failed to retrieve users',
@@ -118,15 +284,151 @@ export class AuthService {
   }
 
   async updateUser(
-    id: string,
-    updateData: Partial<CreateUserDto>,
+    updateData: Partial<UpdateRoleDto>,
+  ): Promise<ResponseFormat<Partial<User>[]>> {
+    try {
+      const [user, employee, temporaryEmployee] = await Promise.all([
+        this.userModel.findOne({ employee_id: updateData.employee_id }),
+        this.employeeModel.findOne({
+          employee_id: updateData.employee_id,
+        }),
+        this.temporaryEmployeeModel.findOne({
+          employee_id: updateData.employee_id,
+        }),
+      ]);
+
+      if (!employee && !temporaryEmployee) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Employee not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      if (!user) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'User not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const updateUser = await this.userModel.findByIdAndUpdate(user.id, {
+        role: updateData.role,
+      });
+
+      if (!updateUser) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'update failed',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const userWithoutPassword = {
+        _id: updateUser._id,
+        employee_id: updateUser.employee_id,
+        role: updateUser.role,
+        external_auth: updateUser.external_auth,
+      };
+
+      return {
+        status: 'success',
+        message: 'User updated successfully',
+        data: [userWithoutPassword],
+      };
+
+      // return this.userModel.findByIdAndUpdate
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to update user :' + error.message,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async changePassword(
+    ChangePasswordDto: ChangePasswordDto,
   ): Promise<ResponseFormat<User>> {
     try {
-      const user = await this.userModel.findByIdAndUpdate(id, updateData, {
-        new: true,
+      const user = await this.userModel.findOne({
+        employee_id: ChangePasswordDto.employee_id,
       });
 
       if (!user) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'User not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      if (user.role === 'block') {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'User is blocked',
+            data: [],
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      if (user.external_auth) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Cannot change password for external users',
+            data: [],
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      if (
+        !(await this.comparePasswords(
+          ChangePasswordDto.old_password,
+          user.password,
+        ))
+      ) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Old password is incorrect',
+            data: [],
+          },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      const hashedPassword = await this.hashPassword(
+        ChangePasswordDto.new_password,
+      );
+
+      const updateUser = await this.userModel.findByIdAndUpdate(user.id, {
+        password: hashedPassword,
+      });
+
+      if (!updateUser) {
         return {
           status: 'error',
           message: 'User not found',
@@ -136,15 +438,23 @@ export class AuthService {
 
       return {
         status: 'success',
-        message: 'User updated successfully',
-        data: user,
+        message: 'Password updated successfully',
+        data: updateUser,
       };
+
+      // return this.userModel.findByIdAndUpdate
     } catch (error) {
-      return {
-        status: 'error',
-        message: 'Failed to update user',
-        data: [],
-      };
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to update password',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -166,6 +476,9 @@ export class AuthService {
         data: result,
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
       return {
         status: 'error',
         message: 'Failed to delete user',
@@ -186,27 +499,84 @@ export class AuthService {
     return bcrypt.compare(plainPassword, hashedPassword);
   }
 
-  private async createUser(userData: {
-    employee_id: number;
-    password: string;
-  }): Promise<ResponseFormat<User>> {
-    const newUser = await this.userModel.create({
-      employee_id: userData.employee_id,
-      password: userData.password,
-      role: 'user', // Default role
-    });
+  async createUser(
+    CreateUserDto: CreateUserDto,
+  ): Promise<ResponseFormat<Partial<User>[]>> {
+    try {
+      // Check employee and temporary employee
+      const [employee, temporaryEmployee] = await Promise.all([
+        this.employeeModel.findOne({ employee_id: CreateUserDto.employee_id }),
+        this.temporaryEmployeeModel.findOne({
+          employee_id: CreateUserDto.employee_id,
+        }),
+      ]);
 
-    return {
-      status: 'success',
-      message: 'User created successfully',
-      data: newUser,
-    };
+      if (!employee && !temporaryEmployee) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Employee not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // Check if user exists
+      const userExists = await this.userModel.findOne({
+        employee_id: CreateUserDto.employee_id,
+      });
+
+      if (userExists) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'User already exists',
+            data: [],
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      const newUser = await this.userModel.create({
+        employee_id: CreateUserDto.employee_id,
+        password: await this.hashPassword('0000'),
+        role: CreateUserDto.role, // Default role
+        external_auth: false,
+      });
+
+      const userWithoutPassword = {
+        _id: newUser._id,
+        employee_id: newUser.employee_id,
+        role: newUser.role,
+        external_auth: newUser.external_auth,
+      };
+
+      return {
+        status: 'success',
+        message: 'User created successfully',
+        data: [userWithoutPassword],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: error.message || 'Failed to create user',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
-  private generateToken(user: any): string {
+  private generateToken(user: User): string {
     const payload = {
       employee_id: user.employee_id,
-      role: user.Auth,
+      sub: user._id,
+      role: user.role,
     };
     return this.jwtService.sign(payload);
   }
@@ -243,7 +613,7 @@ export class AuthService {
     }
   }
 
-  private async findUserData(employeeId: number) {
+  private async findUserData(employeeId: string) {
     const [user, employee, temporaryEmployee] = await Promise.all([
       this.userModel.findOne({ employee_id: employeeId }),
       this.employeeModel.findOne({
@@ -283,6 +653,7 @@ export class AuthService {
     ) {
       await this.userModel.findByIdAndUpdate(user._id, {
         password: hashedPassword,
+        external_auth: true,
       });
       // console.log('Password updated in local database');
     }
@@ -291,6 +662,7 @@ export class AuthService {
       role: user.role,
       full_name: `${employee.first_name} ${employee.last_name}`,
       position: employee.position,
+      external_auth: user.external_auth,
       token,
     };
     return {

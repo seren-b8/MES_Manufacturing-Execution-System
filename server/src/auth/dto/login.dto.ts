@@ -6,7 +6,7 @@ export class LoginDto {
   @Matches(/^(?!\s*$).+/, {
     message: 'Username cannot be empty or only whitespace',
   })
-  employee_id: number;
+  employee_id: string;
 
   @IsString()
   @IsNotEmpty({ message: 'Password is required' })

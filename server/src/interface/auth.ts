@@ -4,6 +4,7 @@ export interface TLoginResponse {
   full_name: string;
   position: string;
   token: string;
+  external_auth: boolean;
 }
 
 export interface TUser extends Document {

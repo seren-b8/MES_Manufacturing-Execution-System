@@ -19,6 +19,13 @@ import { LoginDto } from './dto/login.dto';
 import { ResponseFormat } from '../interface';
 import { TLoginResponse } from 'src/interface/auth';
 import { use } from 'passport';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { TemporaryEmployee } from 'src/schema/temporary-employees.schema';
+import { CreateTempEmployeeDto } from './dto/create-temp-employee.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
+import { Role } from './enum/roles.enum';
+import { RolesGuard } from './guard/roles.guard';
+import { Roles } from './decorator/roles.decorator';
 
 @Controller('/auth')
 export class AuthController {
@@ -32,27 +39,66 @@ export class AuthController {
     return this.authService.login(LoginDto);
   }
 
-  @Get('users')
-  @UseGuards(JwtAuthGuard)
+  @Get('get-employee')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.OK)
-  // @UseGuards(JwtAuthGuard)
   async findAllUsers(): Promise<ResponseFormat<Employee[]>> {
     return this.authService.findAllEmployee();
   }
 
-  @Put('users/:id')
+  @Post('create-temp-employee')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
-  async updateUser(
-    @Param('id') id: string,
-    @Body() updateData: Partial<CreateUserDto>,
-  ): Promise<ResponseFormat<User>> {
-    return this.authService.updateUser(id, updateData);
+  async createTempEmployee(
+    @Body() createTempEmployeeDto: CreateTempEmployeeDto,
+  ): Promise<ResponseFormat<TemporaryEmployee>> {
+    return this.authService.createTempEmpolyee(createTempEmployeeDto);
   }
 
-  @Delete('users/:id')
+  @Get('get-temp-employee')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async findAllTempUsers(): Promise<ResponseFormat<TemporaryEmployee[]>> {
+    return this.authService.findAllTemporaryEmployee();
+  }
+
+  @Post('create-user')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async createUser(
+    @Body() createUserDto: CreateUserDto,
+  ): Promise<ResponseFormat<Partial<User>[]>> {
+    return this.authService.createUser(createUserDto);
+  }
+
+  @Put('update-role')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  async updateUser(
+    @Body() updateData: Partial<UpdateRoleDto>,
+  ): Promise<ResponseFormat<Partial<User>[]>> {
+    return this.authService.updateUser(updateData);
+  }
+
+  @Put('update-change-password')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
+  async updatePassword(
+    @Body()
+    ChangePasswordDto: ChangePasswordDto,
+  ): Promise<ResponseFormat<User>> {
+    return this.authService.changePassword(ChangePasswordDto);
+  }
+
+  @Delete('delete-users/:id')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   async deleteUser(@Param('id') id: string): Promise<ResponseFormat<any>> {
     return this.authService.deleteUser(id);
   }
