@@ -7,12 +7,8 @@ import { Document, Types } from 'mongoose';
 })
 export class AssignEmployee extends Document {
   // Employee Information
-  @Prop({ required: true, index: true, ref: 'Employee' })
-  employee_id: string;
-
-  // Assignment Information
-  @Prop({ required: true, index: true })
-  machine_number: string;
+  @Prop({ type: Types.ObjectId, required: true, index: true, ref: 'User' })
+  user_id: Types.ObjectId;
 
   @Prop({ required: true })
   work_center: string;
@@ -35,8 +31,3 @@ export class AssignEmployee extends Document {
 
 export const AssignEmployeeSchema =
   SchemaFactory.createForClass(AssignEmployee);
-
-// Indexes for better query performance
-AssignEmployeeSchema.index({ employee_id: 1, machine_number: 1 });
-AssignEmployeeSchema.index({ work_center: 1, status: 1 });
-AssignEmployeeSchema.index({ datetime_open_order: 1 });

@@ -4,10 +4,6 @@ import {
   AssignEmployee,
   AssignEmployeeSchema,
 } from 'src/schema/assign-employee.schema';
-import {
-  AssignNotGood,
-  AssignNotGoodSchema,
-} from 'src/schema/assign-not-good.schema';
 import { AssignOrder, AssignOrderSchema } from 'src/schema/assign-order.schema';
 import { MachineInfo, MachineInfoSchema } from 'src/schema/machine-info.schema';
 import {
@@ -28,22 +24,21 @@ import {
   TimelineMachineSchema,
 } from 'src/schema/timeline-machine.schema';
 import { User, UserSchema } from 'src/schema/user.schema';
+import {
+  ProductionRecord,
+  ProductionRecordSchema,
+} from 'src/schema/production-record.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: AssignEmployee.name, schema: AssignEmployeeSchema },
-      { name: AssignNotGood.name, schema: AssignNotGoodSchema },
+      { name: ProductionRecord.name, schema: ProductionRecordSchema },
       { name: AssignOrder.name, schema: AssignOrderSchema },
       { name: MachineInfo.name, schema: MachineInfoSchema },
       { name: MasterNotGood.name, schema: MasterNotGoodSchema },
-    ]),
-    MongooseModule.forFeature([
       { name: Employee.name, schema: EmployeeSchema },
       { name: MasterCavity.name, schema: MasterCavitySchema },
-    ]),
-    MongooseModule.forFeature([
-      // { name: ProductionComponent.name, schema: ProductionComponentSchema },
       { name: ProductionOrder.name, schema: ProductionOrderSchema },
       { name: TimelineMachine.name, schema: TimelineMachineSchema },
       { name: User.name, schema: UserSchema },

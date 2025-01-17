@@ -33,6 +33,13 @@ export class AssignOrder extends Document {
 
   @Prop({ type: Date })
   datetime_close_order: Date;
+
+  @Prop({ type: Object })
+  current_summary: {
+    total_good_quantity: number;
+    total_not_good_quantity: number;
+    last_update: Date;
+  };
 }
 
 export const AssignOrderSchema = SchemaFactory.createForClass(AssignOrder);
