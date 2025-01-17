@@ -9,14 +9,6 @@ export class ProductionRecord extends Document {
   @Prop({
     required: true,
     index: true,
-    ref: 'AssignOrder',
-    type: Types.ObjectId,
-  })
-  assign_order_id: Types.ObjectId;
-
-  @Prop({
-    required: true,
-    index: true,
     ref: 'AssignEmployee',
     type: Types.ObjectId,
   })

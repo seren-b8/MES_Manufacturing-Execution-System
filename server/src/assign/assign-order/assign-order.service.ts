@@ -39,12 +39,12 @@ export class AssignOrderService {
         actual_quantity: 0,
       });
 
-      const savedAssignment = await newAssignment.save();
+      await newAssignment.save();
 
       return {
         status: 'success',
         message: 'Assignment created successfully',
-        data: [savedAssignment],
+        data: [],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -70,7 +70,7 @@ export class AssignOrderService {
       return {
         status: 'success',
         message: 'Assignments retrieved successfully',
-        data: assignments,
+        data: [assignments],
       };
     } catch (error) {
       throw new HttpException(
@@ -98,7 +98,7 @@ export class AssignOrderService {
       return {
         status: 'success',
         message: 'Machine assignments retrieved successfully',
-        data: assignments,
+        data: [assignments],
       };
     } catch (error) {
       throw new HttpException(
@@ -130,7 +130,7 @@ export class AssignOrderService {
       return {
         status: 'success',
         message: 'Assignment retrieved successfully',
-        data: assignment,
+        data: [assignment],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -181,7 +181,7 @@ export class AssignOrderService {
       return {
         status: 'success',
         message: 'Assignment updated successfully',
-        data: updatedAssignment,
+        data: [updatedAssignment],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -231,7 +231,7 @@ export class AssignOrderService {
       return {
         status: 'success',
         message: 'Production count updated successfully',
-        data: updatedAssignment,
+        data: [updatedAssignment],
       };
     } catch (error) {
       if (error instanceof HttpException) {
