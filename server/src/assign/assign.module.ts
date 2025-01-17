@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AssignLogController } from './assign-log/assign-log.controller';
 import { AssignOrderController } from './assign-order/assign-order.controller';
 import { AssignService } from './assign.service';
 import { MongooseSchemaModule } from 'src/modules/database/mongoose-schema.module';
@@ -10,11 +9,7 @@ import { AssignEmployeeService } from './assign-employee/assign-employee.service
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule],
-  controllers: [
-    AssignLogController,
-    AssignOrderController,
-    AssignEmployeeController,
-  ],
+  controllers: [AssignOrderController, AssignEmployeeController],
   providers: [AssignService, AssignOrderService, AssignEmployeeService],
   exports: [AssignService],
 })

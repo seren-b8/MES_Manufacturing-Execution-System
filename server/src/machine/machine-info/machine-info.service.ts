@@ -95,7 +95,7 @@ export class MachineInfoService {
       return {
         status: 'success',
         message: 'Machine created successfully',
-        data: [newMachine],
+        data: [],
       };
     } catch (error) {
       // Log unexpected errors if not HttpException

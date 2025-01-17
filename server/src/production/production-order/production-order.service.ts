@@ -21,7 +21,7 @@ export class ProductionOrderService {
       return {
         status: 'success',
         message: 'Retrieved production orders successfully',
-        data: orders,
+        data: [orders],
       };
     } catch (error) {
       throw new HttpException(
@@ -56,7 +56,7 @@ export class ProductionOrderService {
       return {
         status: 'success',
         message: 'Retrieved production order successfully',
-        data: order,
+        data: [order],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -88,7 +88,7 @@ export class ProductionOrderService {
       return {
         status: 'success',
         message: `Retrieved production orders for work center ${workCenter}`,
-        data: orders,
+        data: [orders],
       };
     } catch (error) {
       throw new HttpException(
@@ -123,7 +123,7 @@ export class ProductionOrderService {
       return {
         status: 'success',
         message: 'Retrieved production orders within date range',
-        data: orders,
+        data: [orders],
       };
     } catch (error) {
       throw new HttpException(
@@ -156,7 +156,7 @@ export class ProductionOrderService {
       return {
         status: 'success',
         message: 'Retrieved active production orders',
-        data: orders,
+        data: [orders],
       };
     } catch (error) {
       throw new HttpException(

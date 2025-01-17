@@ -18,7 +18,7 @@ export class MachineCavityService {
       return {
         status: 'success',
         message: 'Retrieved machine cavities successfully',
-        data: cavities,
+        data: [cavities],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -53,7 +53,7 @@ export class MachineCavityService {
       return {
         status: 'success',
         message: 'Retrieved machine cavity successfully',
-        data: cavity,
+        data: [cavity],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -78,7 +78,7 @@ export class MachineCavityService {
       return {
         status: 'success',
         message: 'Created machine cavity successfully',
-        data: newCavity,
+        data: [newCavity],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -118,7 +118,7 @@ export class MachineCavityService {
       return {
         status: 'success',
         message: 'Updated machine cavity successfully',
-        data: updatedCavity,
+        data: [updatedCavity],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -155,7 +155,7 @@ export class MachineCavityService {
       return {
         status: 'success',
         message: 'Deleted machine cavity successfully',
-        data: deletedCavity,
+        data: [deletedCavity],
       };
     } catch (error) {
       if (error instanceof HttpException) {
