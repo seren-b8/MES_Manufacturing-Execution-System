@@ -7,10 +7,6 @@ export class CreateAssignEmployeeDto {
 
   @IsNotEmpty()
   @IsString()
-  full_name: string;
-
-  @IsNotEmpty()
-  @IsString()
   machine_number: string;
 
   @IsNotEmpty()
@@ -24,17 +20,4 @@ export class CreateAssignEmployeeDto {
   @IsNotEmpty()
   @IsString()
   order_id: string;
-
-  @IsOptional()
-  @IsString()
-  shift?: string;
-
-  @IsOptional()
-  @IsObject()
-  assignment_details?: {
-    position?: string;
-    supervisor_id?: string;
-    notes?: string;
-    replacement_for?: string;
-  };
 }

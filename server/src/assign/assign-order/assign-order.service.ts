@@ -14,31 +14,29 @@ export class AssignOrderService {
 
   async create(
     createDto: CreateAssignOrderDto,
-  ): Promise<ResponseFormat<AssignOrder>> {
+  ): Promise<ResponseFormat<AssignOrder[]>> {
     try {
       // Check if machine is already assigned
       const existingAssignment = await this.assignOrderModel.findOne({
         machine_number: createDto.machine_number,
-        status: { $in: ['pending', 'active'] },
+        status: 'active',
       });
 
       if (existingAssignment) {
         throw new HttpException(
           {
             status: 'error',
-            message: `Machine ${createDto.machine_number} is already assigned to order ${existingAssignment.order_id}`,
+            message: 'Machine already has an active assignment',
             data: [],
           } as ResponseFormat<never>,
           HttpStatus.BAD_REQUEST,
         );
       }
-
       const newAssignment = new this.assignOrderModel({
         ...createDto,
         datetime_open_order: new Date(),
-        status: 'pending',
+        status: 'active',
         actual_quantity: 0,
-        scrap_quantity: 0,
       });
 
       const savedAssignment = await newAssignment.save();
@@ -46,7 +44,7 @@ export class AssignOrderService {
       return {
         status: 'success',
         message: 'Assignment created successfully',
-        data: savedAssignment,
+        data: [savedAssignment],
       };
     } catch (error) {
       if (error instanceof HttpException) {

@@ -37,7 +37,7 @@ export class MachineInfoController {
 
   // GET /machine-info/:machineNumber
   // ดึงข้อมูลเครื่องจักรตาม machine number
-  @Get(':machineNumber')
+  @Get('find-by-machine-number/:machineNumber')
   async getMachineByNumber(@Param('machineNumber') machineNumber: string) {
     return this.machineInfoService.findByMachineNumber(machineNumber);
   }

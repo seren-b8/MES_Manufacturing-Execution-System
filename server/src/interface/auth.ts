@@ -1,4 +1,5 @@
 export interface TLoginResponse {
+  user_id: string;
   employee_id: string;
   role: string;
   full_name: string;

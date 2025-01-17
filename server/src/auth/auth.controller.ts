@@ -20,12 +20,12 @@ import { ResponseFormat } from '../interface';
 import { TLoginResponse } from 'src/interface/auth';
 import { use } from 'passport';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { TemporaryEmployee } from 'src/schema/temporary-employees.schema';
 import { CreateTempEmployeeDto } from './dto/create-temp-employee.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { Role } from './enum/roles.enum';
 import { RolesGuard } from './guard/roles.guard';
 import { Roles } from './decorator/roles.decorator';
+import e from 'express';
 
 @Controller('/auth')
 export class AuthController {
@@ -53,17 +53,17 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async createTempEmployee(
     @Body() createTempEmployeeDto: CreateTempEmployeeDto,
-  ): Promise<ResponseFormat<TemporaryEmployee>> {
+  ): Promise<ResponseFormat<Employee[]>> {
     return this.authService.createTempEmpolyee(createTempEmployeeDto);
   }
 
-  @Get('get-temp-employee')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async findAllTempUsers(): Promise<ResponseFormat<TemporaryEmployee[]>> {
-    return this.authService.findAllTemporaryEmployee();
-  }
+  // @Get('get-temp-employee')
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles(Role.ADMIN)
+  // @HttpCode(HttpStatus.OK)
+  // async findAllTempUsers(): Promise<ResponseFormat<T>> {
+  //   return this.authService.findAllTemporaryEmployee();
+  // }
 
   @Post('create-user')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -91,7 +91,7 @@ export class AuthController {
   async updatePassword(
     @Body()
     ChangePasswordDto: ChangePasswordDto,
-  ): Promise<ResponseFormat<User>> {
+  ): Promise<ResponseFormat<User[]>> {
     return this.authService.changePassword(ChangePasswordDto);
   }
 

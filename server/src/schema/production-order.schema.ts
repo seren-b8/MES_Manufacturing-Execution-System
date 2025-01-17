@@ -98,6 +98,9 @@ export class ProductionOrder extends Document {
 
   @Prop({ default: null })
   condition_amount: number;
+
+  @Prop({ default: false })
+  assign_stage: boolean;
 }
 
 export const ProductionOrderSchema =

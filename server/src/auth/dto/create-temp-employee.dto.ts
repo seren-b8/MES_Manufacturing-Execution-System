@@ -1,4 +1,5 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsString } from 'class-validator';
+import { deflate } from 'zlib';
 
 export class CreateTempEmployeeDto {
   @IsNotEmpty()
@@ -31,5 +32,13 @@ export class CreateTempEmployeeDto {
 
   @IsNotEmpty()
   @IsString()
-  jobs_start_date: string;
+  department: string;
+
+  @IsNotEmpty()
+  @IsString()
+  resign_status: string;
+
+  @IsNotEmpty()
+  @IsString()
+  job_start: string;
 }

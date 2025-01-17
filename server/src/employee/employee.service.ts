@@ -3,8 +3,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/interface';
 import { Employee } from 'src/schema/employee.schema';
-import { TemporaryEmployee } from 'src/schema/temporary-employees.schema';
 import { SqlService } from 'src/shared/services/sql.service';
+import e from 'express';
+import { formatDate } from 'src/shared/utils/date.utils';
 
 @Injectable()
 export class EmployeeService {
@@ -13,8 +14,6 @@ export class EmployeeService {
 
   constructor(
     @InjectModel(Employee.name) private readonly employeeModel: Model<Employee>,
-    @InjectModel(TemporaryEmployee.name)
-    private readonly temporaryEmployeeModel: Model<TemporaryEmployee>,
     @Inject(SqlService) private readonly sqlService: SqlService,
   ) {}
 
@@ -29,8 +28,9 @@ export class EmployeeService {
       position: sqlEmployee.Position || null,
       company_code: sqlEmployee.Company_Code || null,
       resign_status: sqlEmployee.ResignStatus || null,
-      job_start: sqlEmployee.JobStart || null,
+      job_start: formatDate(sqlEmployee.JobStart) || null,
       updated_at: new Date(),
+      is_temporary: 'false',
     };
   }
 
@@ -114,10 +114,14 @@ export class EmployeeService {
         // Remove employees not in SQL
         this.employeeModel.deleteMany({
           employee_id: { $nin: Array.from(sqlEmployeeIds) },
+          is_temporary: { $eq: 'false' },
         }),
         // Remove matching temporary employees
-        this.temporaryEmployeeModel.deleteMany({
-          employee_id: { $in: Array.from(sqlEmployeeIds) },
+        this.employeeModel.deleteMany({
+          employee_id: {
+            $in: Array.from(sqlEmployeeIds),
+          },
+          is_temporary: { $eq: 'true' },
         }),
       ]);
 
@@ -168,15 +172,13 @@ export class EmployeeService {
   async getSyncStatus(): Promise<ResponseFormat<any>> {
     try {
       const startTime = Date.now();
-      const [totalEmployees, totalTemporaryEmployees, lastSyncedEmployee] =
-        await Promise.all([
-          this.employeeModel.countDocuments(),
-          this.temporaryEmployeeModel.countDocuments(),
-          this.employeeModel
-            .findOne({}, { updated_at: 1 })
-            .sort({ updated_at: -1 })
-            .lean(),
-        ]);
+      const [totalEmployees, totalTemporaryEmployees] = await Promise.all([
+        this.employeeModel.countDocuments(),
+        this.employeeModel
+          .findOne({}, { updated_at: 1 })
+          .sort({ updated_at: -1 })
+          .lean(),
+      ]);
 
       return {
         status: 'success',
@@ -184,7 +186,6 @@ export class EmployeeService {
         data: {
           totalEmployees,
           totalTemporaryEmployees,
-          lastSyncDate: lastSyncedEmployee?.updated_at,
           retrievalTime: Date.now() - startTime,
         },
       };

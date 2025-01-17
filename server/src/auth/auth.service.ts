@@ -1,13 +1,5 @@
-import { TemporaryEmployee } from './../schema/temporary-employees.schema';
 import { Employee } from './../schema/employee.schema';
-import {
-  Injectable,
-  ConflictException,
-  BadRequestException,
-  HttpStatus,
-  HttpException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, HttpStatus, HttpException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -22,7 +14,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateTempEmployeeDto } from './dto/create-temp-employee.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
-import e from 'express';
+import { use } from 'passport';
 
 @Injectable()
 export class AuthService {
@@ -32,8 +24,6 @@ export class AuthService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Employee.name) private employeeModel: Model<Employee>,
-    @InjectModel(TemporaryEmployee.name)
-    private temporaryEmployeeModel: Model<TemporaryEmployee>,
 
     private readonly httpService: HttpService,
     private readonly jwtService: JwtService,
@@ -50,9 +40,7 @@ export class AuthService {
       );
 
       // Step 2: Find user data
-      const { user, employee, temporaryEmployee } = await this.findUserData(
-        loginDto.employee_id,
-      );
+      const { user, employee } = await this.findUserData(loginDto.employee_id);
 
       // Step 3: Create user if doesn't exist
       let currentUser: any = user;
@@ -60,7 +48,7 @@ export class AuthService {
         throw new HttpException(
           {
             status: 'error',
-            message: 'User not found',
+            message: 'empolyee id or password is incorrect',
             data: [],
           },
           HttpStatus.UNAUTHORIZED,
@@ -88,7 +76,7 @@ export class AuthService {
       if (externalAuth.success || passwordMatch) {
         return this.handleSuccessfulAuth(
           currentUser,
-          employee || temporaryEmployee,
+          employee,
           loginDto.password,
           hashedPassword,
           externalAuth.success,
@@ -98,7 +86,7 @@ export class AuthService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Invalid credentials',
+          message: 'empolyee id or password is incorrect',
           data: [],
         },
         HttpStatus.UNAUTHORIZED,
@@ -173,10 +161,24 @@ export class AuthService {
 
   async createTempEmpolyee(
     createTempEmployeeDto: CreateTempEmployeeDto,
-  ): Promise<ResponseFormat<TemporaryEmployee>> {
+  ): Promise<ResponseFormat<Employee[]>> {
     try {
-      const employee = await this.employeeModel.findOne({
+      const TemporaryEmployeeData = {
         employee_id: createTempEmployeeDto.employee_id,
+        prior_name: createTempEmployeeDto.prior_name,
+        first_name: createTempEmployeeDto.first_name,
+        last_name: createTempEmployeeDto.last_name,
+        section: createTempEmployeeDto.section,
+        department: createTempEmployeeDto.department,
+        position: createTempEmployeeDto.position,
+        company_code: createTempEmployeeDto.company_code,
+        resign_status: createTempEmployeeDto.resign_status,
+        job_start: createTempEmployeeDto.job_start,
+        is_temporary: 'true',
+      };
+
+      const employee = await this.employeeModel.findOne({
+        employee_id: TemporaryEmployeeData.employee_id,
       });
 
       if (employee) {
@@ -190,28 +192,13 @@ export class AuthService {
         );
       }
 
-      const tempEmployee = await this.temporaryEmployeeModel.findOne({
-        employee_id: createTempEmployeeDto.employee_id,
-      });
-
-      if (tempEmployee) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Employee already exists',
-            data: [],
-          },
-          HttpStatus.CONFLICT,
-        );
-      }
-
-      const newTempEmployee = await this.temporaryEmployeeModel.create(
-        createTempEmployeeDto,
+      const newTempEmployee = await this.employeeModel.create(
+        TemporaryEmployeeData,
       );
       return {
         status: 'success',
         message: 'Temporary employee created successfully',
-        data: newTempEmployee,
+        data: [newTempEmployee],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -228,76 +215,18 @@ export class AuthService {
     }
   }
 
-  async findAllTemporaryEmployee(): Promise<
-    ResponseFormat<TemporaryEmployee[]>
-  > {
-    try {
-      const employees = await this.temporaryEmployeeModel.aggregate([
-        {
-          $lookup: {
-            from: 'users', // collection name
-            localField: 'employee_id', // field from employee collection
-            foreignField: 'employee_id', // field from users collection
-            as: 'user_data', // alias for the joined data
-          },
-        },
-        {
-          $unwind: {
-            path: '$user_data',
-            preserveNullAndEmptyArrays: true, // keep employees even if they don't have user accounts
-          },
-        },
-        {
-          $project: {
-            employee_id: 1,
-            prior_name: 1,
-            first_name: 1,
-            last_name: 1,
-            section: 1,
-            department: 1,
-            position: 1,
-            company_code: 1,
-            resign_status: 1,
-            job_start: 1,
-            role: {
-              $ifNull: ['$user_data.role', null], // MongoDB's way of handling null coalescing
-            }, // include user role
-            // exclude password for security
-          },
-        },
-      ]);
-      return {
-        status: 'success',
-        message: 'Users retrieved successfully',
-        data: employees,
-      };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
-      }
-      return {
-        status: 'error',
-        message: 'Failed to retrieve users',
-        data: [],
-      };
-    }
-  }
-
   async updateUser(
     updateData: Partial<UpdateRoleDto>,
   ): Promise<ResponseFormat<Partial<User>[]>> {
     try {
-      const [user, employee, temporaryEmployee] = await Promise.all([
+      const [user, employee] = await Promise.all([
         this.userModel.findOne({ employee_id: updateData.employee_id }),
         this.employeeModel.findOne({
           employee_id: updateData.employee_id,
         }),
-        this.temporaryEmployeeModel.findOne({
-          employee_id: updateData.employee_id,
-        }),
       ]);
 
-      if (!employee && !temporaryEmployee) {
+      if (!employee) {
         throw new HttpException(
           {
             status: 'error',
@@ -365,7 +294,7 @@ export class AuthService {
 
   async changePassword(
     ChangePasswordDto: ChangePasswordDto,
-  ): Promise<ResponseFormat<User>> {
+  ): Promise<ResponseFormat<User[]>> {
     try {
       const user = await this.userModel.findOne({
         employee_id: ChangePasswordDto.employee_id,
@@ -439,7 +368,7 @@ export class AuthService {
       return {
         status: 'success',
         message: 'Password updated successfully',
-        data: updateUser,
+        data: [updateUser],
       };
 
       // return this.userModel.findByIdAndUpdate
@@ -504,18 +433,15 @@ export class AuthService {
   ): Promise<ResponseFormat<Partial<User>[]>> {
     try {
       // Check employee and temporary employee
-      const [employee, temporaryEmployee] = await Promise.all([
-        this.employeeModel.findOne({ employee_id: CreateUserDto.employee_id }),
-        this.temporaryEmployeeModel.findOne({
-          employee_id: CreateUserDto.employee_id,
-        }),
-      ]);
+      const employee = await this.employeeModel.findOne({
+        employee_id: CreateUserDto.employee_id,
+      });
 
-      if (!employee && !temporaryEmployee) {
+      if (!employee) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'Employee not found',
+            message: 'empolyee id or password is incorrect',
             data: [],
           },
           HttpStatus.NOT_FOUND,
@@ -614,32 +540,31 @@ export class AuthService {
   }
 
   private async findUserData(employeeId: string) {
-    const [user, employee, temporaryEmployee] = await Promise.all([
+    const [user, employee] = await Promise.all([
       this.userModel.findOne({ employee_id: employeeId }),
       this.employeeModel.findOne({
         employee_id: employeeId,
       }),
-      this.temporaryEmployeeModel.findOne({ employee_id: employeeId }),
     ]);
 
-    if (!employee && !temporaryEmployee) {
+    if (!employee) {
       // console.log(employee, temporaryEmployee, user, employeeId);
       throw new HttpException(
         {
           status: 'error',
-          message: 'User not found in database',
+          message: 'empolyee id or password is incorrect',
           data: [],
         },
         HttpStatus.UNAUTHORIZED,
       );
     }
 
-    return { user, employee, temporaryEmployee };
+    return { user, employee };
   }
 
   private async handleSuccessfulAuth(
     user: any,
-    employee: TemporaryEmployee | Employee,
+    employee: Employee,
     password: string,
     hashedPassword: string,
     isExternalAuth: boolean,
@@ -658,6 +583,7 @@ export class AuthService {
       // console.log('Password updated in local database');
     }
     const loginResponse: TLoginResponse = {
+      user_id: user._id,
       employee_id: user.employee_id,
       role: user.role,
       full_name: `${employee.first_name} ${employee.last_name}`,

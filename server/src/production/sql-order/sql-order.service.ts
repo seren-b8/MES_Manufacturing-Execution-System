@@ -84,10 +84,11 @@ export class SqlOrderService {
         show_job: item.Show_Job,
         log_date: item.LogDate,
         condition_amount: null, // ถ้าไม่มีใน SQL ให้เป็น null
+        assign_stage: false, // ถ้าไม่มีใน SQL ให้เป็น null
       }));
 
       // 3. ลบข้อมูลเก่า
-      await this.productionOrderModel.deleteMany({});
+      await this.productionOrderModel.deleteMany({ assign_stage: false });
 
       // 4. บันทึกข้อมูลใหม่
       const result =

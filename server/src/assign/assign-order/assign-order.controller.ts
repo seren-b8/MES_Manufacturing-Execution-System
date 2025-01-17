@@ -27,7 +27,7 @@ export class AssignOrderController {
   @UsePipes(new ValidationPipe({ transform: true }))
   async create(
     @Body() createAssignOrderDto: CreateAssignOrderDto,
-  ): Promise<ResponseFormat<AssignOrder>> {
+  ): Promise<ResponseFormat<AssignOrder[]>> {
     return this.assignOrderService.create(createAssignOrderDto);
   }
 

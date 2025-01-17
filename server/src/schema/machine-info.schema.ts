@@ -18,22 +18,22 @@ export class MachineInfo extends Document {
   @Prop({ default: null })
   work_center: string; // changed from Workcenter
 
-  @Prop({ default: null })
+  @Prop({ default: 'OFF' })
   status: string; // changed from Status
 
-  @Prop({ default: null })
+  @Prop({ default: 0 })
   counter: number; // changed from Counter
 
-  @Prop({ default: null })
+  @Prop({ default: 0 })
   sleep_count: number; // changed from SleepCount
 
-  @Prop({ default: null })
+  @Prop({ default: 0 })
   cycletime: string;
 
-  @Prop({ default: null })
+  @Prop({ default: 0 })
   logtime_count: string; // changed from LogtimeCount
 
-  @Prop({ default: null })
+  @Prop({ default: 0 })
   logtime_status: string; // changed from LogtimeStatus
 
   @Prop({ default: null })

@@ -9,10 +9,6 @@ import { AuthService } from './auth.service';
 import { User, UserSchema } from '../schema/user.schema';
 import { Employee, EmployeeSchema } from 'src/schema/employee.schema';
 import { HttpModule } from '@nestjs/axios';
-import {
-  TemporaryEmployee,
-  TemporaryEmployeeSchema,
-} from 'src/schema/temporary-employees.schema';
 
 @Module({
   imports: [
@@ -22,7 +18,6 @@ import {
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Employee.name, schema: EmployeeSchema },
-      { name: TemporaryEmployee.name, schema: TemporaryEmployeeSchema },
     ]),
     JwtModule.registerAsync({
       useFactory: async (configService: ConfigService) => ({

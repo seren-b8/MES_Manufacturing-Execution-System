@@ -7,11 +7,8 @@ import { Document, Types } from 'mongoose';
 })
 export class AssignEmployee extends Document {
   // Employee Information
-  @Prop({ required: true, index: true })
+  @Prop({ required: true, index: true, ref: 'Employee' })
   employee_id: string;
-
-  @Prop({ required: true })
-  full_name: string;
 
   // Assignment Information
   @Prop({ required: true, index: true })
@@ -24,13 +21,6 @@ export class AssignEmployee extends Document {
   @Prop({ type: Types.ObjectId, required: true, ref: 'AssignOrder' })
   assign_order_id: Types.ObjectId;
 
-  @Prop({ required: true })
-  order_id: string;
-
-  // Timing Information
-  @Prop({ type: Date, required: true })
-  datetime_open_order: Date;
-
   @Prop({ type: Date, default: Date.now })
   log_date: Date;
 
@@ -41,19 +31,6 @@ export class AssignEmployee extends Document {
     default: 'active',
   })
   status: string;
-
-  // Shift Information
-  @Prop({ type: String, default: null })
-  shift: string;
-
-  // Optional Production Context
-  @Prop({ type: Object, default: null })
-  assignment_details: {
-    position?: string;
-    supervisor_id?: string;
-    notes?: string;
-    replacement_for?: string;
-  };
 }
 
 export const AssignEmployeeSchema =

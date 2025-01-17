@@ -28,10 +28,6 @@ import {
   TimelineMachineSchema,
 } from 'src/schema/timeline-machine.schema';
 import { User, UserSchema } from 'src/schema/user.schema';
-import {
-  TemporaryEmployee,
-  TemporaryEmployeeSchema,
-} from 'src/schema/temporary-employees.schema';
 
 @Module({
   imports: [
@@ -45,7 +41,6 @@ import {
     MongooseModule.forFeature([
       { name: Employee.name, schema: EmployeeSchema },
       { name: MasterCavity.name, schema: MasterCavitySchema },
-      { name: TemporaryEmployee.name, schema: TemporaryEmployeeSchema },
     ]),
     MongooseModule.forFeature([
       // { name: ProductionComponent.name, schema: ProductionComponentSchema },
