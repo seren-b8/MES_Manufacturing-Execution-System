@@ -501,7 +501,7 @@ export class AuthService {
   private generateToken(user: User): string {
     const payload = {
       employee_id: user.employee_id,
-      sub: user._id,
+      // sub: user._id,
       role: user.role,
     };
     return this.jwtService.sign(payload);

@@ -5,11 +5,17 @@ import { SqlOrderService } from './sql-order/sql-order.service';
 import { DatabaseModule } from 'src/modules/database/database.module';
 import { ProductionOrderController } from './production-order/production-order.controller';
 import { ProductionOrderService } from './production-order/production-order.service';
+import { ProductionRecordService } from './production-reccord/production-reccord.service';
+import { ProductionRecordController } from './production-reccord/production-reccord.controller';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule],
-  controllers: [SqlOrderController, ProductionOrderController],
-  providers: [SqlOrderService, ProductionOrderService],
-  exports: [SqlOrderService],
+  controllers: [
+    SqlOrderController,
+    ProductionOrderController,
+    ProductionRecordController,
+  ],
+  providers: [SqlOrderService, ProductionOrderService, ProductionRecordService],
+  exports: [SqlOrderService, ProductionOrderService, ProductionRecordService],
 })
 export class ProductionModule {}

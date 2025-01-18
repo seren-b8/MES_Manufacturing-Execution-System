@@ -9,6 +9,8 @@ import {
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
 import { ResponseFormat } from 'src/interface';
+import { AssignOrder } from 'src/schema/assign-order.schema';
+import { MachineInfo } from 'src/schema/machine-info.schema';
 
 @Injectable()
 export class ProductionRecordService {
@@ -19,22 +21,42 @@ export class ProductionRecordService {
     private assignEmployeeModel: Model<AssignEmployee>,
     @InjectModel('MasterNotGood')
     private masterNotGoodModel: Model<MasterNotGood>,
+    @InjectModel(AssignOrder.name)
+    private assignOrderModel: Model<AssignOrder>,
   ) {}
+  @InjectModel('MachineInfo')
+  private machineInfoModel: Model<MachineInfo>;
 
   async create(
     createDto: CreateProductionRecordDto,
   ): Promise<ResponseFormat<ProductionRecord>> {
     try {
       // Check if AssignEmployee exists and is active
-      const assignEmployee = await this.assignEmployeeModel.findById(
-        createDto.assign_employee_id,
+      const assignEmployee = await this.assignEmployeeModel
+        .findById(createDto.assign_employee_id)
+        .populate('assign_order_id');
+
+      const AssignOrder = await this.assignOrderModel.findById(
+        assignEmployee.assign_order_id,
       );
+
+      if (!AssignOrder) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'AssignOrder not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
       if (!assignEmployee || assignEmployee.status !== 'active') {
         throw new HttpException(
           {
             status: 'error',
             message: 'AssignEmployee not found or not active',
-            data: [],
+            data: [assignEmployee],
           },
           HttpStatus.BAD_REQUEST,
         );
@@ -49,6 +71,49 @@ export class ProductionRecordService {
             data: [],
           },
           HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Check machine counter if recording good products
+      if (!createDto.is_not_good) {
+        const machine = await this.machineInfoModel.findOne({
+          machine_number: AssignOrder.machine_number,
+        });
+
+        if (!machine) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'Machine not found',
+              data: [],
+            },
+            HttpStatus.NOT_FOUND,
+          );
+        }
+
+        const currentCounter = machine.counter || 0;
+
+        if (createDto.quantity > currentCounter) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: `Cannot record ${createDto.quantity} pieces. Current counter is only ${currentCounter}`,
+              data: [
+                {
+                  machine_number: AssignOrder.machine_number,
+                  requested_quantity: createDto.quantity,
+                  current_counter: currentCounter,
+                },
+              ],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        // Update machine counter after validation
+        await this.machineInfoModel.findOneAndUpdate(
+          { machine_number: AssignOrder.machine_number },
+          { $set: { counter: currentCounter - createDto.quantity } },
         );
       }
 
@@ -100,7 +165,6 @@ export class ProductionRecordService {
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
-
       throw new HttpException(
         {
           status: 'error',
