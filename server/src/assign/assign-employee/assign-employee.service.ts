@@ -3,215 +3,265 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  HttpStatus,
+  HttpException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/interface';
 import { AssignEmployee } from 'src/schema/assign-employee.schema';
-import { QueryAssignEmployeeDto } from '../dto/query-assign-employee.dto';
-import { CreateAssignEmployeeDto } from '../dto/create-assign-eployee.dto';
-import { UpdateAssignEmployeeDto } from '../dto/update-assign-employee.dto';
+import {
+  CreateAssignEmployeeDto,
+  UpdateAssignEmployeeDto,
+} from '../dto/assign-employee.dto';
+import { User } from 'src/schema/user.schema';
+import { AssignOrder } from 'src/schema/assign-order.schema';
 
 @Injectable()
 export class AssignEmployeeService {
   constructor(
-    @InjectModel(AssignEmployee.name)
+    @InjectModel('AssignEmployee')
     private assignEmployeeModel: Model<AssignEmployee>,
+    @InjectModel('User') private userModel: Model<User>,
+    @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
   ) {}
 
-  async createAssignment(
+  async create(
     createDto: CreateAssignEmployeeDto,
-  ): Promise<ResponseFormat<any>> {
+  ): Promise<ResponseFormat<AssignEmployee>> {
     try {
-      // Check for existing active assignment
-      const existingAssignment = await this.assignEmployeeModel.findOne({
-        employee_id: createDto.employee_id,
-        status: 'active',
-        assign_order_id: createDto.assign_order_id,
-      });
-
-      if (existingAssignment) {
-        throw new BadRequestException(
-          'Employee already has an active assignment',
+      // Check if user exists and is active
+      const user = await this.userModel.findById(createDto.user_id);
+      if (!user) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'User not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
         );
       }
 
-      const assignment = new this.assignEmployeeModel({
-        ...createDto,
-        datetime_open_order: new Date(),
+      // Check if assign order exists and is active
+      const assignOrder = await this.assignOrderModel.findById(
+        createDto.assign_order_id,
+      );
+      if (!assignOrder || assignOrder.status !== 'active') {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Assign order not found or not active',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Check if user is already assigned to an active order
+      const existingAssignment = await this.assignEmployeeModel.findOne({
+        user_id: createDto.user_id,
         status: 'active',
       });
 
-      await assignment.save();
+      if (existingAssignment) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'User is already assigned to an active order',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Create new assignment
+      const newAssignment = new this.assignEmployeeModel({
+        ...createDto,
+        status: 'active',
+        log_date: new Date(),
+      });
+
+      const savedAssignment = await newAssignment.save();
 
       return {
         status: 'success',
-        message: 'Assignment created successfully',
-        data: assignment,
+        message: 'Employee assigned successfully',
+        data: [savedAssignment],
       };
     } catch (error) {
-      return {
-        status: 'error',
-        message: error.message || 'Failed to create assignment',
-        data: null,
-      };
-    }
-  }
-
-  async findAll(
-    queryDto: QueryAssignEmployeeDto,
-  ): Promise<ResponseFormat<any>> {
-    try {
-      const query: any = {};
-
-      // Build query based on provided filters
-      if (queryDto.status) {
-        query.status = queryDto.status;
-      }
-      if (queryDto.work_center) {
-        query.work_center = queryDto.work_center;
-      }
-      if (queryDto.machine_number) {
-        query.machine_number = queryDto.machine_number;
-      }
-      if (queryDto.employee_id) {
-        query.employee_id = queryDto.employee_id;
+      if (error instanceof HttpException) {
+        throw error;
       }
 
-      const assignments = await this.assignEmployeeModel
-        .find(query)
-        .sort({ datetime_open_order: -1 })
-        .limit(queryDto.limit || 10)
-        .skip(queryDto.skip || 0);
-
-      const total = await this.assignEmployeeModel.countDocuments(query);
-
-      return {
-        status: 'success',
-        message: 'Assignments retrieved successfully',
-        data: {
-          assignments,
-          total,
-          page: Math.floor((queryDto.skip || 0) / (queryDto.limit || 10)) + 1,
-          pages: Math.ceil(total / (queryDto.limit || 10)),
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to assign employee',
+          data: [],
         },
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        message: 'Failed to retrieve assignments',
-        data: [],
-      };
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
-  async findOne(id: string): Promise<ResponseFormat<any>> {
+  async findByAssignOrder(
+    assignOrderId: string,
+  ): Promise<ResponseFormat<AssignEmployee>> {
     try {
-      const assignment = await this.assignEmployeeModel.findById(id);
-      if (!assignment) {
-        throw new NotFoundException('Assignment not found');
-      }
+      const assignments = await this.assignEmployeeModel
+        .find({ assign_order_id: assignOrderId })
+        .sort({ log_date: -1 });
 
       return {
         status: 'success',
-        message: 'Assignment retrieved successfully',
-        data: assignment,
+        message: 'Employee assignments retrieved successfully',
+        data: assignments,
       };
     } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to retrieve employee assignments',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async findActiveByUser(
+    userId: string,
+  ): Promise<ResponseFormat<AssignEmployee>> {
+    try {
+      const assignment = await this.assignEmployeeModel.findOne({
+        user_id: userId,
+        status: 'active',
+      });
+
       return {
-        status: 'error',
-        message: error.message || 'Failed to retrieve assignment',
-        data: [],
+        status: 'success',
+        message: 'Active assignment retrieved successfully',
+        data: assignment ? [assignment] : [],
       };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to retrieve active assignment',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
   async update(
     id: string,
     updateDto: UpdateAssignEmployeeDto,
-  ): Promise<ResponseFormat<any>> {
+  ): Promise<ResponseFormat<AssignEmployee>> {
     try {
       const assignment = await this.assignEmployeeModel.findById(id);
       if (!assignment) {
-        throw new NotFoundException('Assignment not found');
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Assignment not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
       }
 
-      // Prevent updating completed assignments
-      if (assignment.status === 'completed') {
-        throw new BadRequestException('Cannot update completed assignment');
-      }
-
-      const updatedAssignment =
-        await this.assignEmployeeModel.findByIdAndUpdate(id, updateDto, {
-          new: true,
-        });
-
-      return {
-        status: 'success',
-        message: 'Assignment updated successfully',
-        data: updatedAssignment,
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        message: error.message || 'Failed to update assignment',
-        data: [],
-      };
-    }
-  }
-
-  async updateStatus(id: string, status: string): Promise<ResponseFormat<any>> {
-    try {
-      const assignment = await this.assignEmployeeModel.findById(id);
-      if (!assignment) {
-        throw new NotFoundException('Assignment not found');
-      }
-
-      if (assignment.status === status) {
-        throw new BadRequestException(`Assignment is already ${status}`);
+      // Validate status transition
+      if (
+        updateDto.status &&
+        !this.isValidStatusTransition(assignment.status, updateDto.status)
+      ) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Invalid status transition',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
       }
 
       const updatedAssignment =
         await this.assignEmployeeModel.findByIdAndUpdate(
           id,
-          { status },
+          { $set: updateDto },
           { new: true },
         );
 
       return {
         status: 'success',
-        message: `Assignment ${status} successfully`,
-        data: updatedAssignment,
+        message: 'Assignment updated successfully',
+        data: [updatedAssignment],
       };
     } catch (error) {
-      return {
-        status: 'error',
-        message: error.message || 'Failed to update assignment status',
-        data: [],
-      };
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to update assignment',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
-  async remove(id: string): Promise<ResponseFormat<any>> {
-    try {
-      const assignment = await this.assignEmployeeModel.findById(id);
-      if (!assignment) {
-        throw new NotFoundException('Assignment not found');
-      }
+  private isValidStatusTransition(
+    currentStatus: string,
+    newStatus: string,
+  ): boolean {
+    const validTransitions = {
+      active: ['completed', 'suspended'],
+      suspended: ['active', 'completed'],
+      completed: [],
+    };
 
-      await this.assignEmployeeModel.findByIdAndDelete(id);
+    return validTransitions[currentStatus]?.includes(newStatus);
+  }
+
+  async closeByAssignOrder(
+    assignOrderId: string,
+  ): Promise<ResponseFormat<AssignEmployee>> {
+    try {
+      const activeAssignments = await this.assignEmployeeModel.find({
+        assign_order_id: assignOrderId,
+        status: 'active',
+      });
+
+      const updatePromises = activeAssignments.map((assignment) =>
+        this.assignEmployeeModel.findByIdAndUpdate(
+          assignment._id,
+          { $set: { status: 'completed' } },
+          { new: true },
+        ),
+      );
+
+      const updatedAssignments = await Promise.all(updatePromises);
 
       return {
         status: 'success',
-        message: 'Assignment deleted successfully',
-        data: [],
+        message: 'Assignments closed successfully',
+        data: updatedAssignments,
       };
     } catch (error) {
-      return {
-        status: 'error',
-        message: error.message || 'Failed to delete assignment',
-        data: [],
-      };
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to close assignments',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

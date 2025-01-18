@@ -133,11 +133,13 @@ export class EmployeeService {
       return {
         status: 'success',
         message: `Successfully synced ${syncedCount} employees in ${duration}ms`,
-        data: {
-          syncedCount,
-          duration,
-          errors: errors.length > 0 ? errors : undefined,
-        },
+        data: [
+          {
+            syncedCount,
+            duration,
+            errors: errors.length > 0 ? errors : undefined,
+          },
+        ],
       };
     } catch (error) {
       this.logger.error('Sync failed:', error.stack);
@@ -183,11 +185,13 @@ export class EmployeeService {
       return {
         status: 'success',
         message: 'Sync status retrieved successfully',
-        data: {
-          totalEmployees,
-          totalTemporaryEmployees,
-          retrievalTime: Date.now() - startTime,
-        },
+        data: [
+          {
+            totalEmployees,
+            totalTemporaryEmployees,
+            retrievalTime: Date.now() - startTime,
+          },
+        ],
       };
     } catch (error) {
       this.logger.error('Error getting sync status:', error.stack);
@@ -219,16 +223,18 @@ export class EmployeeService {
       return {
         status: 'success',
         message: 'Validation completed successfully',
-        data: {
-          isValid: missingInMongo.length === 0 && extraInMongo.length === 0,
-          sqlCount: sqlIds.size,
-          mongoCount: mongoIds.size,
-          discrepancy: Math.abs(sqlIds.size - mongoIds.size),
-          missingInMongo:
-            missingInMongo.length > 0 ? missingInMongo : undefined,
-          extraInMongo: extraInMongo.length > 0 ? extraInMongo : undefined,
-          validationTime: Date.now() - startTime,
-        },
+        data: [
+          {
+            isValid: missingInMongo.length === 0 && extraInMongo.length === 0,
+            sqlCount: sqlIds.size,
+            mongoCount: mongoIds.size,
+            discrepancy: Math.abs(sqlIds.size - mongoIds.size),
+            missingInMongo:
+              missingInMongo.length > 0 ? missingInMongo : undefined,
+            extraInMongo: extraInMongo.length > 0 ? extraInMongo : undefined,
+            validationTime: Date.now() - startTime,
+          },
+        ],
       };
     } catch (error) {
       this.logger.error('Validation failed:', error.stack);

@@ -10,9 +10,6 @@ export class AssignEmployee extends Document {
   @Prop({ type: Types.ObjectId, required: true, index: true, ref: 'User' })
   user_id: Types.ObjectId;
 
-  @Prop({ required: true })
-  work_center: string;
-
   // Order References
   @Prop({ type: Types.ObjectId, required: true, ref: 'AssignOrder' })
   assign_order_id: Types.ObjectId;

@@ -192,13 +192,11 @@ export class AuthService {
         );
       }
 
-      const newTempEmployee = await this.employeeModel.create(
-        TemporaryEmployeeData,
-      );
+      await this.employeeModel.create(TemporaryEmployeeData);
       return {
         status: 'success',
         message: 'Temporary employee created successfully',
-        data: [newTempEmployee],
+        data: [],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -263,17 +261,17 @@ export class AuthService {
         );
       }
 
-      const userWithoutPassword = {
-        _id: updateUser._id,
-        employee_id: updateUser.employee_id,
-        role: updateUser.role,
-        external_auth: updateUser.external_auth,
-      };
+      // const userWithoutPassword = {
+      //   _id: updateUser._id,
+      //   employee_id: updateUser.employee_id,
+      //   role: updateUser.role,
+      //   external_auth: updateUser.external_auth,
+      // };
 
       return {
         status: 'success',
         message: 'User updated successfully',
-        data: [userWithoutPassword],
+        data: [],
       };
 
       // return this.userModel.findByIdAndUpdate
@@ -368,7 +366,7 @@ export class AuthService {
       return {
         status: 'success',
         message: 'Password updated successfully',
-        data: [updateUser],
+        data: [],
       };
 
       // return this.userModel.findByIdAndUpdate
@@ -387,34 +385,34 @@ export class AuthService {
     }
   }
 
-  async deleteUser(id: string): Promise<ResponseFormat<any>> {
-    try {
-      const result = await this.userModel.deleteOne({ _id: id });
+  // async deleteUser(id: string): Promise<ResponseFormat<any>> {
+  //   try {
+  //     const result = await this.userModel.deleteOne({ _id: id });
 
-      if (result.deletedCount === 0) {
-        return {
-          status: 'error',
-          message: 'User not found',
-          data: null,
-        };
-      }
+  //     if (result.deletedCount === 0) {
+  //       return {
+  //         status: 'error',
+  //         message: 'User not found',
+  //         data: null,
+  //       };
+  //     }
 
-      return {
-        status: 'success',
-        message: 'User deleted successfully',
-        data: result,
-      };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
-      }
-      return {
-        status: 'error',
-        message: 'Failed to delete user',
-        data: null,
-      };
-    }
-  }
+  //     return {
+  //       status: 'success',
+  //       message: 'User deleted successfully',
+  //       data: [result],
+  //     };
+  //   } catch (error) {
+  //     if (error instanceof HttpException) {
+  //       throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+  //     }
+  //     return {
+  //       status: 'error',
+  //       message: 'Failed to delete user',
+  //       data: null,
+  //     };
+  //   }
+  // }
 
   private async hashPassword(password: string): Promise<string> {
     const saltRounds = 10;
@@ -471,12 +469,14 @@ export class AuthService {
         external_auth: false,
       });
 
-      const userWithoutPassword = {
-        _id: newUser._id,
-        employee_id: newUser.employee_id,
-        role: newUser.role,
-        external_auth: newUser.external_auth,
-      };
+      const userWithoutPassword = [
+        {
+          _id: newUser._id,
+          employee_id: newUser.employee_id,
+          role: newUser.role,
+          external_auth: newUser.external_auth,
+        },
+      ];
 
       return {
         status: 'success',
@@ -582,15 +582,17 @@ export class AuthService {
       });
       // console.log('Password updated in local database');
     }
-    const loginResponse: TLoginResponse = {
-      user_id: user._id,
-      employee_id: user.employee_id,
-      role: user.role,
-      full_name: `${employee.first_name} ${employee.last_name}`,
-      position: employee.position,
-      external_auth: user.external_auth,
-      token,
-    };
+    const loginResponse: TLoginResponse[] = [
+      {
+        user_id: user._id,
+        employee_id: user.employee_id,
+        role: user.role,
+        full_name: `${employee.first_name} ${employee.last_name}`,
+        position: employee.position,
+        external_auth: user.external_auth,
+        token,
+      },
+    ];
     return {
       status: 'success',
       message: `Login successful (${isExternalAuth ? 'external' : 'local'} auth)`,

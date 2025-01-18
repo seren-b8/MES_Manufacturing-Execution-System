@@ -12,16 +12,17 @@ import {
   ValidationPipe,
   UsePipes,
   Put,
+  UseGuards,
 } from '@nestjs/common';
 import { AssignOrderService } from './assign-order.service';
-import { AssignOrder } from 'src/schema/assign-order.schema';
-import { ResponseFormat } from 'src/interface';
 import {
   CreateAssignOrderDto,
   UpdateAssignOrderDto,
 } from '../dto/assign-order.dto';
+import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 
 @Controller('/assign-orders')
+@UseGuards(JwtAuthGuard)
 export class AssignOrderController {
   constructor(private readonly assignOrderService: AssignOrderService) {}
 

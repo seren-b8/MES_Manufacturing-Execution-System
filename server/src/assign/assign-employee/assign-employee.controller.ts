@@ -11,59 +11,41 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { AssignEmployeeService } from './assign-employee.service';
-import { ResponseFormat } from 'src/interface';
-import { QueryAssignEmployeeDto } from '../dto/query-assign-employee.dto';
-import { UpdateAssignEmployeeDto } from '../dto/update-assign-employee.dto';
-import { CreateAssignEmployeeDto } from '../dto/create-assign-eployee.dto';
+import {
+  CreateAssignEmployeeDto,
+  UpdateAssignEmployeeDto,
+} from '../dto/assign-employee.dto';
 
 @Controller('/assign-employee')
-// @UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 export class AssignEmployeeController {
   constructor(private readonly assignEmployeeService: AssignEmployeeService) {}
 
   @Post()
-  async createAssignment(
-    @Body() createDto: CreateAssignEmployeeDto,
-  ): Promise<ResponseFormat<any>> {
-    return this.assignEmployeeService.createAssignment(createDto);
+  async create(@Body() createDto: CreateAssignEmployeeDto) {
+    return await this.assignEmployeeService.create(createDto);
   }
 
-  @Get()
-  async findAll(
-    @Query() queryDto: QueryAssignEmployeeDto,
-  ): Promise<ResponseFormat<any>> {
-    return this.assignEmployeeService.findAll(queryDto);
+  @Get('order/:assignOrderId')
+  async findByAssignOrder(@Param('assignOrderId') assignOrderId: string) {
+    return await this.assignEmployeeService.findByAssignOrder(assignOrderId);
   }
 
-  @Get(':id')
-  async findOne(@Param('id') id: string): Promise<ResponseFormat<any>> {
-    return this.assignEmployeeService.findOne(id);
+  @Get('user/:userId/active')
+  async findActiveByUser(@Param('userId') userId: string) {
+    return await this.assignEmployeeService.findActiveByUser(userId);
   }
 
   @Put(':id')
   async update(
     @Param('id') id: string,
     @Body() updateDto: UpdateAssignEmployeeDto,
-  ): Promise<ResponseFormat<any>> {
-    return this.assignEmployeeService.update(id, updateDto);
+  ) {
+    return await this.assignEmployeeService.update(id, updateDto);
   }
 
-  @Delete(':id')
-  async remove(@Param('id') id: string): Promise<ResponseFormat<any>> {
-    return this.assignEmployeeService.remove(id);
-  }
-
-  @Put(':id/complete')
-  async completeAssignment(
-    @Param('id') id: string,
-  ): Promise<ResponseFormat<any>> {
-    return this.assignEmployeeService.updateStatus(id, 'completed');
-  }
-
-  @Put(':id/suspend')
-  async suspendAssignment(
-    @Param('id') id: string,
-  ): Promise<ResponseFormat<any>> {
-    return this.assignEmployeeService.updateStatus(id, 'suspended');
+  @Put('order/:assignOrderId/close')
+  async closeByAssignOrder(@Param('assignOrderId') assignOrderId: string) {
+    return await this.assignEmployeeService.closeByAssignOrder(assignOrderId);
   }
 }

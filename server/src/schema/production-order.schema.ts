@@ -99,7 +99,7 @@ export class ProductionOrder extends Document {
   @Prop({ default: null })
   condition_amount: number;
 
-  @Prop({ default: false })
+  @Prop({ default: false, type: Boolean })
   assign_stage: boolean;
 }
 

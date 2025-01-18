@@ -95,11 +95,11 @@ export class AuthController {
     return this.authService.changePassword(ChangePasswordDto);
   }
 
-  @Delete('delete-users/:id')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
-  async deleteUser(@Param('id') id: string): Promise<ResponseFormat<any>> {
-    return this.authService.deleteUser(id);
-  }
+  // @Delete('delete-users/:id')
+  // @HttpCode(HttpStatus.OK)
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles(Role.ADMIN)
+  // async deleteUser(@Param('id') id: string): Promise<ResponseFormat<any>> {
+  //   return this.authService.deleteUser(id);
+  // }
 }

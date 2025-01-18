@@ -19,21 +19,40 @@ import {
 } from '../dto/assign-order.dto';
 import { ResponseFormat } from 'src/interface';
 import { AssignOrder } from 'src/schema/assign-order.schema';
+import { ProductionOrder } from 'src/schema/production-order.schema';
 
 @Injectable()
 export class AssignOrderService {
   constructor(
     @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
+    @InjectModel('ProductionOrder')
+    private productionOrderModel: Model<ProductionOrder>,
   ) {}
 
   async create(
     createDto: CreateAssignOrderDto,
   ): Promise<ResponseFormat<AssignOrder>> {
     try {
+      const assignOrder = await this.assignOrderModel.findOne({
+        machine_number: createDto.machine_number,
+        status: 'active',
+      });
+
+      if (assignOrder) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine is already assigned to an order',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       const newAssignOrder = new this.assignOrderModel({
         ...createDto,
         datetime_open_order: new Date(),
-        status: 'pending',
+        status: 'active',
         current_summary: {
           total_good_quantity: 0,
           total_not_good_quantity: 0,
@@ -43,12 +62,20 @@ export class AssignOrderService {
 
       const savedOrder = await newAssignOrder.save();
 
+      await this.productionOrderModel.findByIdAndUpdate(
+        createDto.production_order_id,
+        { assign_stage: true },
+      );
+
       return {
         status: 'success',
         message: 'Assign order created successfully',
         data: [savedOrder],
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         {
           status: 'error',
