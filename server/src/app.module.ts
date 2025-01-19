@@ -11,11 +11,26 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { databaseConfig } from './config/database.config';
 
+const validateConfig = (config: Record<string, unknown>) => {
+  const requiredKeys = ['SECRET_KEY'];
+  const missingKeys = requiredKeys.filter((key) => !config[key]);
+
+  if (missingKeys.length > 0) {
+    throw new Error(
+      `Missing required environment variables: ${missingKeys.join(', ')}`,
+    );
+  }
+  return config;
+};
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       load: [databaseConfig],
+      validate: validateConfig,
+      envFilePath: '.env',
+      cache: true,
     }),
     DatabaseModule,
     MongooseSchemaModule,
@@ -28,4 +43,9 @@ import { databaseConfig } from './config/database.config';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule {
+  constructor() {
+    // เพิ่ม logging เพื่อยืนยันการโหลด configuration
+    console.log('Application configuration loaded successfully');
+  }
+}

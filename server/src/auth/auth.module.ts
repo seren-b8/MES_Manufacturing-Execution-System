@@ -12,23 +12,62 @@ import { HttpModule } from '@nestjs/axios';
 
 @Module({
   imports: [
-    PassportModule,
+    // กำหนด default strategy เป็น jwt
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+
     HttpModule,
-    // เพิ่ม MongooseModule.forFeature
+
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Employee.name, schema: EmployeeSchema },
     ]),
+
     JwtModule.registerAsync({
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('SECRET_KEY'),
-        signOptions: { expiresIn: '1d' },
-      }),
+      useFactory: async (configService: ConfigService) => {
+        const secret = configService.get<string>('SECRET_KEY');
+
+        // เพิ่มการตรวจสอบ secret
+        if (!secret) {
+          throw new Error('JWT SECRET_KEY is not defined');
+        }
+
+        // Log การตั้งค่าเพื่อการตรวจสอบ
+        console.log('JWT Module Configuration:', {
+          hasSecret: !!secret,
+          secretLength: secret.length,
+          expiresIn: '1d',
+        });
+
+        return {
+          secret,
+          signOptions: {
+            expiresIn: '1d',
+            algorithm: 'HS256', // ระบุ algorithm ที่ใช้
+          },
+          verifyOptions: {
+            algorithms: ['HS256'], // ระบุ algorithm ที่ยอมรับ
+          },
+        };
+      },
       inject: [ConfigService],
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    // เพิ่ม ConfigService เพื่อให้เข้าถึงได้ทั่วทั้งโมดูล
+    ConfigService,
+  ],
   exports: [AuthService],
 })
-export class AuthModule {}
+export class AuthModule {
+  constructor(private configService: ConfigService) {
+    // ตรวจสอบการตั้งค่าเมื่อโมดูลเริ่มทำงาน
+    const secret = this.configService.get<string>('SECRET_KEY');
+    console.log('AuthModule initialized:', {
+      hasSecret: !!secret,
+      secretLength: secret?.length,
+    });
+  }
+}
