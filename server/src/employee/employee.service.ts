@@ -1,4 +1,10 @@
-import { HttpException, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/interface';
@@ -6,6 +12,9 @@ import { Employee } from 'src/schema/employee.schema';
 import { SqlService } from 'src/shared/services/sql.service';
 import e from 'express';
 import { formatDate } from 'src/shared/utils/date.utils';
+import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
+import { User } from 'src/schema/user.schema';
+import { UserWithEmployeeData } from 'src/interface/employee';
 
 @Injectable()
 export class EmployeeService {
@@ -14,6 +23,7 @@ export class EmployeeService {
 
   constructor(
     @InjectModel(Employee.name) private readonly employeeModel: Model<Employee>,
+    @InjectModel('User') private readonly userModel: Model<User>,
     @Inject(SqlService) private readonly sqlService: SqlService,
   ) {}
 
@@ -245,6 +255,187 @@ export class EmployeeService {
           data: [],
         },
         500,
+      );
+    }
+  }
+
+  async findAllEmployee(): Promise<ResponseFormat<Employee[]>> {
+    try {
+      const employees = await this.employeeModel.aggregate([
+        {
+          $lookup: {
+            from: 'users', // collection name
+            localField: 'employee_id', // field from employee collection
+            foreignField: 'employee_id', // field from users collection
+            as: 'user_data', // alias for the joined data
+          },
+        },
+        {
+          $unwind: {
+            path: '$user_data',
+            preserveNullAndEmptyArrays: true, // keep employees even if they don't have user accounts
+          },
+        },
+        {
+          $project: {
+            employee_id: 1,
+            prior_name: 1,
+            first_name: 1,
+            last_name: 1,
+            section: 1,
+            department: 1,
+            position: 1,
+            company_code: 1,
+            resign_status: 1,
+            job_start: 1,
+            is_temporary: 1,
+            role: {
+              $ifNull: ['$user_data.role', null], // MongoDB's way of handling null coalescing
+            }, // include user role
+            user_id: {
+              $ifNull: ['$user_data._id', null], // include user id
+            },
+            // exclude password for security
+          },
+        },
+      ]);
+      return {
+        status: 'success',
+        message: 'Users retrieved successfully',
+        data: employees,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
+      return {
+        status: 'error',
+        message: 'Failed to retrieve users',
+        data: [],
+      };
+    }
+  }
+
+  async createTempEmpolyee(
+    createTempEmployeeDto: CreateTempEmployeeDto,
+  ): Promise<ResponseFormat<Employee[]>> {
+    try {
+      const TemporaryEmployeeData = {
+        employee_id: createTempEmployeeDto.employee_id,
+        prior_name: createTempEmployeeDto.prior_name,
+        first_name: createTempEmployeeDto.first_name,
+        last_name: createTempEmployeeDto.last_name,
+        section: createTempEmployeeDto.section,
+        department: createTempEmployeeDto.department,
+        position: createTempEmployeeDto.position,
+        company_code: createTempEmployeeDto.company_code,
+        resign_status: createTempEmployeeDto.resign_status,
+        job_start: createTempEmployeeDto.job_start,
+        is_temporary: 'true',
+      };
+
+      const employee = await this.employeeModel.findOne({
+        employee_id: TemporaryEmployeeData.employee_id,
+      });
+
+      if (employee) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Employee already exists',
+            data: [],
+          },
+          HttpStatus.CONFLICT,
+        );
+      }
+
+      await this.employeeModel.create(TemporaryEmployeeData);
+      return {
+        status: 'success',
+        message: 'Temporary employee created successfully',
+        data: [],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to create temporary employee :' + error.message,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async findAllUsers(): Promise<ResponseFormat<UserWithEmployeeData>> {
+    try {
+      const users = await this.employeeModel.aggregate([
+        {
+          $lookup: {
+            from: 'users', // collection name
+            localField: 'employee_id', // field from employee collection
+            foreignField: 'employee_id', // field from users collection
+            as: 'user_data', // alias for the joined data
+          },
+        },
+        {
+          $unwind: {
+            path: '$user_data',
+            preserveNullAndEmptyArrays: false, // keep employees even if they don't have user accounts
+          },
+        },
+        {
+          $project: {
+            employee_id: 1,
+            prior_name: 1,
+            first_name: 1,
+            last_name: 1,
+            position: 1,
+            role: {
+              $ifNull: ['$user_data.role', null], // MongoDB's way of handling null coalescing
+            }, // include user role
+            user_id: {
+              $ifNull: ['$user_data._id', null], // include user id
+            },
+            // exclude password for security
+          },
+        },
+      ]);
+
+      if (!users.length) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'No users found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      return {
+        status: 'success',
+        message: 'Users retrieved successfully',
+        data: users,
+      };
+    } catch (error) {
+      // Log error for monitoring
+      console.error('Error in findAllUsers:', error);
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to retrieve users',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

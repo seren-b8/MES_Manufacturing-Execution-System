@@ -8,13 +8,17 @@ import {
   Param,
   Query,
   HttpException,
+  UseGuards,
 } from '@nestjs/common';
 import { MachineCavityService } from './machine-cavity.service';
 import { ResponseFormat } from 'src/interface';
 import { MasterCavity } from 'src/schema/master-cavity.schema';
 import { CreateMasterCavityDto } from '../dto/create-master-cavity.dto';
+import { use } from 'passport';
+import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 
 @Controller('machine-cavity')
+@UseGuards(JwtAuthGuard)
 export class MachineCavityController {
   constructor(private readonly machineCavityService: MachineCavityService) {}
 

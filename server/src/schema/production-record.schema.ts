@@ -4,6 +4,7 @@ import { Document, Types } from 'mongoose';
 @Schema({
   collection: 'production_records',
   timestamps: true,
+  versionKey: false,
 })
 export class ProductionRecord extends Document {
   @Prop({
@@ -13,6 +14,9 @@ export class ProductionRecord extends Document {
     type: Types.ObjectId,
   })
   assign_employee_id: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'AssignOrder', required: true })
+  assign_order_id: Types.ObjectId; // เพิ่มฟิลด์นี้
 
   @Prop({ required: true, index: true })
   is_not_good: boolean;

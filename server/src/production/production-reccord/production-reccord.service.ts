@@ -147,6 +147,7 @@ export class ProductionRecordService {
 
       const newRecord = new this.productionRecordModel({
         ...createDto,
+        assign_order_id: AssignOrder._id,
         assign_employee_id: new Types.ObjectId(createDto.assign_employee_id),
         master_not_good_id: createDto.master_not_good_id
           ? new Types.ObjectId(createDto.master_not_good_id)
@@ -168,7 +169,7 @@ export class ProductionRecordService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to create production record',
+          message: error.message || 'Failed to create production record',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

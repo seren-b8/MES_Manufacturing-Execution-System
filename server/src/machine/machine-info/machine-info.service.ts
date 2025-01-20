@@ -2,8 +2,15 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/interface';
+import {
+  IAssignEmployee,
+  IEmployee,
+  IEmployeeDetail,
+  IUser,
+} from 'src/interface/machine-info';
 import { AssignEmployee } from 'src/schema/assign-employee.schema';
 import { AssignOrder } from 'src/schema/assign-order.schema';
+import { Employee } from 'src/schema/employee.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { ProductionOrder } from 'src/schema/production-order.schema';
 
@@ -16,6 +23,7 @@ export class MachineInfoService {
     @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
     @InjectModel('AssignEmployee')
     private assignEmployeeModel: Model<AssignEmployee>,
+    @InjectModel('Employee') private employeeModel: Model<Employee>,
   ) {}
 
   async findByWorkCenter(work_center: string): Promise<ResponseFormat<any>> {
@@ -217,18 +225,54 @@ export class MachineInfoService {
               );
 
             // ดึงพนักงานที่ active สำหรับ order นี้
-            let activeEmployees = [];
+            let activeEmployees: IEmployeeDetail[] = []; // เปลี่ยน type ให้ถูกต้อง
             if (activeOrder?._id) {
-              activeEmployees =
-                (await this.assignEmployeeModel
+              try {
+                // 1. ดึง AssignEmployee พร้อม user_id
+                const assignEmployees = await this.assignEmployeeModel
                   .find({
-                    assign_order_id: activeOrder._id,
+                    assign_order_id: activeOrder._id.toString(),
                     status: 'active',
                   })
-                  .populate('user_id', 'employee_id first_name last_name')) ||
-                [];
+                  .populate<{ user_id: IUser }>('user_id')
+                  .lean();
+
+                // 2. ดึงข้อมูลพนักงานแยกต่างหาก
+                const employeeIds = assignEmployees
+                  .map((assign) => assign.user_id?.employee_id)
+                  .filter((id): id is string => !!id);
+
+                const employees = await this.employeeModel
+                  .find<IEmployee>({ employee_id: { $in: employeeIds } })
+                  .lean();
+
+                // 3. Map ข้อมูลเข้าด้วยกัน
+                activeEmployees = assignEmployees.map(
+                  (assign): IEmployeeDetail => {
+                    const userData = assign.user_id || ({} as IUser);
+                    const employeeData =
+                      employees.find(
+                        (emp) => emp.employee_id === userData.employee_id,
+                      ) || ({} as IEmployee);
+
+                    return {
+                      id: userData._id.toString() || '',
+                      employee_id: userData.employee_id || '',
+                      name:
+                        employeeData.first_name && employeeData.last_name
+                          ? `${employeeData.first_name} ${employeeData.last_name}`.trim()
+                          : 'N/A',
+                    };
+                  },
+                );
+              } catch (error) {
+                console.error('Error fetching active employees:', {
+                  message: error.message,
+                  stack: error.stack,
+                });
+                activeEmployees = [];
+              }
             }
-            console.log('activeEmployees', activeOrder);
 
             // ตรวจสอบว่า production_order_id มีข้อมูลหรือไม่
             const productionOrder = activeOrder?.production_order_id;
@@ -280,13 +324,7 @@ export class MachineInfoService {
               // ข้อมูลพนักงานที่ active
               active_employees: {
                 count: activeEmployees.length,
-                details: activeEmployees.map((emp) => ({
-                  id: emp.user_id?._id || '',
-                  employee_id: emp.user_id?.employee_id || '',
-                  name: emp.user_id
-                    ? `${emp.user_id.first_name || ''} ${emp.user_id.last_name || ''}`
-                    : '',
-                })),
+                details: activeEmployees,
               },
 
               // ข้อมูลการผลิตล่าสุด

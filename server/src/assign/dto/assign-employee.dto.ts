@@ -8,7 +8,7 @@ export class UpdateAssignEmployeeDto {
 }
 
 // Interfaces
-interface AssignEmployee {
+export interface AssignEmployee {
   user_id: string;
   work_center: string;
   assign_order_id: string;
@@ -16,13 +16,13 @@ interface AssignEmployee {
   log_date: Date;
 }
 
-interface User {
+export interface User {
   _id: string;
   employee_id: string;
   role: string;
 }
 
-interface AssignOrder {
+export interface AssignOrder {
   _id: string;
   status: string;
 }

@@ -9,18 +9,16 @@ import { AuthService } from './auth.service';
 import { User, UserSchema } from '../schema/user.schema';
 import { Employee, EmployeeSchema } from 'src/schema/employee.schema';
 import { HttpModule } from '@nestjs/axios';
+import { DatabaseModule } from 'src/modules/database/database.module';
+import { MongooseSchemaModule } from 'src/modules/database/mongoose-schema.module';
 
 @Module({
   imports: [
     // กำหนด default strategy เป็น jwt
     PassportModule.register({ defaultStrategy: 'jwt' }),
-
     HttpModule,
-
-    MongooseModule.forFeature([
-      { name: User.name, schema: UserSchema },
-      { name: Employee.name, schema: EmployeeSchema },
-    ]),
+    MongooseSchemaModule,
+    DatabaseModule,
 
     JwtModule.registerAsync({
       useFactory: async (configService: ConfigService) => {

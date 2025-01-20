@@ -1,15 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpStatus,
-  HttpException,
-} from '@nestjs/common';
+import { HttpStatus, HttpException } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -21,8 +10,17 @@ import { ResponseFormat } from 'src/interface';
 import { AssignOrder } from 'src/schema/assign-order.schema';
 import { ProductionOrder } from 'src/schema/production-order.schema';
 
+type OrderStatus = 'pending' | 'active' | 'completed' | 'suspended';
+
 @Injectable()
 export class AssignOrderService {
+  private readonly statusTransitions = {
+    pending: ['active'], // pending can only go to active
+    active: ['completed', 'suspended'], // active can go to completed or suspended
+    completed: [], // completed is terminal state
+    suspended: ['active'], // suspended can go back to active
+  };
+
   constructor(
     @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
     @InjectModel('ProductionOrder')
@@ -148,6 +146,17 @@ export class AssignOrderService {
     }
   }
 
+  private isValidStatusTransition(
+    currentStatus: OrderStatus,
+    newStatus: OrderStatus,
+  ): boolean {
+    const allowedTransitions = this.statusTransitions[currentStatus];
+    if (!allowedTransitions) {
+      return false;
+    }
+    return allowedTransitions.includes(newStatus);
+  }
+
   async update(
     id: string,
     updateDto: UpdateAssignOrderDto,
@@ -165,19 +174,37 @@ export class AssignOrderService {
         );
       }
 
-      // Validate status transition
-      if (
-        updateDto.status &&
-        !this.isValidStatusTransition(order.status, updateDto.status)
-      ) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Invalid status transition',
-            data: [],
-          },
-          HttpStatus.BAD_REQUEST,
-        );
+      // Type assertion to ensure order.status is treated as OrderStatus
+      const currentStatus = order.status as OrderStatus;
+
+      // Validate status transition if status is being updated
+      if (updateDto.status) {
+        if (!this.isValidStatusTransition(currentStatus, updateDto.status)) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: `Invalid status transition from ${currentStatus} to ${updateDto.status}`,
+              data: [],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        // Additional validation for completed status
+        if (
+          updateDto.status === 'completed' &&
+          !updateDto.datetime_close_order
+        ) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message:
+                'datetime_close_order is required when completing an order',
+              data: [],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
       }
 
       const updatedOrder = await this.assignOrderModel.findByIdAndUpdate(
@@ -192,28 +219,18 @@ export class AssignOrderService {
         data: [updatedOrder],
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       throw new HttpException(
         {
           status: 'error',
-          message: error.message || 'Failed to update assign order',
+          message: 'Failed to update assign order',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
-  }
-
-  private isValidStatusTransition(
-    currentStatus: string,
-    newStatus: string,
-  ): boolean {
-    const validTransitions = {
-      pending: ['active', 'suspended'],
-      active: ['completed', 'suspended'],
-      suspended: ['active', 'completed'],
-      completed: [],
-    };
-
-    return validTransitions[currentStatus]?.includes(newStatus);
   }
 }

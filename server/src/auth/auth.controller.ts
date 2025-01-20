@@ -39,32 +39,6 @@ export class AuthController {
     return this.authService.login(LoginDto);
   }
 
-  @Get('get-employee')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async findAllUsers(): Promise<ResponseFormat<Employee[]>> {
-    return this.authService.findAllEmployee();
-  }
-
-  @Post('create-temp-employee')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
-  @HttpCode(HttpStatus.OK)
-  async createTempEmployee(
-    @Body() createTempEmployeeDto: CreateTempEmployeeDto,
-  ): Promise<ResponseFormat<Employee[]>> {
-    return this.authService.createTempEmpolyee(createTempEmployeeDto);
-  }
-
-  // @Get('get-temp-employee')
-  // @UseGuards(JwtAuthGuard, RolesGuard)
-  // @Roles(Role.ADMIN)
-  // @HttpCode(HttpStatus.OK)
-  // async findAllTempUsers(): Promise<ResponseFormat<T>> {
-  //   return this.authService.findAllTemporaryEmployee();
-  // }
-
   @Post('create-user')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)

@@ -106,113 +106,6 @@ export class AuthService {
     }
   }
 
-  async findAllEmployee(): Promise<ResponseFormat<Employee[]>> {
-    try {
-      const employees = await this.employeeModel.aggregate([
-        {
-          $lookup: {
-            from: 'users', // collection name
-            localField: 'employee_id', // field from employee collection
-            foreignField: 'employee_id', // field from users collection
-            as: 'user_data', // alias for the joined data
-          },
-        },
-        {
-          $unwind: {
-            path: '$user_data',
-            preserveNullAndEmptyArrays: true, // keep employees even if they don't have user accounts
-          },
-        },
-        {
-          $project: {
-            employee_id: 1,
-            prior_name: 1,
-            first_name: 1,
-            last_name: 1,
-            section: 1,
-            department: 1,
-            position: 1,
-            company_code: 1,
-            resign_status: 1,
-            job_start: 1,
-            role: {
-              $ifNull: ['$user_data.role', null], // MongoDB's way of handling null coalescing
-            }, // include user role
-            // exclude password for security
-          },
-        },
-      ]);
-      return {
-        status: 'success',
-        message: 'Users retrieved successfully',
-        data: employees,
-      };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
-      }
-      return {
-        status: 'error',
-        message: 'Failed to retrieve users',
-        data: [],
-      };
-    }
-  }
-
-  async createTempEmpolyee(
-    createTempEmployeeDto: CreateTempEmployeeDto,
-  ): Promise<ResponseFormat<Employee[]>> {
-    try {
-      const TemporaryEmployeeData = {
-        employee_id: createTempEmployeeDto.employee_id,
-        prior_name: createTempEmployeeDto.prior_name,
-        first_name: createTempEmployeeDto.first_name,
-        last_name: createTempEmployeeDto.last_name,
-        section: createTempEmployeeDto.section,
-        department: createTempEmployeeDto.department,
-        position: createTempEmployeeDto.position,
-        company_code: createTempEmployeeDto.company_code,
-        resign_status: createTempEmployeeDto.resign_status,
-        job_start: createTempEmployeeDto.job_start,
-        is_temporary: 'true',
-      };
-
-      const employee = await this.employeeModel.findOne({
-        employee_id: TemporaryEmployeeData.employee_id,
-      });
-
-      if (employee) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Employee already exists',
-            data: [],
-          },
-          HttpStatus.CONFLICT,
-        );
-      }
-
-      await this.employeeModel.create(TemporaryEmployeeData);
-      return {
-        status: 'success',
-        message: 'Temporary employee created successfully',
-        data: [],
-      };
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
-      }
-      throw new HttpException(
-        {
-          status: 'error',
-          message: 'Failed to create temporary employee :' + error.message,
-          data: [],
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
   async updateUser(
     updateData: Partial<UpdateRoleDto>,
   ): Promise<ResponseFormat<Partial<User>[]>> {
@@ -385,47 +278,6 @@ export class AuthService {
     }
   }
 
-  // async deleteUser(id: string): Promise<ResponseFormat<any>> {
-  //   try {
-  //     const result = await this.userModel.deleteOne({ _id: id });
-
-  //     if (result.deletedCount === 0) {
-  //       return {
-  //         status: 'error',
-  //         message: 'User not found',
-  //         data: null,
-  //       };
-  //     }
-
-  //     return {
-  //       status: 'success',
-  //       message: 'User deleted successfully',
-  //       data: [result],
-  //     };
-  //   } catch (error) {
-  //     if (error instanceof HttpException) {
-  //       throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
-  //     }
-  //     return {
-  //       status: 'error',
-  //       message: 'Failed to delete user',
-  //       data: null,
-  //     };
-  //   }
-  // }
-
-  private async hashPassword(password: string): Promise<string> {
-    const saltRounds = 10;
-    return bcrypt.hash(password, saltRounds);
-  }
-
-  private async comparePasswords(
-    plainPassword: string,
-    hashedPassword: string,
-  ): Promise<boolean> {
-    return bcrypt.compare(plainPassword, hashedPassword);
-  }
-
   async createUser(
     CreateUserDto: CreateUserDto,
   ): Promise<ResponseFormat<Partial<User>[]>> {
@@ -496,6 +348,18 @@ export class AuthService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  private async hashPassword(password: string): Promise<string> {
+    const saltRounds = 10;
+    return bcrypt.hash(password, saltRounds);
+  }
+
+  private async comparePasswords(
+    plainPassword: string,
+    hashedPassword: string,
+  ): Promise<boolean> {
+    return bcrypt.compare(plainPassword, hashedPassword);
   }
 
   private generateToken(user: User): string {
