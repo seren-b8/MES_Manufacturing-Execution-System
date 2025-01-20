@@ -7,7 +7,6 @@ import {
   Body,
   Param,
   Query,
-  HttpException,
   UseGuards,
 } from '@nestjs/common';
 import { MachineCavityService } from './machine-cavity.service';

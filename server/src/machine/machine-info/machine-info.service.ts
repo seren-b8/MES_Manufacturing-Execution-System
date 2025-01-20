@@ -13,6 +13,7 @@ import { AssignOrder } from 'src/schema/assign-order.schema';
 import { Employee } from 'src/schema/employee.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { ProductionOrder } from 'src/schema/production-order.schema';
+import { MasterCavity } from 'src/schema/master-cavity.schema';
 
 @Injectable()
 export class MachineInfoService {
@@ -24,6 +25,7 @@ export class MachineInfoService {
     @InjectModel('AssignEmployee')
     private assignEmployeeModel: Model<AssignEmployee>,
     @InjectModel('Employee') private employeeModel: Model<Employee>,
+    @InjectModel('MasterCavity') private masterCavityModel: Model<MasterCavity>,
   ) {}
 
   async findByWorkCenter(work_center: string): Promise<ResponseFormat<any>> {
@@ -78,6 +80,7 @@ export class MachineInfoService {
           status: machine.status,
           counter: machine.counter,
           cycle_time: machine.cycletime,
+          tonnage: machine.tonnage,
         },
         current_production: activeOrder
           ? {
@@ -214,6 +217,12 @@ export class MachineInfoService {
                 machine_number: machine.machine_number,
               })) || [];
 
+            const allProductionOrder =
+              (await this.productionOrderModel.find({
+                work_center: machine.work_center,
+                assign_stage: false,
+              })) || [];
+
             // หา active order
             const activeOrder = await this.assignOrderModel
               .findOne({
@@ -223,6 +232,11 @@ export class MachineInfoService {
               .populate<{ production_order_id: ProductionOrder }>(
                 'production_order_id',
               );
+
+            const cavity = await this.masterCavityModel.findOne({
+              material_number:
+                activeOrder?.production_order_id?.material_number,
+            });
 
             // ดึงพนักงานที่ active สำหรับ order นี้
             let activeEmployees: IEmployeeDetail[] = []; // เปลี่ยน type ให้ถูกต้อง
@@ -280,12 +294,14 @@ export class MachineInfoService {
             return {
               // ข้อมูลพื้นฐานของเครื่อง
               machine_info: {
+                machine_name: machine.machine_name || '',
                 work_center: machine.work_center || '',
                 machine_number: machine.machine_number || '',
                 line: machine.line || '',
                 status: machine.status || 'unknown',
                 counter: machine.counter || 0,
                 cycle_time: machine.cycletime || 0,
+                thonnage: machine.tonnage || 0,
               },
 
               // สรุปข้อมูล orders
@@ -296,6 +312,7 @@ export class MachineInfoService {
                 ).length,
                 pending_orders: allOrders.filter((o) => o?.status === 'pending')
                   .length,
+                waiting_assign_orders: allProductionOrder.length,
               },
 
               // ข้อมูล active order
@@ -310,6 +327,9 @@ export class MachineInfoService {
                         material_description:
                           productionOrder.material_description,
                         target_quantity: productionOrder.target_quantity,
+                        plan_cycle_time: productionOrder.plan_cycle_time,
+                        weight: cavity?.weight || 0,
+                        weight_runner: cavity?.runner || 0,
                       },
                       production_summary: {
                         ...(activeOrder.current_summary || {}),
