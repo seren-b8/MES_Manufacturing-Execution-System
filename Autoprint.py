@@ -14,8 +14,8 @@ app = Flask(__name__)
 CORS(app)
 
 # ======= ตัวแปรระดับโปรแกรม =======
-PRINT_COUNTER = 1  # ตัวนับจำนวนการพิมพ์
-DEFAULT_PRINTER = "Honeywell PC42t plus (203 dpi)"
+PRINT_COUNTER = 0  # ตัวนับจำนวนการพิมพ์
+DEFAULT_PRINTER = "Honeywell PC42t plus (203 dpi) (Copy 1)"
 MAX_IMAGE_SIZE = (180, 180)  # ขนาดสูงสุดของรูปภาพ (กว้าง, สูง)
 
 # ======= ฟังก์ชันจัดการรูปภาพ =======
@@ -111,56 +111,47 @@ def format_part_name(part_name):
     return lines
 
 def generate_zpl_label(form_data, serial_number, counter, image_data=None):
-    """สร้างคำสั่ง ZPL สำหรับพิมพ์ฉลาก
-    
-    Args:
-        form_data (dict): ข้อมูลฟอร์มสำหรับฉลาก
-        serial_number (str): หมายเลขซีเรียล
-        counter (int): ตัวนับการพิมพ์
-        image_data (str, optional): ข้อมูลรูปภาพในรูปแบบ ZPL
-        
-    Returns:
-        str: คำสั่ง ZPL ทั้งหมด
-    """
-    # จัดการชื่อชิ้นส่วน
+    """สร้างคำสั่ง ZPL สำหรับพิมพ์ฉลาก"""
     part_name_lines = format_part_name(form_data['partName'])
     part_name_zpl = ""
     for i, line in enumerate(part_name_lines):
         y_position = 320 + (i * 45)
         part_name_zpl += f"^FO200,{y_position}^A0N,30,30^FD{line}^FS\n"
     
-    # ตัดความยาวของวัสดุถ้าเกิน 14 ตัวอักษร
     material = form_data['mat'][:14] + "..." if len(form_data.get('mat', '')) > 14 else form_data.get('mat', '')
     
-    # สร้างคำสั่ง ZPL
     zpl = f"""
 ^XA
-^FO30,110^A0N,25,25^FDCustomer Name: {form_data['customerName']}^FS
-^FO440,110^A0N,25,25^FDModel {form_data['model']}^FS
-^FO740,110^A0N,25,25^FD{counter}^FS
+^PW818  # กำหนดความกว้างของการพิมพ์
+^LL1080  # กำหนดความยาวของการพิมพ์ (4.05 in * 203 dpi = 818 pixels)
 
-^FO10,150^GB760,2,2^FS
-^FO30,170^A0N,25,25^FDSupplier : ^FS
-^FO150,170^A0N,25,25^FD{form_data['supplier']}^FS
-^FO440,170^A0N,25,25^FDJob No.^FS
-^FO590,170^A0N,25,25^FD{form_data['jobOrder']}^FS
+^FO30,460^A0N,25,25^FDCustomer Name: {form_data['customerName']}^FS
+^FO440,460^A0N,25,25^FDModel {form_data['model']}^FS
+^FO740,460^A0N,25,25^FD{counter}^FS
+
+^FO10,490^GB760,2,2^FS
+^FO30,510^A0N,25,25^FDSupplier : ^FS
+^FO150,510^A0N,25,25^FD{form_data['supplier']}^FS
+^FO440,510^A0N,25,25^FDJob No.^FS
+
+^FO590,510^A0N,25,25^FD{form_data['jobOrder']}^FS
 
 {part_name_zpl}
 
-^FO440,320^A0N,25,25^FDProducer^FS
-^FO590,320^A0N,25,25^FD ^FS
+^FO440,670^A0N,25,25^FDProducer^FS
+^FO590,670^A0N,25,25^FD ^FS
 
-^FO440,380^A0N,25,25^FDDate^FS
-^FO590,380^A0N,25,25^FD ^FS
+^FO440,730^A0N,25,25^FDDate^FS
+^FO590,730^A0N,25,25^FD ^FS
 
-^FO30,440^A0N,25,25^FDPicture of Part^FS
-^FO440,440^A0N,25,25^FDQuantity (Unit)^FS
-^FO500,540^A0N,100,100^FD{form_data['quantityStd']}^FS
+^FO30,790^A0N,25,25^FDPicture of Part^FS
+^FO440,790^A0N,25,25^FDQuantity (Unit)^FS
+^FO500,890^A0N,100,100^FD{form_data['quantityStd']}^FS
 
-^FO225,480^BQN,2,7^FDQA,{form_data['matNo']}|{serial_number}^FS
+^FO225,820^BQN,2,7^FDQA,{form_data['matNo']}|{serial_number}^FS
+
 """
 
-    # เพิ่มรูปภาพถ้ามี
     if image_data:
         zpl += f"^FO20,520\n{image_data}^FS\n"
     
