@@ -6,8 +6,8 @@ import { Types } from 'mongoose';
   timestamps: true,
 })
 export class SAPSyncLog {
-  @Prop({ type: Types.ObjectId, ref: 'ProductionRecord', required: true })
-  production_record_id: Types.ObjectId;
+  @Prop({ type: [{ type: Types.ObjectId }], required: true })
+  production_record_ids: Types.ObjectId[]; // เปลี่ยนเป็น array
 
   @Prop({ required: true })
   employee_id: string; // รวมถึง 'SNC'

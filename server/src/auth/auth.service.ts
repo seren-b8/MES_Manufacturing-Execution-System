@@ -435,8 +435,9 @@ export class AuthService {
     isExternalAuth: boolean,
   ): Promise<ResponseFormat<TLoginResponse>> {
     const token = this.generateToken(user);
-
+    let external_status = false;
     if (isExternalAuth && !user.external_auth) {
+      external_status = true;
       await this.userModel.findByIdAndUpdate(user._id, {
         external_auth: true,
       });
@@ -459,7 +460,9 @@ export class AuthService {
         role: user.role,
         full_name: `${employee.first_name} ${employee.last_name}`,
         position: employee.position,
-        external_auth: user.external_auth,
+        external_auth: !user.external_auth
+          ? external_status
+          : user.external_auth,
         token,
       },
     ];

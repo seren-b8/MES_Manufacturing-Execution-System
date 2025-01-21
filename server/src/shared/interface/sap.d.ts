@@ -25,3 +25,36 @@ export interface ISAPConfirmationLog {
   AGRND: string; // Length: 4
   TILE: string; // Length: 20
 }
+
+export interface AssignOrderData {
+  order_id: string;
+  sequence_no: string;
+  activity: string;
+}
+
+export interface MasterNotGoodData {
+  case_english: string;
+}
+
+export interface AssignEmployeeData {
+  user_id: string;
+}
+
+export interface PopulatedProductionRecord {
+  _id: string;
+  assign_order_id: AssignOrderData;
+  master_not_good_id?: MasterNotGoodData;
+  assign_employee_ids: AssignEmployeeData[];
+  quantity: number;
+  is_not_good: boolean;
+}
+
+export interface GroupedProductionData {
+  order_id: string;
+  sequence_no: string;
+  activity: string;
+  is_not_good: boolean;
+  case_ng?: string;
+  employee_quantities: Map<string, number>;
+  snc_quantity: number;
+}

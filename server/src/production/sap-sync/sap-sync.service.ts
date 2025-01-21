@@ -2,265 +2,248 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { SqlService } from 'src/shared/services/sql.service';
-
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
+import { SAPSyncLog } from 'src/shared/modules/schema/sap_sync_log.schema';
+import { SAPDataTransformationService } from './sap-transformmation.service';
 import {
-  IAssignEmployee,
-  IAssignOrder,
-  IMasterNotGood,
-  IProductionRecord,
-  ISapProductionData,
-} from 'src/shared/interface';
+  GroupedProductionData,
+  ISAPConfirmationLog,
+  PopulatedProductionRecord,
+} from 'src/shared/interface/sap';
+
+// Define interfaces for raw data structur
 
 @Injectable()
 export class SapProductionSyncService {
   constructor(
     @InjectModel(ProductionRecord.name)
     private readonly productionRecordModel: Model<ProductionRecord>,
+    @InjectModel(SAPSyncLog.name)
+    private readonly sapSyncLogModel: Model<SAPSyncLog>,
     private readonly sqlService: SqlService,
+    private readonly sapTransformationService: SAPDataTransformationService,
   ) {}
 
-  private async sendToSapEmp(data: ISapProductionData) {
-    const query = `
-      INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
-      VALUES (
-        @mandt,
-        CONVERT(text,REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR,SYSUTCDATETIME()),'-',''),':',''),'.',''),' ','')+CONVERT(VARCHAR(50),@empId)),
-        @itemno,
-        @empId,
-        @aufnr,
-        @aplfl,
-        @vornr,
-        @uvorn,
-        @lmnga,
-        @meinh,
-        @xmnga,
-        @rmnga,
-        @rueck,
-        @rmzhl,
-        CONVERT(VARCHAR(50),GETDATE(),112),
-        @ismng,
-        @ismngeh,
-        @posted,
-        @message,
-        CONVERT(VARCHAR(50),GETDATE(),112),
-        REPLACE(CONVERT(VARCHAR(8),GETDATE(),108),':',''),
-        @ernam,
-        @werks,
-        @agrnd,
-        @tile
-      )`;
-
-    const params = [
-      { name: 'mandt', value: 700 },
-      { name: 'empId', value: data.employee_id },
-      { name: 'itemno', value: 1 },
-      { name: 'aufnr', value: `00${data.order_id}` },
-      { name: 'aplfl', value: `00000${data.sequence_no}` },
-      { name: 'vornr', value: `00${data.activity}` },
-      { name: 'uvorn', value: '' },
-      { name: 'lmnga', value: data.quantity },
-      { name: 'meinh', value: 'ST' },
-      { name: 'xmnga', value: data.is_not_good ? data.quantity : 0 },
-      { name: 'rmnga', value: 0 },
-      { name: 'rueck', value: '' },
-      { name: 'rmzhl', value: '' },
-      { name: 'ismng', value: data.quantity },
-      { name: 'ismngeh', value: 'STD' },
-      { name: 'posted', value: '' },
-      { name: 'message', value: '' },
-      { name: 'ernam', value: 'ADMINIT' },
-      { name: 'werks', value: '1620' },
-      { name: 'agrnd', value: data.case_ng || '' },
-      { name: 'tile', value: 'Team' },
-    ];
-
-    return this.sqlService.query(
-      query,
-      params.map((p) => p.value),
-    );
+  private transformProductionRecord(record: any): PopulatedProductionRecord {
+    return {
+      _id: record._id.toString(),
+      assign_order_id: {
+        order_id: record.assign_order_id.order_id,
+        sequence_no: record.assign_order_id.sequence_no,
+        activity: record.assign_order_id.activity,
+      },
+      master_not_good_id: record.master_not_good_id
+        ? {
+            case_english: record.master_not_good_id.case_english,
+          }
+        : undefined,
+      assign_employee_ids: record.assign_employee_ids.map((emp) => ({
+        user_id: emp.user_id,
+      })),
+      quantity: record.quantity,
+      is_not_good: record.is_not_good,
+    };
   }
 
-  private async sendToSapSnc(data: ISapProductionData) {
-    const query = `
-      INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
-      VALUES (
-        @mandt,
-        CONVERT(text,REPLACE(REPLACE(REPLACE(REPLACE(CONVERT(VARCHAR,SYSUTCDATETIME()),'-',''),':',''),'.',''),' ','')+'SNC'),
-        @itemno,
-        'SNC',
-        @aufnr,
-        @aplfl,
-        @vornr,
-        @uvorn,
-        @lmnga,
-        @meinh,
-        @xmnga,
-        @rmnga,
-        @rueck,
-        @rmzhl,
-        CONVERT(VARCHAR(50),GETDATE(),112),
-        @ismng,
-        @ismngeh,
-        @posted,
-        @message,
-        CONVERT(VARCHAR(50),GETDATE(),112),
-        REPLACE(CONVERT(VARCHAR(8),GETDATE(),108),':',''),
-        @ernam,
-        @werks,
-        @agrnd,
-        @tile
-      )`;
+  private async createSyncLogs(
+    productionRecordIds: Types.ObjectId[],
+    groupedData: GroupedProductionData,
+  ) {
+    const logs = [];
 
-    const params = [
-      { name: 'mandt', value: 700 },
-      { name: 'itemno', value: 1 },
-      { name: 'aufnr', value: `00${data.order_id}` },
-      { name: 'aplfl', value: `00000${data.sequence_no}` },
-      { name: 'vornr', value: `00${data.activity}` },
-      { name: 'uvorn', value: '' },
-      { name: 'lmnga', value: data.quantity },
-      { name: 'meinh', value: 'ST' },
-      { name: 'xmnga', value: data.is_not_good ? data.quantity : 0 },
-      { name: 'rmnga', value: 0 },
-      { name: 'rueck', value: '' },
-      { name: 'rmzhl', value: '' },
-      { name: 'ismng', value: data.quantity },
-      { name: 'ismngeh', value: 'STD' },
-      { name: 'posted', value: '' },
-      { name: 'message', value: '' },
-      { name: 'ernam', value: 'ADMINIT' },
-      { name: 'werks', value: '1620' },
-      { name: 'agrnd', value: data.case_ng || '' },
-      { name: 'tile', value: 'Team' },
-    ];
-
-    return this.sqlService.query(
-      query,
-      params.map((p) => p.value),
-    );
-  }
-
-  async syncProductionToSap(productionRecordId: Types.ObjectId) {
-    try {
-      // 1. ดึงข้อมูล Production Record พร้อม populate
-      const record = await this.productionRecordModel
-        .findById(productionRecordId)
-        .populate<{
-          assign_employee_ids: IAssignEmployee[];
-        }>('assign_employee_ids')
-        .populate<{ assign_order_id: IAssignOrder }>('assign_order_id')
-        .populate<{ master_not_good_id: IMasterNotGood }>('master_not_good_id');
-
-      if (!record) {
-        return {
-          status: 'error',
-          message: 'Production record not found',
-          data: [],
-        };
-      }
-
-      // Cast record to IProductionRecord type
-      const typedRecord = record as unknown as IProductionRecord;
-
-      if (typedRecord.confirmation_status !== 'confirmed') {
-        return {
-          status: 'error',
-          message: 'Production record must be confirmed before syncing',
-          data: [],
-        };
-      }
-
-      // 2. คำนวณจำนวนสำหรับแต่ละพนักงาน
-      const employeeCount = typedRecord.assign_employee_ids.length;
-      const baseQuantity = Math.floor(typedRecord.quantity / employeeCount);
-      const remainder = typedRecord.quantity % employeeCount;
-
-      // 3. ส่งข้อมูลสำหรับแต่ละพนักงาน
-      for (const employee of typedRecord.assign_employee_ids) {
-        try {
-          await this.sendToSapEmp({
-            employee_id: employee.user_id,
-            order_id: typedRecord.assign_order_id.order_id,
-            sequence_no: typedRecord.assign_order_id.sequence_no,
-            activity: typedRecord.assign_order_id.activity,
-            quantity: baseQuantity,
-            is_not_good: typedRecord.is_not_good,
-            case_ng: typedRecord.is_not_good
-              ? typedRecord.master_not_good_id?.case_english
-              : '',
-          });
-        } catch (error) {
-          console.error(`Failed to sync employee ${employee.user_id}:`, error);
-          throw error;
-        }
-      }
-
-      // 4. ส่งข้อมูลเศษที่เหลือไปยัง SNC (ถ้ามี)
-      if (remainder > 0) {
-        try {
-          await this.sendToSapSnc({
-            order_id: typedRecord.assign_order_id.order_id,
-            sequence_no: typedRecord.assign_order_id.sequence_no,
-            activity: typedRecord.assign_order_id.activity,
-            quantity: remainder,
-            is_not_good: typedRecord.is_not_good,
-            case_ng: typedRecord.is_not_good
-              ? typedRecord.master_not_good_id?.case_english
-              : '',
-          });
-        } catch (error) {
-          console.error('Failed to sync SNC remainder:', error);
-          throw error;
-        }
-      }
-
-      // 5. อัพเดทสถานะการ sync
-      await this.productionRecordModel.findByIdAndUpdate(productionRecordId, {
-        is_synced_to_sap: true,
-        sap_sync_timestamp: new Date(),
+    // Create logs for employees
+    for (const [employeeId, quantity] of groupedData.employee_quantities) {
+      logs.push({
+        production_record_ids: productionRecordIds,
+        employee_id: employeeId,
+        quantity: quantity,
+        sync_type: 'EMP',
+        status: 'pending',
       });
-
-      return {
-        status: 'success',
-        message: 'Synced production record successfully',
-        data: [
-          {
-            recordId: productionRecordId,
-            employeeCount,
-            baseQuantity,
-            remainder,
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        message: 'Failed to sync production record: ' + error.message,
-        data: [],
-      };
     }
+
+    // Create log for SNC if exists
+    if (groupedData.snc_quantity > 0) {
+      logs.push({
+        production_record_ids: productionRecordIds,
+        employee_id: 'SNC',
+        quantity: groupedData.snc_quantity,
+        sync_type: 'SNC',
+        status: 'pending',
+      });
+    }
+
+    return this.sapSyncLogModel.insertMany(logs);
+  }
+
+  private async groupProductionRecords(
+    records: PopulatedProductionRecord[],
+  ): Promise<GroupedProductionData[]> {
+    const groupedMap = new Map<string, GroupedProductionData>();
+
+    for (const record of records) {
+      const key = `${record.assign_order_id.order_id}-${record.assign_order_id.sequence_no}-${record.assign_order_id.activity}-${record.is_not_good}-${record.master_not_good_id?.case_english || ''}`;
+
+      if (!groupedMap.has(key)) {
+        groupedMap.set(key, {
+          order_id: record.assign_order_id.order_id,
+          sequence_no: record.assign_order_id.sequence_no,
+          activity: record.assign_order_id.activity,
+          is_not_good: record.is_not_good,
+          case_ng: record.master_not_good_id?.case_english,
+          employee_quantities: new Map(),
+          snc_quantity: 0,
+        });
+      }
+
+      const group = groupedMap.get(key);
+      const employeeCount = record.assign_employee_ids.length;
+      const baseQuantity = Math.floor(record.quantity / employeeCount);
+      const remainder = record.quantity % employeeCount;
+
+      // Add quantities for each employee
+      for (const employee of record.assign_employee_ids) {
+        const currentQuantity =
+          group.employee_quantities.get(employee.user_id) || 0;
+        group.employee_quantities.set(
+          employee.user_id,
+          currentQuantity + baseQuantity,
+        );
+      }
+
+      // Add remainder to SNC quantity
+      group.snc_quantity += remainder;
+    }
+
+    return Array.from(groupedMap.values());
+  }
+
+  private async sendToSap(
+    syncLog: SAPSyncLog,
+    groupedData: GroupedProductionData,
+  ) {
+    // Prepare data for transformation
+    const sapData = {
+      employee_id: syncLog.employee_id,
+      order_id: groupedData.order_id,
+      sequence_no: groupedData.sequence_no,
+      activity: groupedData.activity,
+      quantity: syncLog.quantity,
+      is_not_good: groupedData.is_not_good,
+      case_ng: groupedData.case_ng,
+    };
+
+    // Transform data to SAP format
+    const transformedData: ISAPConfirmationLog =
+      this.sapTransformationService.transformToSAPFormat(sapData);
+
+    // Prepare SQL query
+    const query = `
+      INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
+      VALUES (
+        @mandt,@tid,@itemno,@employee,@aufnr,@aplfl,@vornr,@uvorn,@lmnga,
+        @meinh,@xmnga,@rmnga,@rueck,@rmzhl,@budat,@ismng,@ismngeh,
+        @posted,@message,@erdat,@erzet,@ernam,@werks,@agrnd,@tile
+      )`;
+
+    // Map transformed data to parameters
+    const params = Object.entries(transformedData).map(([key, value]) => ({
+      name: key.toLowerCase(),
+      value: value,
+    }));
+
+    return this.sqlService.query(
+      query,
+      params.map((p) => p.value),
+    );
   }
 
   async syncPendingRecords() {
     try {
-      const pendingRecords = await this.productionRecordModel
-        .find<IProductionRecord>({
+      const rawRecords = await this.productionRecordModel
+        .find({
           confirmation_status: 'confirmed',
           is_synced_to_sap: false,
         })
-        .sort({ confirmed_at: 1 });
+        .populate('assign_order_id')
+        .populate('master_not_good_id')
+        .populate('assign_employee_ids')
+        .lean();
 
-      const results = [];
-      for (const record of pendingRecords) {
-        const result = await this.syncProductionToSap(record._id);
-        results.push(result);
+      if (rawRecords.length === 0) {
+        return {
+          status: 'success',
+          message: 'No pending records found',
+          data: [],
+        };
       }
+
+      const pendingRecords = rawRecords.map((record) =>
+        this.transformProductionRecord(record),
+      );
+
+      // Group records by order and operation
+      const groupedData = await this.groupProductionRecords(pendingRecords);
+
+      // Create and process sync logs
+      const recordIds = pendingRecords.map(
+        (record) => new Types.ObjectId(record._id),
+      );
+      const allSyncLogs = [];
+
+      for (const group of groupedData) {
+        const syncLogs = await this.createSyncLogs(recordIds, group);
+        allSyncLogs.push(...syncLogs);
+      }
+
+      // Process sync logs and send to SAP
+      for (const syncLog of allSyncLogs) {
+        try {
+          const group = groupedData.find(
+            (g) =>
+              (syncLog.sync_type === 'SNC' && g.snc_quantity > 0) ||
+              (syncLog.sync_type === 'EMP' &&
+                g.employee_quantities.has(syncLog.employee_id)),
+          );
+
+          if (!group) {
+            throw new Error(
+              `No matching group found for sync log ${syncLog._id}`,
+            );
+          }
+
+          await this.sendToSap(syncLog, group);
+
+          await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
+            status: 'completed',
+            sync_timestamp: new Date(),
+          });
+        } catch (error) {
+          await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
+            status: 'failed',
+            error_message: error.message,
+          });
+        }
+      }
+
+      // Update production records
+      await this.productionRecordModel.updateMany(
+        { _id: { $in: recordIds } },
+        {
+          is_synced_to_sap: true,
+          sap_sync_timestamp: new Date(),
+        },
+      );
 
       return {
         status: 'success',
         message: 'Synced all pending records',
-        data: [{ results }],
+        data: [
+          {
+            totalRecords: pendingRecords.length,
+            syncLogs: allSyncLogs.length,
+          },
+        ],
       };
     } catch (error) {
       return {
