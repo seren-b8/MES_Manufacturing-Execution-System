@@ -1,19 +1,19 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ResponseFormat } from 'src/interface';
+import { ResponseFormat } from 'src/shared/interface';
 import {
   IAssignEmployee,
   IEmployee,
   IEmployeeDetail,
   IUser,
-} from 'src/interface/machine-info';
-import { AssignEmployee } from 'src/schema/assign-employee.schema';
-import { AssignOrder } from 'src/schema/assign-order.schema';
-import { Employee } from 'src/schema/employee.schema';
-import { MachineInfo } from 'src/schema/machine-info.schema';
-import { ProductionOrder } from 'src/schema/production-order.schema';
-import { MasterCavity } from 'src/schema/master-cavity.schema';
+} from 'src/shared/interface/machine-info';
+import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
+import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
+import { Employee } from 'src/shared/modules/schema/employee.schema';
+import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
+import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
+import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 
 @Injectable()
 export class MachineInfoService {

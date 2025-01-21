@@ -3,31 +3,40 @@ import { MongooseModule } from '@nestjs/mongoose';
 import {
   AssignEmployee,
   AssignEmployeeSchema,
-} from 'src/schema/assign-employee.schema';
-import { AssignOrder, AssignOrderSchema } from 'src/schema/assign-order.schema';
-import { MachineInfo, MachineInfoSchema } from 'src/schema/machine-info.schema';
+} from 'src/shared/modules/schema/assign-employee.schema';
+import {
+  AssignOrder,
+  AssignOrderSchema,
+} from 'src/shared/modules/schema/assign-order.schema';
+import {
+  MachineInfo,
+  MachineInfoSchema,
+} from 'src/shared/modules/schema/machine-info.schema';
 import {
   MasterNotGood,
   MasterNotGoodSchema,
-} from 'src/schema/master-not-good.schema';
-import { Employee, EmployeeSchema } from 'src/schema/employee.schema';
+} from 'src/shared/modules/schema/master-not-good.schema';
+import {
+  Employee,
+  EmployeeSchema,
+} from 'src/shared/modules/schema/employee.schema';
 import {
   MasterCavity,
   MasterCavitySchema,
-} from 'src/schema/master-cavity.schema';
+} from 'src/shared/modules/schema/master-cavity.schema';
 import {
   ProductionOrder,
   ProductionOrderSchema,
-} from 'src/schema/production-order.schema';
+} from 'src/shared/modules/schema/production-order.schema';
 import {
   TimelineMachine,
   TimelineMachineSchema,
-} from 'src/schema/timeline-machine.schema';
-import { User, UserSchema } from 'src/schema/user.schema';
+} from 'src/shared/modules/schema/timeline-machine.schema';
+import { User, UserSchema } from 'src/shared/modules/schema/user.schema';
 import {
   ProductionRecord,
   ProductionRecordSchema,
-} from 'src/schema/production-record.schema';
+} from 'src/shared/modules/schema/production-record.schema';
 
 @Module({
   imports: [

@@ -6,11 +6,14 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { User, UserSchema } from '../schema/user.schema';
-import { Employee, EmployeeSchema } from 'src/schema/employee.schema';
+import { User, UserSchema } from '../shared/modules/schema/user.schema';
+import {
+  Employee,
+  EmployeeSchema,
+} from 'src/shared/modules/schema/employee.schema';
 import { HttpModule } from '@nestjs/axios';
-import { DatabaseModule } from 'src/modules/database/database.module';
-import { MongooseSchemaModule } from 'src/modules/database/mongoose-schema.module';
+import { DatabaseModule } from 'src/shared/modules/database/database.module';
+import { MongooseSchemaModule } from 'src/shared/modules/database/mongoose-schema.module';
 
 @Module({
   imports: [

@@ -1,20 +1,21 @@
-import { Employee } from './../schema/employee.schema';
+import { Employee } from '../shared/modules/schema/employee.schema';
 import { Injectable, HttpStatus, HttpException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { User } from 'src/schema/user.schema';
+import { User } from 'src/shared/modules/schema/user.schema';
 import * as bcrypt from 'bcryptjs';
 import { LoginDto } from './dto/login.dto';
 import { catchError, firstValueFrom, timeout } from 'rxjs';
-import { ResponseFormat } from '../interface';
+import { ResponseFormat } from '../shared/interface';
 import { JwtService } from '@nestjs/jwt';
-import { TLoginResponse, TUser } from 'src/interface/auth';
+import { TLoginResponse, TUser } from 'src/shared/interface/auth';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateTempEmployeeDto } from './dto/create-temp-employee.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { use } from 'passport';
+import e from 'express';
 
 @Injectable()
 export class AuthService {
@@ -435,6 +436,12 @@ export class AuthService {
   ): Promise<ResponseFormat<TLoginResponse>> {
     const token = this.generateToken(user);
 
+    if (isExternalAuth && !user.external_auth) {
+      await this.userModel.findByIdAndUpdate(user._id, {
+        external_auth: true,
+      });
+    }
+
     // Update password if external auth succeeded but local password doesn't match
     if (
       isExternalAuth &&
@@ -442,7 +449,6 @@ export class AuthService {
     ) {
       await this.userModel.findByIdAndUpdate(user._id, {
         password: hashedPassword,
-        external_auth: true,
       });
       // console.log('Password updated in local database');
     }

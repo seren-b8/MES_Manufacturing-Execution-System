@@ -10,8 +10,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { MachineCavityService } from './machine-cavity.service';
-import { ResponseFormat } from 'src/interface';
-import { MasterCavity } from 'src/schema/master-cavity.schema';
+import { ResponseFormat } from 'src/shared/interface';
+import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { CreateMasterCavityDto } from '../dto/create-master-cavity.dto';
 import { use } from 'passport';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';

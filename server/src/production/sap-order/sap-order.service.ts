@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ProductionOrder } from 'src/schema/production-order.schema';
+import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 import { SqlService } from 'src/shared/services/sql.service';
 
 @Injectable()
-export class SqlOrderService {
+export class SapOrderService {
   constructor(
     @InjectModel(ProductionOrder.name)
     private readonly productionOrderModel: Model<ProductionOrder>,

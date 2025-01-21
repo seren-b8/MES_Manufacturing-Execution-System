@@ -1,16 +1,16 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { AssignEmployee } from 'src/schema/assign-employee.schema';
-import { MasterNotGood } from 'src/schema/master-not-good.schema';
-import { ProductionRecord } from 'src/schema/production-record.schema';
+import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
+import { MasterNotGood } from 'src/shared/modules/schema/master-not-good.schema';
+import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 import {
   CreateProductionRecordDto,
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
-import { ResponseFormat } from 'src/interface';
-import { AssignOrder } from 'src/schema/assign-order.schema';
-import { MachineInfo } from 'src/schema/machine-info.schema';
+import { ResponseFormat } from 'src/shared/interface';
+import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
+import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 
 @Injectable()
 export class ProductionRecordService {
@@ -238,7 +238,7 @@ export class ProductionRecordService {
       // Update assign order summary if quantity changed
       if (updateDto.quantity) {
         await this.updateAssignOrderSummary(
-          record.assign_employee_id.toString(),
+          record.assign_employee_ids.toString(),
         );
       }
 

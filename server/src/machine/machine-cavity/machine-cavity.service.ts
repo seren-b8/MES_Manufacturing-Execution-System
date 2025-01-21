@@ -1,8 +1,8 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ResponseFormat } from 'src/interface';
-import { MasterCavity } from 'src/schema/master-cavity.schema';
+import { ResponseFormat } from 'src/shared/interface';
+import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { CreateMasterCavityDto } from '../dto/create-master-cavity.dto';
 
 @Injectable()

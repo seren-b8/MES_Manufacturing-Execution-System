@@ -6,9 +6,9 @@ import {
   CreateAssignOrderDto,
   UpdateAssignOrderDto,
 } from '../dto/assign-order.dto';
-import { ResponseFormat } from 'src/interface';
-import { AssignOrder } from 'src/schema/assign-order.schema';
-import { ProductionOrder } from 'src/schema/production-order.schema';
+import { ResponseFormat } from 'src/shared/interface';
+import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
+import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 
 type OrderStatus = 'pending' | 'active' | 'completed' | 'suspended';
 

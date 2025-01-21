@@ -8,14 +8,14 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ResponseFormat } from 'src/interface';
-import { AssignEmployee } from 'src/schema/assign-employee.schema';
+import { ResponseFormat } from 'src/shared/interface';
+import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 import {
   CreateAssignEmployeeDto,
   UpdateAssignEmployeeDto,
 } from '../dto/assign-employee.dto';
-import { User } from 'src/schema/user.schema';
-import { AssignOrder } from 'src/schema/assign-order.schema';
+import { User } from 'src/shared/modules/schema/user.schema';
+import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 
 @Injectable()
 export class AssignEmployeeService {

@@ -1,8 +1,8 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ResponseFormat } from 'src/interface';
-import { ProductionOrder } from 'src/schema/production-order.schema';
+import { ResponseFormat } from 'src/shared/interface';
+import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 
 @Injectable()
 export class ProductionOrderService {
