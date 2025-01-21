@@ -253,4 +253,189 @@ export class SapProductionSyncService {
       };
     }
   }
+  // เพิ่มเมธอดต่อไปนี้ใน SapProductionSyncService
+
+  async getSyncLogs(filter: any) {
+    try {
+      const logs = await this.sapSyncLogModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return {
+        status: 'success',
+        message: 'Retrieved sync logs successfully',
+        data: logs,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: 'Failed to retrieve sync logs: ' + error.message,
+        data: [],
+      };
+    }
+  }
+
+  async retrySyncLog(logId: Types.ObjectId) {
+    try {
+      const syncLog = await this.sapSyncLogModel.findById(logId);
+
+      if (!syncLog) {
+        return {
+          status: 'error',
+          message: 'Sync log not found',
+          data: [],
+        };
+      }
+
+      if (syncLog.status !== 'failed') {
+        return {
+          status: 'error',
+          message: 'Can only retry failed sync logs',
+          data: [],
+        };
+      }
+
+      // Get production records for this sync log
+      const records = await this.productionRecordModel
+        .find({
+          _id: { $in: syncLog.production_record_ids },
+        })
+        .populate('assign_order_id')
+        .populate('master_not_good_id')
+        .populate('assign_employee_ids')
+        .lean();
+
+      const pendingRecords = records.map((record) =>
+        this.transformProductionRecord(record),
+      );
+
+      const groupedData = await this.groupProductionRecords(pendingRecords);
+
+      const group = groupedData.find(
+        (g) =>
+          (syncLog.sync_type === 'SNC' && g.snc_quantity > 0) ||
+          (syncLog.sync_type === 'EMP' &&
+            g.employee_quantities.has(syncLog.employee_id)),
+      );
+
+      if (!group) {
+        throw new Error('No matching group found for sync log');
+      }
+
+      await this.sendToSap(syncLog, group);
+
+      // Update sync log status
+      await this.sapSyncLogModel.findByIdAndUpdate(logId, {
+        status: 'completed',
+        sync_timestamp: new Date(),
+        error_message: null,
+      });
+
+      return {
+        status: 'success',
+        message: 'Successfully retried sync log',
+        data: [{ logId }],
+      };
+    } catch (error) {
+      await this.sapSyncLogModel.findByIdAndUpdate(logId, {
+        status: 'failed',
+        error_message: error.message,
+      });
+
+      return {
+        status: 'error',
+        message: 'Failed to retry sync log: ' + error.message,
+        data: [],
+      };
+    }
+  }
+
+  async syncSpecificRecords(recordIds: Types.ObjectId[]) {
+    try {
+      const records = await this.productionRecordModel
+        .find({
+          _id: { $in: recordIds },
+          confirmation_status: 'confirmed',
+        })
+        .populate('assign_order_id')
+        .populate('master_not_good_id')
+        .populate('assign_employee_ids')
+        .lean();
+
+      if (records.length === 0) {
+        return {
+          status: 'error',
+          message: 'No confirmed records found with provided IDs',
+          data: [],
+        };
+      }
+
+      const pendingRecords = records.map((record) =>
+        this.transformProductionRecord(record),
+      );
+
+      const groupedData = await this.groupProductionRecords(pendingRecords);
+      const allSyncLogs = [];
+
+      for (const group of groupedData) {
+        const syncLogs = await this.createSyncLogs(recordIds, group);
+        allSyncLogs.push(...syncLogs);
+      }
+
+      for (const syncLog of allSyncLogs) {
+        try {
+          const group = groupedData.find(
+            (g) =>
+              (syncLog.sync_type === 'SNC' && g.snc_quantity > 0) ||
+              (syncLog.sync_type === 'EMP' &&
+                g.employee_quantities.has(syncLog.employee_id)),
+          );
+
+          if (!group) {
+            throw new Error(
+              `No matching group found for sync log ${syncLog._id}`,
+            );
+          }
+
+          await this.sendToSap(syncLog, group);
+
+          await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
+            status: 'completed',
+            sync_timestamp: new Date(),
+          });
+        } catch (error) {
+          await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
+            status: 'failed',
+            error_message: error.message,
+          });
+        }
+      }
+
+      await this.productionRecordModel.updateMany(
+        { _id: { $in: recordIds } },
+        {
+          is_synced_to_sap: true,
+          sap_sync_timestamp: new Date(),
+        },
+      );
+
+      return {
+        status: 'success',
+        message: 'Synced specific records successfully',
+        data: [
+          {
+            totalRecords: records.length,
+            syncLogs: allSyncLogs.length,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: 'Failed to sync specific records: ' + error.message,
+        data: [],
+      };
+    }
+  }
 }

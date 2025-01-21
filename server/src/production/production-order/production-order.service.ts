@@ -11,7 +11,7 @@ export class ProductionOrderService {
     private readonly productionOrderModel: Model<ProductionOrder>,
   ) {}
 
-  async findAll(query: any = {}): Promise<ResponseFormat<ProductionOrder[]>> {
+  async findAll(query: any = {}): Promise<ResponseFormat<ProductionOrder>> {
     try {
       const orders = await this.productionOrderModel
         .find(query)
@@ -21,7 +21,7 @@ export class ProductionOrderService {
       return {
         status: 'success',
         message: 'Retrieved production orders successfully',
-        data: [orders],
+        data: orders,
       };
     } catch (error) {
       throw new HttpException(
@@ -108,7 +108,7 @@ export class ProductionOrderService {
   async findByDateRange(
     startDate: string,
     endDate: string,
-  ): Promise<ResponseFormat<ProductionOrder[]>> {
+  ): Promise<ResponseFormat<ProductionOrder>> {
     try {
       const orders = await this.productionOrderModel
         .find({
@@ -123,7 +123,7 @@ export class ProductionOrderService {
       return {
         status: 'success',
         message: 'Retrieved production orders within date range',
-        data: [orders],
+        data: orders,
       };
     } catch (error) {
       throw new HttpException(
@@ -142,7 +142,7 @@ export class ProductionOrderService {
   /**
    * Get active production orders (not completed)
    */
-  async findActiveOrders(): Promise<ResponseFormat<ProductionOrder[]>> {
+  async findActiveOrders(): Promise<ResponseFormat<ProductionOrder>> {
     try {
       const currentDate = new Date().toISOString().split('T')[0];
 
@@ -156,7 +156,7 @@ export class ProductionOrderService {
       return {
         status: 'success',
         message: 'Retrieved active production orders',
-        data: [orders],
+        data: orders,
       };
     } catch (error) {
       throw new HttpException(
