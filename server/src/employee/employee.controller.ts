@@ -39,7 +39,7 @@ export class EmployeeController {
   @Get('find-all-employee')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @HttpCode(HttpStatus.OK)
-  async findAllUsers(): Promise<ResponseFormat<Employee[]>> {
+  async findAllUsers(): Promise<ResponseFormat<Employee>> {
     return this.employeeSyncService.findAllEmployee();
   }
 
@@ -56,7 +56,7 @@ export class EmployeeController {
   @HttpCode(HttpStatus.OK)
   async createTempEmployee(
     @Body() createTempEmployeeDto: CreateTempEmployeeDto,
-  ): Promise<ResponseFormat<Employee[]>> {
+  ): Promise<ResponseFormat<Employee>> {
     return this.employeeSyncService.createTempEmpolyee(createTempEmployeeDto);
   }
 }

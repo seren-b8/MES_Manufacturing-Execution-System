@@ -259,7 +259,7 @@ export class EmployeeService {
     }
   }
 
-  async findAllEmployee(): Promise<ResponseFormat<Employee[]>> {
+  async findAllEmployee(): Promise<ResponseFormat<Employee>> {
     try {
       const employees = await this.employeeModel.aggregate([
         {
@@ -318,7 +318,7 @@ export class EmployeeService {
 
   async createTempEmpolyee(
     createTempEmployeeDto: CreateTempEmployeeDto,
-  ): Promise<ResponseFormat<Employee[]>> {
+  ): Promise<ResponseFormat<Employee>> {
     try {
       const TemporaryEmployeeData = {
         employee_id: createTempEmployeeDto.employee_id,

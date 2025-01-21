@@ -12,13 +12,13 @@ export class MachineCavityService {
     private readonly machineCavityModel: Model<MasterCavity>,
   ) {}
 
-  async findAll(query: any = {}): Promise<ResponseFormat<MasterCavity[]>> {
+  async findAll(query: any = {}): Promise<ResponseFormat<MasterCavity>> {
     try {
       const cavities = await this.machineCavityModel.find(query).lean();
       return {
         status: 'success',
         message: 'Retrieved machine cavities successfully',
-        data: [cavities],
+        data: cavities,
       };
     } catch (error) {
       if (error instanceof HttpException) {

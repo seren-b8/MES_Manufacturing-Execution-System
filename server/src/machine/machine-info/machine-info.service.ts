@@ -14,6 +14,7 @@ import { Employee } from 'src/shared/modules/schema/employee.schema';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
+import { CreateMachineInfoDto } from '../dto/machine-info.dto';
 
 @Injectable()
 export class MachineInfoService {
@@ -416,6 +417,30 @@ export class MachineInfoService {
           status: 'error',
           message: 'Failed to retrieve machines details',
           data: [errorDetails],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async createMachineInfo(
+    data: CreateMachineInfoDto,
+  ): Promise<ResponseFormat<any>> {
+    try {
+      const machine = new this.machineInfoModel(data);
+      await machine.save();
+
+      return {
+        status: 'success',
+        message: 'Machine created successfully',
+        data: [machine],
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to create machine',
+          data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );

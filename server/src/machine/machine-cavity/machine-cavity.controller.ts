@@ -22,7 +22,7 @@ export class MachineCavityController {
   constructor(private readonly machineCavityService: MachineCavityService) {}
 
   @Get()
-  async findAll(@Query() query: any): Promise<ResponseFormat<MasterCavity[]>> {
+  async findAll(@Query() query: any): Promise<ResponseFormat<MasterCavity>> {
     return this.machineCavityService.findAll(query);
   }
 
