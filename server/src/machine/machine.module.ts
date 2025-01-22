@@ -6,11 +6,22 @@ import { MachineInfoService } from './machine-info/machine-info.service';
 import { MongooseSchemaModule } from 'src/shared/modules/database/mongoose-schema.module';
 import { DatabaseModule } from 'src/shared/modules/database/database.module';
 import { MachineCavityService } from './machine-cavity/machine-cavity.service';
+import { MasterNotGoodController } from './master-not-good/master-not-good.controller';
+import { MasterNotGoodService } from './master-not-good/master-not-good.service';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule],
-  controllers: [MachineInfoController, MachineCavityController],
-  providers: [MachineService, MachineInfoService, MachineCavityService],
+  controllers: [
+    MachineInfoController,
+    MachineCavityController,
+    MasterNotGoodController,
+  ],
+  providers: [
+    MachineService,
+    MachineInfoService,
+    MachineCavityService,
+    MasterNotGoodService,
+  ],
   exports: [MachineInfoService],
 })
 export class MachineModule {}
