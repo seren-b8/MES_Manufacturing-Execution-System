@@ -3,7 +3,7 @@ export class CreateAssignOrderDto {
   production_order_id: string;
   machine_number: string;
 }
-export type OrderStatus = 'pending' | 'active' | 'completed' | 'suspended';
+export type OrderStatus = 'active' | 'completed' | 'suspended';
 export interface UpdateAssignOrderDto {
   status?: OrderStatus;
   datetime_close_order?: Date;

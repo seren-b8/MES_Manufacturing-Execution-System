@@ -9,13 +9,14 @@ import {
 import { ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
+import { AssignEmployeeService } from '../assign-employee/assign-employee.service';
 
-type OrderStatus = 'pending' | 'active' | 'completed' | 'suspended';
+type OrderStatus = 'active' | 'completed' | 'suspended';
 
 @Injectable()
 export class AssignOrderService {
   private readonly statusTransitions = {
-    pending: ['active'], // pending can only go to active
+    // pending: ['active'], // pending can only go to active
     active: ['completed', 'suspended'], // active can go to completed or suspended
     completed: [], // completed is terminal state
     suspended: ['active'], // suspended can go back to active
@@ -25,6 +26,7 @@ export class AssignOrderService {
     @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
     @InjectModel('ProductionOrder')
     private productionOrderModel: Model<ProductionOrder>,
+    private assignEmployeeService: AssignEmployeeService,
   ) {}
 
   async create(
@@ -260,6 +262,7 @@ export class AssignOrderService {
         { $set: updateDto },
         { new: true },
       );
+      await this.assignEmployeeService.closeByAssignOrder(id);
 
       return {
         status: 'success',

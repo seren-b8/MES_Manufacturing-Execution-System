@@ -48,8 +48,8 @@ export class MachineCavityController {
     return this.machineCavityService.update(id, updateDto);
   }
 
-  @Delete(':id')
-  async remove(@Param('id') id: string): Promise<ResponseFormat<MasterCavity>> {
-    return this.machineCavityService.remove(id);
-  }
+  // @Delete(':id')
+  // async remove(@Param('id') id: string): Promise<ResponseFormat<MasterCavity>> {
+  //   return this.machineCavityService.remove(id);
+  // }
 }
