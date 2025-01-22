@@ -31,6 +31,54 @@ export class AssignOrderService {
     createDto: CreateAssignOrderDto,
   ): Promise<ResponseFormat<AssignOrder>> {
     try {
+      const order = await this.productionOrderModel.findById({
+        _id: createDto.production_order_id,
+        assign_stage: false,
+      });
+      if (!order) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Production order not found or already assigned',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      const checkOrder = await this.assignOrderModel.aggregate([
+        {
+          $match: {
+            status: 'active',
+          },
+        },
+        {
+          $lookup: {
+            from: 'production_order',
+            localField: 'production_order_id',
+            foreignField: '_id',
+            as: 'production_order',
+          },
+        },
+        {
+          $unwind: '$production_order',
+        },
+        {
+          $match: {
+            'production_order.order_id': order.order_id,
+          },
+        },
+      ]);
+
+      if (checkOrder) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Order is already assigned to machine ${checkOrder[0].machine_number}`,
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
       const assignOrder = await this.assignOrderModel.findOne({
         machine_number: createDto.machine_number,
         status: 'active',

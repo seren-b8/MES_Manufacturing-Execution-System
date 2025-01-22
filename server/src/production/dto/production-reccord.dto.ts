@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 
 export class CreateProductionRecordDto {
-  assign_employee_id: string;
+  assign_order_id: string;
   is_not_good: boolean;
   quantity: number;
   master_not_good_id?: string;

@@ -1,8 +1,10 @@
-import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { SapProductionSyncService } from './sap-sync.service';
 import { Types } from 'mongoose';
+import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 
 @Controller('sap-sync')
+@UseGuards(JwtAuthGuard)
 export class SapSyncController {
   constructor(private readonly sapSyncService: SapProductionSyncService) {}
 

@@ -99,7 +99,7 @@ export class AuthService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Internal server error: ' + error.message,
+          message: 'Internal server error: ',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -176,7 +176,7 @@ export class AuthService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to update user :' + error.message,
+          message: 'Failed to update user ',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -343,7 +343,7 @@ export class AuthService {
       throw new HttpException(
         {
           status: 'error',
-          message: error.message || 'Failed to create user',
+          message: 'Failed to create user',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

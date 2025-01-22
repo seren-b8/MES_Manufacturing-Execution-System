@@ -71,7 +71,10 @@ export class EmployeeService {
       );
       return result;
     } catch (error) {
-      this.logger.error('Error fetching SQL employees:', error.stack);
+      this.logger.error(
+        'Error fetching SQL employees:',
+        (error as Error).stack,
+      );
       throw new HttpException(
         {
           status: 'error',
@@ -152,11 +155,11 @@ export class EmployeeService {
         ],
       };
     } catch (error) {
-      this.logger.error('Sync failed:', error.stack);
+      this.logger.error('Sync failed:', (error as Error).stack);
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to sync employees: ' + error.message,
+          message: 'Failed to sync employees',
           data: [],
         },
         500,
@@ -204,7 +207,7 @@ export class EmployeeService {
         ],
       };
     } catch (error) {
-      this.logger.error('Error getting sync status:', error.stack);
+      this.logger.error('Error getting sync status:', (error as Error).stack);
       throw new HttpException(
         {
           status: 'error',
@@ -247,7 +250,7 @@ export class EmployeeService {
         ],
       };
     } catch (error) {
-      this.logger.error('Validation failed:', error.stack);
+      this.logger.error('Validation failed:', (error as Error).stack);
       throw new HttpException(
         {
           status: 'error',
@@ -362,7 +365,7 @@ export class EmployeeService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to create temporary employee :' + error.message,
+          message: 'Failed to create temporary employee ',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

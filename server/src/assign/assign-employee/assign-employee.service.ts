@@ -7,15 +7,17 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { isValidObjectId, Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 import {
+  CloseByUserDto,
   CreateAssignEmployeeDto,
   UpdateAssignEmployeeDto,
 } from '../dto/assign-employee.dto';
 import { User } from 'src/shared/modules/schema/user.schema';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
+import e from 'express';
 
 @Injectable()
 export class AssignEmployeeService {
@@ -62,13 +64,14 @@ export class AssignEmployeeService {
       const existingAssignment = await this.assignEmployeeModel.findOne({
         user_id: createDto.user_id,
         status: 'active',
+        assign_order_id: createDto.assign_order_id,
       });
 
       if (existingAssignment) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'User is already assigned to an active order',
+            message: 'User is already in the assign order',
             data: [],
           },
           HttpStatus.BAD_REQUEST,
@@ -208,7 +211,7 @@ export class AssignEmployeeService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to update assignment',
+          message: 'Failed to update assignmen t ',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -258,6 +261,105 @@ export class AssignEmployeeService {
         {
           status: 'error',
           message: 'Failed to close assignments',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async closeByUser(
+    closeByUserDto: CloseByUserDto,
+  ): Promise<ResponseFormat<AssignEmployee>> {
+    try {
+      console.log('Closing assignments for:', closeByUserDto);
+
+      // Validate ObjectIds
+      if (!isValidObjectId(closeByUserDto.assign_order_id)) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Invalid assign order ID format',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Find active assignments
+      const activeAssignments = await this.assignEmployeeModel.find({
+        user_id: closeByUserDto.user_id,
+        status: 'active',
+        assign_order_id: closeByUserDto.assign_order_id,
+      });
+
+      // console.log('Found active assignments:', activeAssignments);
+
+      if (!activeAssignments || activeAssignments.length === 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'No active assignments found for this user and order',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // Update each assignment
+      const updatedAssignments = [];
+      for (const assignment of activeAssignments) {
+        try {
+          const updated = await this.assignEmployeeModel.findByIdAndUpdate(
+            assignment._id,
+            {
+              $set: {
+                status: 'completed',
+                updated_at: new Date(),
+              },
+            },
+            { new: true, runValidators: true },
+          );
+
+          if (updated) {
+            updatedAssignments.push(updated);
+          }
+        } catch (updateError) {
+          console.error(
+            'Error updating assignment:',
+            assignment._id,
+            updateError,
+          );
+        }
+      }
+
+      if (updatedAssignments.length === 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Failed to update any assignments',
+            data: [],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      return {
+        status: 'success',
+        message: `Successfully closed ${updatedAssignments.length} assignment(s)`,
+        data: updatedAssignments,
+      };
+    } catch (error) {
+      console.error('Error in closeByUser:', error);
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to close assignments`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

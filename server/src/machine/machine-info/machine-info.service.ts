@@ -282,8 +282,8 @@ export class MachineInfoService {
                 );
               } catch (error) {
                 console.error('Error fetching active employees:', {
-                  message: error.message,
-                  stack: error.stack,
+                  message: (error as Error).message,
+                  stack: (error as Error).stack,
                 });
                 activeEmployees = [];
               }
@@ -398,8 +398,8 @@ export class MachineInfoService {
       };
     } catch (error) {
       console.error('Error in getAllMachinesDetails:', {
-        error: error.message,
-        stack: error.stack,
+        error: (error as Error).message,
+        stack: (error as Error).stack,
         timestamp: new Date().toISOString(),
         context: 'MachineService.getAllMachinesDetails',
       });
@@ -407,9 +407,9 @@ export class MachineInfoService {
       if (error instanceof HttpException) throw error;
 
       const errorDetails = {
-        message: error.message || 'Unknown error',
-        code: error.code,
-        name: error.name,
+        message: (error as Error).message || 'Unknown error',
+        code: (error as any).code,
+        name: (error as Error).name,
       };
 
       throw new HttpException(
@@ -425,7 +425,7 @@ export class MachineInfoService {
 
   async createMachineInfo(
     data: CreateMachineInfoDto,
-  ): Promise<ResponseFormat<any>> {
+  ): Promise<ResponseFormat<MachineInfo>> {
     try {
       const machine = new this.machineInfoModel(data);
       await machine.save();

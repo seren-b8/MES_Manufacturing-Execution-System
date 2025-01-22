@@ -27,7 +27,8 @@ export class ProductionOrderService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to retrieve production orders: ' + error.message,
+          message:
+            'Failed to retrieve production orders: ' + (error as Error).message,
           data: [],
         } as ResponseFormat<never>,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -65,7 +66,7 @@ export class ProductionOrderService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to retrieve production order: ' + error.message,
+          message: 'Failed to retrieve production order',
           data: [],
         } as ResponseFormat<never>,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -94,7 +95,7 @@ export class ProductionOrderService {
       throw new HttpException(
         {
           status: 'error',
-          message: `Failed to retrieve production orders for work center ${workCenter}: ${error.message}`,
+          message: `Failed to retrieve production orders for work center ${workCenter}: ${(error as Error).message}`,
           data: [],
         } as ResponseFormat<never>,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -131,7 +132,7 @@ export class ProductionOrderService {
           status: 'error',
           message:
             'Failed to retrieve production orders within date range: ' +
-            error.message,
+            (error as Error).message,
           data: [],
         } as ResponseFormat<never>,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -163,7 +164,8 @@ export class ProductionOrderService {
         {
           status: 'error',
           message:
-            'Failed to retrieve active production orders: ' + error.message,
+            'Failed to retrieve active production orders: ' +
+            (error as Error).message,
           data: [],
         } as ResponseFormat<never>,
         HttpStatus.INTERNAL_SERVER_ERROR,

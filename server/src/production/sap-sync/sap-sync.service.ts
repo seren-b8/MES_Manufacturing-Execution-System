@@ -221,7 +221,7 @@ export class SapProductionSyncService {
         } catch (error) {
           await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
             status: 'failed',
-            error_message: error.message,
+            error_message: (error as Error).message,
           });
         }
       }
@@ -248,7 +248,7 @@ export class SapProductionSyncService {
     } catch (error) {
       return {
         status: 'error',
-        message: 'Failed to sync pending records: ' + error.message,
+        message: 'Failed to sync pending records: ' + (error as Error).message,
         data: [],
       };
     }
@@ -270,7 +270,7 @@ export class SapProductionSyncService {
     } catch (error) {
       return {
         status: 'error',
-        message: 'Failed to retrieve sync logs: ' + error.message,
+        message: 'Failed to retrieve sync logs: ' + (error as Error).message,
         data: [],
       };
     }
@@ -340,12 +340,12 @@ export class SapProductionSyncService {
     } catch (error) {
       await this.sapSyncLogModel.findByIdAndUpdate(logId, {
         status: 'failed',
-        error_message: error.message,
+        error_message: (error as Error).message,
       });
 
       return {
         status: 'error',
-        message: 'Failed to retry sync log: ' + error.message,
+        message: 'Failed to retry sync log: ' + (error as Error).message,
         data: [],
       };
     }
@@ -407,7 +407,7 @@ export class SapProductionSyncService {
         } catch (error) {
           await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
             status: 'failed',
-            error_message: error.message,
+            error_message: (error as Error).message,
           });
         }
       }
@@ -433,7 +433,7 @@ export class SapProductionSyncService {
     } catch (error) {
       return {
         status: 'error',
-        message: 'Failed to sync specific records: ' + error.message,
+        message: 'Failed to sync specific records: ' + (error as Error).message,
         data: [],
       };
     }

@@ -26,3 +26,8 @@ export interface AssignOrder {
   _id: string;
   status: string;
 }
+
+export class CloseByUserDto {
+  user_id: string;
+  assign_order_id: string;
+}

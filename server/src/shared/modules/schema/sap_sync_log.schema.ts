@@ -1,4 +1,4 @@
-import { Prop, Schema } from '@nestjs/mongoose';
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 
 @Schema({
@@ -31,3 +31,5 @@ export class SAPSyncLog {
   @Prop({ type: Date })
   sync_timestamp?: Date;
 }
+
+export const SAPSyncLogSchema = SchemaFactory.createForClass(SAPSyncLog);

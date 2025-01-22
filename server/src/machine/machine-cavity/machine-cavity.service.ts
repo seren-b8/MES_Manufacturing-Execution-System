@@ -27,7 +27,7 @@ export class MachineCavityService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to retrieve machine cavities: ' + error.message,
+          message: 'Failed to retrieve machine cavities ',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -62,7 +62,7 @@ export class MachineCavityService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to retrieve machine cavity: ' + error.message,
+          message: 'Failed to retrieve machine cavity ',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -87,7 +87,7 @@ export class MachineCavityService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to create machine cavity: ' + error.message,
+          message: 'Failed to create machine cavity ',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -127,7 +127,7 @@ export class MachineCavityService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to update machine cavity: ' + error.message,
+          message: 'Failed to update machine cavity',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -164,7 +164,7 @@ export class MachineCavityService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to delete machine cavity: ' + error.message,
+          message: 'Failed to delete machine cavity',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

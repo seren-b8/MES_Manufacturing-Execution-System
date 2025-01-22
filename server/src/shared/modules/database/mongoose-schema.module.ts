@@ -37,6 +37,7 @@ import {
   ProductionRecord,
   ProductionRecordSchema,
 } from 'src/shared/modules/schema/production-record.schema';
+import { SAPSyncLog, SAPSyncLogSchema } from '../schema/sap_sync_log.schema';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import {
       { name: ProductionOrder.name, schema: ProductionOrderSchema },
       { name: TimelineMachine.name, schema: TimelineMachineSchema },
       { name: User.name, schema: UserSchema },
+      { name: SAPSyncLog.name, schema: SAPSyncLogSchema },
     ]),
   ],
   exports: [MongooseModule],

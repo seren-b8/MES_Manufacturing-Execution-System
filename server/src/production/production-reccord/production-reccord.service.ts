@@ -31,16 +31,11 @@ export class ProductionRecordService {
     createDto: CreateProductionRecordDto,
   ): Promise<ResponseFormat<ProductionRecord>> {
     try {
-      // Check if AssignEmployee exists and is active
-      const assignEmployee = await this.assignEmployeeModel
-        .findById(createDto.assign_employee_id)
-        .populate('assign_order_id');
-
-      const AssignOrder = await this.assignOrderModel.findById(
-        assignEmployee.assign_order_id,
+      const assignOrder = await this.assignOrderModel.findById(
+        createDto.assign_order_id,
       );
 
-      if (!AssignOrder) {
+      if (!assignOrder || assignOrder[0].active !== 'active') {
         throw new HttpException(
           {
             status: 'error',
@@ -51,16 +46,24 @@ export class ProductionRecordService {
         );
       }
 
-      if (!assignEmployee || assignEmployee.status !== 'active') {
+      // Check if AssignEmployee exists and is active
+      const assignEmployees = await this.assignEmployeeModel.find({
+        assign_order_id: assignOrder._id,
+        status: 'active',
+      });
+
+      if (!assignEmployees || assignEmployees.length === 0) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'AssignEmployee not found or not active',
-            data: [assignEmployee],
+            message: 'No active assigned employees found for this order',
+            data: [],
           },
           HttpStatus.BAD_REQUEST,
         );
       }
+
+      const assignEmployeeIds = assignEmployees.map((emp) => emp._id);
 
       // Validate quantity
       if (createDto.quantity <= 0) {
@@ -77,7 +80,7 @@ export class ProductionRecordService {
       // Check machine counter if recording good products
       if (!createDto.is_not_good) {
         const machine = await this.machineInfoModel.findOne({
-          machine_number: AssignOrder.machine_number,
+          machine_number: assignOrder.machine_number,
         });
 
         if (!machine) {
@@ -100,7 +103,7 @@ export class ProductionRecordService {
               message: `Cannot record ${createDto.quantity} pieces. Current counter is only ${currentCounter}`,
               data: [
                 {
-                  machine_number: AssignOrder.machine_number,
+                  machine_number: assignOrder.machine_number,
                   requested_quantity: createDto.quantity,
                   current_counter: currentCounter,
                 },
@@ -112,7 +115,7 @@ export class ProductionRecordService {
 
         // Update machine counter after validation
         await this.machineInfoModel.findOneAndUpdate(
-          { machine_number: AssignOrder.machine_number },
+          { machine_number: assignOrder.machine_number },
           { $set: { counter: currentCounter - createDto.quantity } },
         );
       }
@@ -147,8 +150,8 @@ export class ProductionRecordService {
 
       const newRecord = new this.productionRecordModel({
         ...createDto,
-        assign_order_id: AssignOrder._id,
-        assign_employee_id: new Types.ObjectId(createDto.assign_employee_id),
+        assign_order_id: assignOrder._id,
+        assign_employee_ids: assignEmployeeIds,
         master_not_good_id: createDto.master_not_good_id
           ? new Types.ObjectId(createDto.master_not_good_id)
           : undefined,
@@ -157,7 +160,7 @@ export class ProductionRecordService {
       const savedRecord = await newRecord.save();
 
       // Update assign order summary
-      await this.updateAssignOrderSummary(createDto.assign_employee_id);
+      await this.updateAssignOrderSummary(createDto.assign_order_id);
 
       return {
         status: 'success',
@@ -169,7 +172,8 @@ export class ProductionRecordService {
       throw new HttpException(
         {
           status: 'error',
-          message: error.message || 'Failed to create production record',
+          message:
+            (error as Error).message || 'Failed to create production record',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

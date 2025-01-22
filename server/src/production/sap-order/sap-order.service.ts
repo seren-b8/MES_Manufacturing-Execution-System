@@ -106,7 +106,8 @@ export class SapOrderService {
     } catch (error) {
       return {
         status: 'error',
-        message: 'Failed to sync production orders : ' + error.message,
+        message:
+          'Failed to sync production orders : ' + (error as Error).message,
         data: [],
       };
     }

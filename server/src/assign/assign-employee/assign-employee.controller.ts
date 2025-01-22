@@ -8,15 +8,21 @@ import {
   Param,
   Query,
   UseGuards,
+  HttpCode,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { AssignEmployeeService } from './assign-employee.service';
 import {
+  CloseByUserDto,
   CreateAssignEmployeeDto,
   UpdateAssignEmployeeDto,
 } from '../dto/assign-employee.dto';
+import { ResponseFormat } from 'src/shared/interface';
+import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 
-@Controller('/assign-employee')
+@Controller('assign-employee')
 @UseGuards(JwtAuthGuard)
 export class AssignEmployeeController {
   constructor(private readonly assignEmployeeService: AssignEmployeeService) {}
@@ -36,16 +42,12 @@ export class AssignEmployeeController {
     return await this.assignEmployeeService.findActiveByUser(userId);
   }
 
-  @Put(':id')
-  async update(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateAssignEmployeeDto,
-  ) {
-    return await this.assignEmployeeService.update(id, updateDto);
-  }
-
-  @Put('order/:assignOrderId/close')
-  async closeByAssignOrder(@Param('assignOrderId') assignOrderId: string) {
-    return await this.assignEmployeeService.closeByAssignOrder(assignOrderId);
+  @Put('close-by-user')
+  @HttpCode(200)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async closeByUser(
+    @Body() closeByUserDto: CloseByUserDto,
+  ): Promise<ResponseFormat<AssignEmployee>> {
+    return await this.assignEmployeeService.closeByUser(closeByUserDto);
   }
 }
