@@ -328,6 +328,7 @@ export class MachineInfoService {
                         material_description:
                           productionOrder.material_description,
                         target_quantity: productionOrder.target_quantity,
+                        taget_daly: productionOrder.plan_target_day,
                         plan_cycle_time: productionOrder.plan_cycle_time,
                         weight: cavity?.weight || 0,
                         weight_runner: cavity?.runner || 0,
@@ -427,6 +428,16 @@ export class MachineInfoService {
     data: CreateMachineInfoDto,
   ): Promise<ResponseFormat<MachineInfo>> {
     try {
+      if (!data.machine_number || !data.work_center) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine number and work center are required',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
       const machine = new this.machineInfoModel(data);
       await machine.save();
 
@@ -436,6 +447,7 @@ export class MachineInfoService {
         data: [machine],
       };
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new HttpException(
         {
           status: 'error',

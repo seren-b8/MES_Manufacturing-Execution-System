@@ -12,6 +12,10 @@ export class UpdateProductionRecordDto {
   quantity?: number;
   master_not_good_id?: string;
   remark?: string;
+  confirmation_status?: 'confirmed' | 'rejected';
+  confirmed_by?: string;
+  confirmed_at?: Date; // เพิ่มฟิลด์นี้
+  rejection_reason?: string;
 }
 
 // Interfaces

@@ -116,7 +116,7 @@ export class ProductionRecordService {
         // Update machine counter after validation
         await this.machineInfoModel.findOneAndUpdate(
           { machine_number: assignOrder.machine_number },
-          { $set: { counter: currentCounter - createDto.quantity } },
+          { $inc: { counter: -createDto.quantity } },
         );
       }
 
@@ -146,6 +146,10 @@ export class ProductionRecordService {
             HttpStatus.BAD_REQUEST,
           );
         }
+        await this.machineInfoModel.findOneAndUpdate(
+          { machine_number: assignOrder.machine_number },
+          { $inc: { counter: -createDto.quantity } },
+        );
       }
 
       const newRecord = new this.productionRecordModel({
@@ -224,6 +228,7 @@ export class ProductionRecordService {
         );
       }
 
+      // Validate quantity if provided
       if (updateDto.quantity && updateDto.quantity <= 0) {
         throw new HttpException(
           {
@@ -235,29 +240,76 @@ export class ProductionRecordService {
         );
       }
 
+      // Handle confirmation status update
+      if (updateDto.confirmation_status) {
+        if (record.confirmation_status === 'confirmed') {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'Record is already confirmed',
+              data: [],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        if (
+          updateDto.confirmation_status === 'rejected' &&
+          !updateDto.rejection_reason
+        ) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'Rejection reason is required',
+              data: [],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        if (!updateDto.confirmed_by) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'Confirmed by user is required',
+              data: [],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        // Add confirmation related fields
+        updateDto = {
+          ...updateDto,
+          confirmed_by: new Types.ObjectId(updateDto.confirmed_by).toString(),
+          confirmed_at: new Date(),
+        };
+      }
+
+      // Update the record
       const updatedRecord = await this.productionRecordModel
         .findByIdAndUpdate(id, { $set: updateDto }, { new: true })
-        .populate('master_not_good_id', 'case_english case_thai');
+        .populate('master_not_good_id', 'case_english case_thai')
+        .populate('confirmed_by');
 
       // Update assign order summary if quantity changed
       if (updateDto.quantity) {
-        await this.updateAssignOrderSummary(
-          record.assign_employee_ids.toString(),
-        );
+        await this.updateAssignOrderSummary(record.assign_order_id.toString());
       }
 
       return {
         status: 'success',
-        message: 'Production record updated successfully',
+        message: updateDto.confirmation_status
+          ? `Production record ${updateDto.confirmation_status} successfully`
+          : 'Production record updated successfully',
         data: [updatedRecord],
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
-
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to update production record',
+          message: `Failed to update production record: ${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -265,17 +317,82 @@ export class ProductionRecordService {
     }
   }
 
-  private async updateAssignOrderSummary(assignEmployeeId: string) {
+  async delete(id: string): Promise<ResponseFormat<ProductionRecord>> {
     try {
-      const assignEmployee = await this.assignEmployeeModel
-        .findById(assignEmployeeId)
+      const record = await this.productionRecordModel
+        .findById(id)
         .populate('assign_order_id');
+      if (!record) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Production record not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
 
-      if (!assignEmployee) return;
+      // Check if the record is confirmed
+      if (record.confirmation_status === 'confirmed') {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Cannot delete confirmed record',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
 
-      // Calculate totals
+      const machine = await this.machineInfoModel.findOne({
+        machine_number: record.assign_order_id['machine_number'],
+      });
+
+      if (!machine) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      await this.machineInfoModel.findOneAndUpdate(
+        { machine_number: record.assign_order_id['machine_number'] },
+        { $inc: { counter: record.quantity } },
+      );
+
+      await this.productionRecordModel.findByIdAndDelete(id);
+      // Update assign order summary
+      await this.updateAssignOrderSummary(
+        record.assign_order_id._id.toString(),
+      );
+
+      return {
+        status: 'success',
+        message: 'Production record deleted successfully',
+        data: [record],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to delete production record: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  private async updateAssignOrderSummary(assignOrderId: string) {
+    try {
       const records = await this.productionRecordModel.find({
-        assign_employee_id: new Types.ObjectId(assignEmployeeId),
+        assign_order_id: new Types.ObjectId(assignOrderId),
       });
 
       const summary = records.reduce(
@@ -291,17 +408,14 @@ export class ProductionRecordService {
       );
 
       // Update assign order summary
-      await this.assignOrderModel.findByIdAndUpdate(
-        assignEmployee.assign_order_id,
-        {
-          $set: {
-            current_summary: {
-              ...summary,
-              last_update: new Date(),
-            },
+      await this.assignOrderModel.findByIdAndUpdate(assignOrderId, {
+        $set: {
+          current_summary: {
+            ...summary,
+            last_update: new Date(),
           },
         },
-      );
+      });
     } catch (error) {
       console.error('Failed to update assign order summary:', error);
     }
