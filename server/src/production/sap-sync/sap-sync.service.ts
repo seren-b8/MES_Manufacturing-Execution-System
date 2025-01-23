@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { SqlService } from 'src/shared/services/sql.service';
@@ -10,39 +10,93 @@ import {
   ISAPConfirmationLog,
   PopulatedProductionRecord,
 } from 'src/shared/interface/sap';
+import { User } from 'src/shared/modules/schema/user.schema';
+import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
+import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
+import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 
 // Define interfaces for raw data structur
+interface TransformedEmployee {
+  user_id: string;
+  employee_id: string;
+}
+
+interface PopulatedUser {
+  _id: Types.ObjectId;
+  employee_id: string;
+}
+
+interface AssignEmployeePopulated {
+  user_id: PopulatedUser;
+}
 
 @Injectable()
 export class SapProductionSyncService {
   constructor(
     @InjectModel(ProductionRecord.name)
     private readonly productionRecordModel: Model<ProductionRecord>,
+
+    @InjectModel(User.name) private readonly userModel: Model<User>,
+
+    @InjectModel(AssignEmployee.name)
+    private readonly assignEmployeeModel: Model<AssignEmployee>,
+
+    @InjectModel(ProductionOrder.name)
+    private readonly productionOrderModel: Model<ProductionOrder>,
+
     @InjectModel(SAPSyncLog.name)
     private readonly sapSyncLogModel: Model<SAPSyncLog>,
+
+    @InjectModel(AssignOrder.name)
+    private readonly assignOrderModel: Model<AssignOrder>,
+
     private readonly sqlService: SqlService,
-    private readonly sapTransformationService: SAPDataTransformationService,
   ) {}
 
-  private transformProductionRecord(record: any): PopulatedProductionRecord {
-    return {
-      _id: record._id.toString(),
-      assign_order_id: {
-        order_id: record.assign_order_id.order_id,
-        sequence_no: record.assign_order_id.sequence_no,
-        activity: record.assign_order_id.activity,
-      },
-      master_not_good_id: record.master_not_good_id
-        ? {
-            case_english: record.master_not_good_id.case_english,
-          }
-        : undefined,
-      assign_employee_ids: record.assign_employee_ids.map((emp) => ({
-        user_id: emp.user_id,
-      })),
-      quantity: record.quantity,
-      is_not_good: record.is_not_good,
-    };
+  private async transformProductionRecord(
+    record: any,
+  ): Promise<PopulatedProductionRecord> {
+    try {
+      const productionOrder = await this.productionOrderModel
+        .findById(record.assign_order_id.production_order_id)
+        .lean();
+
+      if (!productionOrder) {
+        throw new Error(
+          `Production order not found for ${record.assign_order_id.production_order_id}`,
+        );
+      }
+
+      const assignEmployees = await this.assignEmployeeModel
+        .find({ _id: { $in: record.assign_employee_ids } })
+        .select('user_id')
+        .populate<{ user_id: PopulatedUser }>('user_id', 'employee_id')
+        .lean();
+
+      return {
+        _id: record._id.toString(),
+        assign_order_id: {
+          order_id: productionOrder.order_id,
+          sequence_no: productionOrder.sequence_number || '000000', // Default if not present
+          activity: productionOrder.activity || '0010', // Default operation
+        },
+        master_not_good_id: record.master_not_good_id
+          ? {
+              case_english: record.master_not_good_id.case_english,
+            }
+          : undefined,
+        assign_employee_ids: assignEmployees.map((ae) => ({
+          user_id: ae.user_id._id.toString(),
+          employee_id: ae.user_id.employee_id,
+        })) as TransformedEmployee[],
+        quantity: record.quantity,
+        is_not_good: record.is_not_good,
+      };
+    } catch (error) {
+      throw new Error(
+        `Failed to transform production record: ${(error as Error).message}`,
+      );
+    }
   }
 
   private async createSyncLogs(
@@ -82,6 +136,16 @@ export class SapProductionSyncService {
     const groupedMap = new Map<string, GroupedProductionData>();
 
     for (const record of records) {
+      if (
+        !record.assign_order_id?.order_id ||
+        !record.assign_order_id?.sequence_no ||
+        !record.assign_order_id?.activity
+      ) {
+        throw new Error(
+          `Invalid record data: Missing required fields for record ${record._id}`,
+        );
+      }
+
       const key = `${record.assign_order_id.order_id}-${record.assign_order_id.sequence_no}-${record.assign_order_id.activity}-${record.is_not_good}-${record.master_not_good_id?.case_english || ''}`;
 
       if (!groupedMap.has(key)) {
@@ -97,16 +161,19 @@ export class SapProductionSyncService {
       }
 
       const group = groupedMap.get(key);
-      const employeeCount = record.assign_employee_ids.length;
+      const employeeCount = record.assign_employee_ids.length || 1;
       const baseQuantity = Math.floor(record.quantity / employeeCount);
       const remainder = record.quantity % employeeCount;
 
       // Add quantities for each employee
       for (const employee of record.assign_employee_ids) {
+        if (!employee?.employee_id) {
+          throw new Error(`Invalid employee data for record ${record._id}`);
+        }
         const currentQuantity =
-          group.employee_quantities.get(employee.user_id) || 0;
+          group.employee_quantities.get(employee.employee_id) || 0;
         group.employee_quantities.set(
-          employee.user_id,
+          employee.employee_id,
           currentQuantity + baseQuantity,
         );
       }
@@ -122,40 +189,49 @@ export class SapProductionSyncService {
     syncLog: SAPSyncLog,
     groupedData: GroupedProductionData,
   ) {
-    // Prepare data for transformation
-    const sapData = {
-      employee_id: syncLog.employee_id,
-      order_id: groupedData.order_id,
-      sequence_no: groupedData.sequence_no,
-      activity: groupedData.activity,
-      quantity: syncLog.quantity,
-      is_not_good: groupedData.is_not_good,
-      case_ng: groupedData.case_ng,
-    };
+    if (
+      !groupedData?.order_id ||
+      !groupedData?.sequence_no ||
+      !groupedData?.activity
+    ) {
+      throw new Error('Invalid grouped data: missing required fields');
+    }
 
-    // Transform data to SAP format
-    const transformedData: ISAPConfirmationLog =
-      this.sapTransformationService.transformToSAPFormat(sapData);
+    const now = new Date();
+    const tid = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}${syncLog.employee_id}`;
 
-    // Prepare SQL query
     const query = `
       INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
       VALUES (
-        @mandt,@tid,@itemno,@employee,@aufnr,@aplfl,@vornr,@uvorn,@lmnga,
-        @meinh,@xmnga,@rmnga,@rueck,@rmzhl,@budat,@ismng,@ismngeh,
-        @posted,@message,@erdat,@erzet,@ernam,@werks,@agrnd,@tile
+        '700',
+      '${tid}',
+      1,
+      '${syncLog.employee_id}',
+      '${groupedData.order_id.padStart(12, '0')}',
+      '${groupedData.sequence_no.padStart(6, '0')}',
+      '${groupedData.activity.padStart(4, '0')}',
+      '',
+      ${syncLog.quantity.toFixed(3)},
+      'ST',
+      ${syncLog.quantity.toFixed(3)},
+      0,
+      0,
+      '',
+      CONVERT(VARCHAR(50),GETDATE(),112),
+      ${syncLog.quantity.toFixed(3)},
+      'STD',
+      '',
+      '',
+      CONVERT(VARCHAR(50),GETDATE(),112),
+      REPLACE(CONVERT(VARCHAR(8),GETDATE(),108),':',''),
+      'ADMINIT',
+      '1620',
+      '${groupedData.is_not_good ? groupedData.case_ng || '' : ''}',
+      'Team'
       )`;
 
-    // Map transformed data to parameters
-    const params = Object.entries(transformedData).map(([key, value]) => ({
-      name: key.toLowerCase(),
-      value: value,
-    }));
-
-    return this.sqlService.query(
-      query,
-      params.map((p) => p.value),
-    );
+    console.log(query);
+    return this.sqlService.query(query);
   }
 
   async syncPendingRecords() {
@@ -178,14 +254,12 @@ export class SapProductionSyncService {
         };
       }
 
-      const pendingRecords = rawRecords.map((record) =>
-        this.transformProductionRecord(record),
+      // Transform records sequentially to maintain order
+      const pendingRecords = await Promise.all(
+        rawRecords.map((record) => this.transformProductionRecord(record)),
       );
 
-      // Group records by order and operation
       const groupedData = await this.groupProductionRecords(pendingRecords);
-
-      // Create and process sync logs
       const recordIds = pendingRecords.map(
         (record) => new Types.ObjectId(record._id),
       );
@@ -245,6 +319,8 @@ export class SapProductionSyncService {
           },
         ],
       };
+
+      // Rest of the code remains the same
     } catch (error) {
       return {
         status: 'error',
@@ -281,19 +357,25 @@ export class SapProductionSyncService {
       const syncLog = await this.sapSyncLogModel.findById(logId);
 
       if (!syncLog) {
-        return {
-          status: 'error',
-          message: 'Sync log not found',
-          data: [],
-        };
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Sync log not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
       }
 
       if (syncLog.status !== 'failed') {
-        return {
-          status: 'error',
-          message: 'Can only retry failed sync logs',
-          data: [],
-        };
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Can only retry failed sync logs',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
       }
 
       // Get production records for this sync log
@@ -306,8 +388,12 @@ export class SapProductionSyncService {
         .populate('assign_employee_ids')
         .lean();
 
-      const pendingRecords = records.map((record) =>
-        this.transformProductionRecord(record),
+      if (!records.length) {
+        throw new Error('No production records found for this sync log');
+      }
+
+      const pendingRecords = await Promise.all(
+        records.map((record) => this.transformProductionRecord(record)),
       );
 
       const groupedData = await this.groupProductionRecords(pendingRecords);
@@ -338,16 +424,23 @@ export class SapProductionSyncService {
         data: [{ logId }],
       };
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
       await this.sapSyncLogModel.findByIdAndUpdate(logId, {
         status: 'failed',
         error_message: (error as Error).message,
       });
 
-      return {
-        status: 'error',
-        message: 'Failed to retry sync log: ' + (error as Error).message,
-        data: [],
-      };
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to retry sync log: ' + (error as Error).message,
+          data: [],
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 
@@ -371,8 +464,8 @@ export class SapProductionSyncService {
         };
       }
 
-      const pendingRecords = records.map((record) =>
-        this.transformProductionRecord(record),
+      const pendingRecords = await Promise.all(
+        records.map((record) => this.transformProductionRecord(record)),
       );
 
       const groupedData = await this.groupProductionRecords(pendingRecords);

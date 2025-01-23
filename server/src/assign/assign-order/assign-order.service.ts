@@ -33,10 +33,11 @@ export class AssignOrderService {
     createDto: CreateAssignOrderDto,
   ): Promise<ResponseFormat<AssignOrder>> {
     try {
-      const order = await this.productionOrderModel.findById({
+      const order = await this.productionOrderModel.findOne({
         _id: createDto.production_order_id,
         assign_stage: false,
       });
+
       if (!order) {
         throw new HttpException(
           {
@@ -71,7 +72,7 @@ export class AssignOrderService {
         },
       ]);
 
-      if (checkOrder) {
+      if (checkOrder.length > 0) {
         throw new HttpException(
           {
             status: 'error',
@@ -127,7 +128,7 @@ export class AssignOrderService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to create assign order',
+          message: 'Failed to create assign order' + (error as Error).message,
           data: [],
         },
         HttpStatus.BAD_REQUEST,

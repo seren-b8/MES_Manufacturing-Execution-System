@@ -53,6 +53,7 @@ import { SAPSyncLog, SAPSyncLogSchema } from '../schema/sap_sync_log.schema';
       { name: TimelineMachine.name, schema: TimelineMachineSchema },
       { name: User.name, schema: UserSchema },
       { name: SAPSyncLog.name, schema: SAPSyncLogSchema },
+      { name: ProductionOrder.name, schema: ProductionOrderSchema },
     ]),
   ],
   exports: [MongooseModule],

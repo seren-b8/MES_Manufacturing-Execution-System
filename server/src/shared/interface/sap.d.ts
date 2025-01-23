@@ -39,12 +39,16 @@ export interface MasterNotGoodData {
 export interface AssignEmployeeData {
   user_id: string;
 }
+interface TransformedEmployee {
+  user_id: string;
+  employee_id: string;
+}
 
 export interface PopulatedProductionRecord {
   _id: string;
   assign_order_id: AssignOrderData;
   master_not_good_id?: MasterNotGoodData;
-  assign_employee_ids: AssignEmployeeData[];
+  assign_employee_ids: TransformedEmployee[];
   quantity: number;
   is_not_good: boolean;
 }

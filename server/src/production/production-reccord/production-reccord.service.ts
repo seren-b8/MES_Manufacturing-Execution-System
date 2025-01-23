@@ -35,7 +35,7 @@ export class ProductionRecordService {
         createDto.assign_order_id,
       );
 
-      if (!assignOrder || assignOrder[0].active !== 'active') {
+      if (!assignOrder || assignOrder.status !== 'active') {
         throw new HttpException(
           {
             status: 'error',
@@ -48,9 +48,10 @@ export class ProductionRecordService {
 
       // Check if AssignEmployee exists and is active
       const assignEmployees = await this.assignEmployeeModel.find({
-        assign_order_id: assignOrder._id,
+        assign_order_id: assignOrder._id.toString(),
         status: 'active',
       });
+      // console.log(assignEmployees, assignOrder._id);
 
       if (!assignEmployees || assignEmployees.length === 0) {
         throw new HttpException(
