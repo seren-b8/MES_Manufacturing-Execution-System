@@ -39,7 +39,7 @@ export interface MasterNotGoodData {
 export interface AssignEmployeeData {
   user_id: string;
 }
-interface TransformedEmployee {
+export interface TransformedEmployee {
   user_id: string;
   employee_id: string;
 }
@@ -61,4 +61,9 @@ export interface GroupedProductionData {
   case_ng?: string;
   employee_quantities: Map<string, number>;
   snc_quantity: number;
+}
+
+export interface PopulatedUser {
+  _id: Types.ObjectId;
+  employee_id: string;
 }

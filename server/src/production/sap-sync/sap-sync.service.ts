@@ -4,11 +4,11 @@ import { Model, Types } from 'mongoose';
 import { SqlService } from 'src/shared/services/sql.service';
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 import { SAPSyncLog } from 'src/shared/modules/schema/sap_sync_log.schema';
-import { SAPDataTransformationService } from './sap-transformmation.service';
 import {
   GroupedProductionData,
-  ISAPConfirmationLog,
   PopulatedProductionRecord,
+  PopulatedUser,
+  TransformedEmployee,
 } from 'src/shared/interface/sap';
 import { User } from 'src/shared/modules/schema/user.schema';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
@@ -16,19 +16,6 @@ import { ProductionOrder } from 'src/shared/modules/schema/production-order.sche
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 
 // Define interfaces for raw data structur
-interface TransformedEmployee {
-  user_id: string;
-  employee_id: string;
-}
-
-interface PopulatedUser {
-  _id: Types.ObjectId;
-  employee_id: string;
-}
-
-interface AssignEmployeePopulated {
-  user_id: PopulatedUser;
-}
 
 @Injectable()
 export class SapProductionSyncService {
