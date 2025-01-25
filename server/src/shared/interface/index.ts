@@ -1,10 +1,28 @@
 // types/index.ts
 import { Document, Types } from 'mongoose';
 
+// export interface ResponseFormat<T> {
+//   status: 'success' | 'error';
+//   message: string;
+//   data: T[];
+// }
+
 export interface ResponseFormat<T> {
   status: 'success' | 'error';
+
   message: string;
+
   data: T[];
+
+  pagination?: {
+    total: number;
+
+    page: number;
+
+    limit: number;
+
+    totalPages: number;
+  };
 }
 
 export interface IAssignEmployee extends Document {

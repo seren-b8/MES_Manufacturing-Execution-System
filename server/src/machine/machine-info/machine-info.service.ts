@@ -20,13 +20,18 @@ import { CreateMachineInfoDto } from '../dto/machine-info.dto';
 export class MachineInfoService {
   constructor(
     @InjectModel('MachineInfo') private machineInfoModel: Model<MachineInfo>,
+
+    @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
+
+    @InjectModel('Employee') private employeeModel: Model<Employee>,
+
+    @InjectModel('MasterCavity') private masterCavityModel: Model<MasterCavity>,
+
     @InjectModel('ProductionOrder')
     private productionOrderModel: Model<ProductionOrder>,
-    @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
+
     @InjectModel('AssignEmployee')
     private assignEmployeeModel: Model<AssignEmployee>,
-    @InjectModel('Employee') private employeeModel: Model<Employee>,
-    @InjectModel('MasterCavity') private masterCavityModel: Model<MasterCavity>,
   ) {}
 
   async findByWorkCenter(work_center: string): Promise<ResponseFormat<any>> {
@@ -80,6 +85,10 @@ export class MachineInfoService {
           machine_number: machine.machine_number,
           status: machine.status,
           counter: machine.counter,
+          available_counter: machine.is_counter_paused
+            ? machine.pause_start_counter - machine.recorded_counter
+            : machine.counter - machine.recorded_counter,
+          is_counter_paused: machine.is_counter_paused,
           cycle_time: machine.cycletime,
           tonnage: machine.tonnage,
         },
@@ -300,7 +309,11 @@ export class MachineInfoService {
                 machine_number: machine.machine_number || '',
                 line: machine.line || '',
                 status: machine.status || 'unknown',
-                counter: machine.counter || 0,
+                counter: machine.counter,
+                available_counter: machine.is_counter_paused
+                  ? machine.pause_start_counter - machine.recorded_counter
+                  : machine.counter - machine.recorded_counter || 0,
+                is_counter_paused: machine.is_counter_paused || false,
                 cycle_time: machine.cycletime || 0,
                 thonnage: machine.tonnage || 0,
               },
@@ -360,6 +373,7 @@ export class MachineInfoService {
                       activeOrder.current_summary?.total_good_quantity || 0,
                       new Date(activeOrder.datetime_open_order).getTime(),
                       Number(machine.cycletime) || 0,
+                      machine.is_counter_paused,
                     ),
                   }
                 : null,
@@ -477,13 +491,140 @@ export class MachineInfoService {
     totalGood: number,
     startTime: number,
     cycleTime: number,
+    isPaused: boolean,
   ): number {
-    if (!cycleTime) return 0;
+    if (!cycleTime || isPaused) return 0;
     const runningTimeInSeconds =
       (new Date().getTime() - new Date(startTime).getTime()) / 1000;
     const theoreticalOutput = runningTimeInSeconds / cycleTime;
     if (!theoreticalOutput) return 0;
     const efficiency = (totalGood / theoreticalOutput) * 100;
     return Math.round(efficiency * 100) / 100; // Round to 2 decimal places
+  }
+
+  async toggleCounter(
+    machineNumber: string,
+  ): Promise<ResponseFormat<MachineInfo>> {
+    try {
+      const machine = await this.machineInfoModel.findOne({
+        machine_number: machineNumber,
+      });
+      if (!machine) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      let updateData: any;
+
+      if (!machine.is_counter_paused) {
+        // Pause counter
+        updateData = {
+          is_counter_paused: true,
+          pause_start_counter: machine.counter,
+          available_counter: machine.counter - machine.recorded_counter,
+        };
+      } else {
+        // Resume counter
+        const counterDifference = machine.counter - machine.pause_start_counter;
+        updateData = {
+          is_counter_paused: false,
+          pause_start_counter: null,
+          recorded_counter: machine.recorded_counter + counterDifference,
+          available_counter:
+            machine.counter - (machine.recorded_counter + counterDifference),
+        };
+      }
+
+      const updatedMachine = await this.machineInfoModel.findOneAndUpdate(
+        { machine_number: machineNumber },
+        updateData,
+        { new: true },
+      );
+
+      return {
+        status: 'success',
+        message: `Counter ${machine.is_counter_paused ? 'resumed' : 'paused'} successfully`,
+        data: [updatedMachine],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to toggle counter',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async resetCounter(
+    machineNumber: string,
+  ): Promise<ResponseFormat<MachineInfo>> {
+    try {
+      const machine = await this.machineInfoModel.findOne({
+        machine_number: machineNumber,
+      });
+
+      if (!machine) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const updatedMachine = await this.machineInfoModel.findOneAndUpdate(
+        { machine_number: machineNumber },
+        {
+          recorded_counter: 0,
+          is_counter_paused: true,
+          pause_start_counter: 0,
+          available_counter: 0,
+        },
+        { new: true },
+      );
+
+      return {
+        status: 'success',
+        message: 'Counter reset successfully',
+        data: [updatedMachine],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to reset counter',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async getAvailableCounter(machineNumber: string): Promise<number> {
+    const machine = await this.machineInfoModel.findOne({
+      machine_number: machineNumber,
+    });
+    if (!machine) {
+      throw new Error('Machine not found');
+    }
+
+    if (machine.is_counter_paused) {
+      return machine.pause_start_counter - machine.recorded_counter;
+    }
+
+    return machine.counter - machine.recorded_counter;
   }
 }

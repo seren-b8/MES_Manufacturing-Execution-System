@@ -22,7 +22,19 @@ export class MachineInfo extends Document {
   status: string; // changed from Status
 
   @Prop({ default: 0 })
-  counter: number; // changed from Counter
+  counter: number; // ค่าจาก PLC
+
+  @Prop({ default: 0 })
+  recorded_counter: number; // ค่าที่บันทึกไปแล้ว
+
+  @Prop({ default: 0 })
+  available_counter: number; // ค่าที่สามารถบันทึกได้ (counter - recorded_counter)
+
+  @Prop({ default: false })
+  is_counter_paused: boolean;
+
+  @Prop({ default: null })
+  pause_start_counter: number; // เก็บค่า counter ตอนเริ่ม pause
 
   @Prop({ default: 0 })
   sleep_count: number; // changed from SleepCount

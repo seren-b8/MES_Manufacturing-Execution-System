@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import {
   CreateProductionRecordDto,
@@ -26,13 +27,38 @@ export class ProductionRecordController {
     return await this.productionRecordService.create(createDto);
   }
 
-  @Get('assign-employee/:assignEmployeeId')
-  async findByAssignEmployee(
-    @Param('assignEmployeeId') assignEmployeeId: string,
+  @Get()
+  async findAll(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 10,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+    @Query('is_not_good') isNotGood?: boolean,
+    @Query('confirmation_status') confirmationStatus?: string,
+    @Query('is_synced_to_sap') isSyncedToSap?: boolean,
   ) {
-    return await this.productionRecordService.findByAssignEmployee(
-      assignEmployeeId,
-    );
+    const query: any = {};
+
+    if (startDate && endDate) {
+      query.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      };
+    }
+
+    if (isNotGood !== undefined) {
+      query.is_not_good = isNotGood;
+    }
+
+    if (confirmationStatus) {
+      query.confirmation_status = confirmationStatus;
+    }
+
+    if (isSyncedToSap !== undefined) {
+      query.is_synced_to_sap = isSyncedToSap;
+    }
+
+    return await this.productionRecordService.findAll(query, page, limit);
   }
 
   @Put(':id')

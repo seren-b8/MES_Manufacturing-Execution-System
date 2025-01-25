@@ -12,7 +12,10 @@ import {
 import { MachineCavityService } from './machine-cavity.service';
 import { ResponseFormat } from 'src/shared/interface';
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
-import { CreateMasterCavityDto } from '../dto/create-master-cavity.dto';
+import {
+  CreateMasterCavityDto,
+  UpdateMasterCavityDto,
+} from '../dto/master-cavity.dto';
 import { use } from 'passport';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 
@@ -43,7 +46,7 @@ export class MachineCavityController {
   @Put(':id')
   async update(
     @Param('id') id: string,
-    @Body() updateDto: any,
+    @Body() updateDto: UpdateMasterCavityDto,
   ): Promise<ResponseFormat<MasterCavity>> {
     return this.machineCavityService.update(id, updateDto);
   }

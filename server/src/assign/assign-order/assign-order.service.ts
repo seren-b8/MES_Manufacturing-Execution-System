@@ -26,6 +26,7 @@ export class AssignOrderService {
     @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
     @InjectModel('ProductionOrder')
     private productionOrderModel: Model<ProductionOrder>,
+    @InjectModel('MachineInfo') private machineInfoModel: Model<any>,
     private assignEmployeeService: AssignEmployeeService,
   ) {}
 
@@ -97,6 +98,16 @@ export class AssignOrderService {
           HttpStatus.BAD_REQUEST,
         );
       }
+
+      await this.machineInfoModel.findOneAndUpdate(
+        { machine_number: createDto.machine_number },
+        {
+          recorded_counter: 0,
+          is_counter_paused: true,
+          pause_start_counter: 0,
+          available_counter: 0,
+        },
+      );
 
       const newAssignOrder = new this.assignOrderModel({
         ...createDto,
@@ -256,6 +267,33 @@ export class AssignOrderService {
             HttpStatus.BAD_REQUEST,
           );
         }
+      }
+
+      if (
+        updateDto.status === 'completed' ||
+        updateDto.status === 'suspended'
+      ) {
+        // Reset recorded_counter เมื่อปิดหรือระงับงาน
+        await this.machineInfoModel.findOneAndUpdate(
+          { machine_number: order.machine_number },
+          {
+            recorded_counter: 0,
+            is_counter_paused: false,
+            pause_start_counter: null,
+          },
+        );
+      }
+
+      if (updateDto.status === 'active' && currentStatus === 'suspended') {
+        await this.machineInfoModel.findOneAndUpdate(
+          { machine_number: order.machine_number },
+          {
+            recorded_counter: 0,
+            is_counter_paused: true,
+            pause_start_counter: 0,
+            available_counter: 0,
+          },
+        );
       }
 
       const updatedOrder = await this.assignOrderModel.findByIdAndUpdate(

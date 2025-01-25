@@ -3,7 +3,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
-import { CreateMasterCavityDto } from '../dto/create-master-cavity.dto';
+import {
+  CreateMasterCavityDto,
+  UpdateMasterCavityDto,
+} from '../dto/master-cavity.dto';
 
 @Injectable()
 export class MachineCavityService {
@@ -97,7 +100,7 @@ export class MachineCavityService {
 
   async update(
     id: string,
-    updateDto: any,
+    updateDto: UpdateMasterCavityDto,
   ): Promise<ResponseFormat<MasterCavity>> {
     try {
       const updatedCavity = await this.machineCavityModel

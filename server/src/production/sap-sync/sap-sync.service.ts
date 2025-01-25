@@ -217,7 +217,7 @@ export class SapProductionSyncService {
       'Team'
       )`;
 
-    console.log(query);
+    // console.log(query);
     return this.sqlService.query(query);
   }
 

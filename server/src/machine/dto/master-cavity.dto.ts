@@ -54,3 +54,57 @@ export class CreateMasterCavityDto {
   @IsString()
   customer?: string;
 }
+
+export class UpdateMasterCavityDto {
+  @IsString()
+  @IsOptional()
+  material_number?: string;
+
+  @IsString()
+  @IsOptional()
+  material_description?: string;
+
+  @IsString()
+  @IsOptional()
+  part_number_1?: string;
+
+  @IsString()
+  @IsOptional()
+  part_number_2?: string;
+
+  @IsString()
+  @IsOptional()
+  part_name_1?: string;
+
+  @IsString()
+  @IsOptional()
+  part_name_2?: string;
+
+  @IsString()
+  @IsOptional()
+  color?: string;
+
+  @IsNumber()
+  @IsOptional()
+  cavity?: number;
+
+  @IsNumber()
+  @IsOptional()
+  weight?: number;
+
+  @IsNumber()
+  @IsOptional()
+  runner?: number;
+
+  @IsNumber()
+  @IsOptional()
+  tonnage?: number;
+
+  @IsNumber()
+  @IsOptional()
+  cycle_time?: number;
+
+  @IsString()
+  @IsOptional()
+  customer?: string;
+}

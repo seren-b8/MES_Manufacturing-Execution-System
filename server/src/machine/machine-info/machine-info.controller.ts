@@ -49,4 +49,9 @@ export class MachineInfoController {
       status,
     );
   }
+
+  @Post(':machineNumber/toggle')
+  async toggleCounter(@Param('machineNumber') machineNumber: string) {
+    return this.machineInfoService.toggleCounter(machineNumber);
+  }
 }

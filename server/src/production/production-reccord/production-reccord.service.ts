@@ -84,6 +84,27 @@ export class ProductionRecordService {
           machine_number: assignOrder.machine_number,
         });
 
+        const availableCounter = machine.is_counter_paused
+          ? machine.pause_start_counter - machine.recorded_counter
+          : machine.counter - machine.recorded_counter;
+
+        if (createDto.quantity > availableCounter) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: `Cannot record ${createDto.quantity} pieces. Available counter is ${availableCounter}`,
+              data: [
+                {
+                  machine_number: assignOrder.machine_number,
+                  requested_quantity: createDto.quantity,
+                  available_counter: availableCounter,
+                },
+              ],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
         if (!machine) {
           throw new HttpException(
             {
@@ -117,7 +138,7 @@ export class ProductionRecordService {
         // Update machine counter after validation
         await this.machineInfoModel.findOneAndUpdate(
           { machine_number: assignOrder.machine_number },
-          { $inc: { counter: -createDto.quantity } },
+          { $inc: { recorded_counter: createDto.quantity } },
         );
       }
 
@@ -186,19 +207,49 @@ export class ProductionRecordService {
     }
   }
 
-  async findByAssignEmployee(
-    assignEmployeeId: string,
+  async findAll(
+    query: any = {},
+    page: number = 1,
+    limit: number = 10,
   ): Promise<ResponseFormat<ProductionRecord>> {
     try {
+      const skip = (page - 1) * limit;
+
       const records = await this.productionRecordModel
-        .find({ assign_employee_id: new Types.ObjectId(assignEmployeeId) })
+        .find(query)
         .populate('master_not_good_id', 'case_english case_thai')
-        .sort({ createdAt: -1 });
+        .populate({
+          path: 'assign_order_id',
+          populate: {
+            path: 'production_order_id',
+            select:
+              'order_id material_number material_description target_quantity',
+          },
+        })
+        .populate({
+          path: 'assign_employee_ids',
+          populate: {
+            path: 'user_id',
+            select: 'employee_id',
+          },
+        })
+        .populate('confirmed_by', 'employee_id')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const total = await this.productionRecordModel.countDocuments(query);
 
       return {
         status: 'success',
         message: 'Production records retrieved successfully',
         data: records,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
       };
     } catch (error) {
       throw new HttpException(
@@ -363,7 +414,7 @@ export class ProductionRecordService {
 
       await this.machineInfoModel.findOneAndUpdate(
         { machine_number: record.assign_order_id['machine_number'] },
-        { $inc: { counter: record.quantity } },
+        { $inc: { recorded_counter: -record.quantity } },
       );
 
       await this.productionRecordModel.findByIdAndDelete(id);
