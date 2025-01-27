@@ -8,6 +8,8 @@ import {
   UpdateMasterCavityDto,
 } from '../dto/master-cavity.dto';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
+import { Time } from 'mssql';
+import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
 
 @Injectable()
 export class MachineCavityService {
@@ -16,6 +18,8 @@ export class MachineCavityService {
     private readonly machineCavityModel: Model<MasterCavity>,
     @InjectModel(MasterPart.name) // เพิ่ม Part Model
     private readonly masterPartModel: Model<MasterPart>,
+    @InjectModel(TimelineMachine.name)
+    private readonly timelineMachineModel: Model<TimelineMachine>,
   ) {}
 
   async findAll(query: any = {}): Promise<ResponseFormat<MasterCavity>> {

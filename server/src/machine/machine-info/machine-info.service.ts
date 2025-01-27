@@ -19,23 +19,31 @@ import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { CreateMachineInfoDto } from '../dto/machine-info.dto';
 import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
 import { number } from 'yargs';
+import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
+import { time } from 'console';
+import * as _ from 'lodash';
+import * as moment from 'moment';
 
 @Injectable()
 export class MachineInfoService {
   constructor(
-    @InjectModel('MachineInfo') private machineInfoModel: Model<MachineInfo>,
+    @InjectModel(MachineInfo.name) private machineInfoModel: Model<MachineInfo>,
 
-    @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
+    @InjectModel(AssignOrder.name) private assignOrderModel: Model<AssignOrder>,
 
-    @InjectModel('Employee') private employeeModel: Model<Employee>,
+    @InjectModel(MasterCavity.name) private employeeModel: Model<Employee>,
 
-    @InjectModel('MasterCavity') private masterCavityModel: Model<MasterCavity>,
+    @InjectModel(MasterCavity.name)
+    private masterCavityModel: Model<MasterCavity>,
 
-    @InjectModel('ProductionOrder')
+    @InjectModel(ProductionOrder.name)
     private productionOrderModel: Model<ProductionOrder>,
 
-    @InjectModel('AssignEmployee')
+    @InjectModel(AssignEmployee.name)
     private assignEmployeeModel: Model<AssignEmployee>,
+
+    @InjectModel(TimelineMachine.name)
+    private timelineMachineModel: Model<TimelineMachine>,
   ) {}
 
   async findByWorkCenter(work_center: string): Promise<ResponseFormat<any>> {
@@ -641,5 +649,274 @@ export class MachineInfoService {
       console.error('Error fetching active employees:', error);
       return [];
     }
+  }
+
+  private formatDateToString(date: Date): string {
+    const month = (date.getMonth() + 1).toString(); // ไม่ต้อง pad
+    const day = date.getDate().toString(); // ไม่ต้อง pad
+    const year = date.getFullYear();
+    const hours = date.getHours().toString(); // ไม่ต้อง pad
+    const minutes = date.getMinutes().toString(); // ไม่ต้อง pad
+    const seconds = date.getSeconds().toString(); // ไม่ต้อง pad
+
+    return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
+  }
+
+  private parseTimelineDate(dateString: string): Date {
+    try {
+      const [datePart, timePart] = dateString.split(' ');
+      const [month, day, year] = datePart.split('/');
+      let [hours, minutes, seconds] = timePart.split(':');
+
+      // Handle missing seconds
+      if (!seconds) seconds = '0';
+
+      // Parse all values as integers
+      return new Date(
+        parseInt(year),
+        parseInt(month) - 1,
+        parseInt(day),
+        parseInt(hours),
+        parseInt(minutes),
+        parseInt(seconds),
+      );
+    } catch (error) {
+      console.error('Error parsing date:', dateString, error);
+      return new Date(dateString);
+    }
+  }
+
+  async getMachineStatusByPeriod(
+    startDate: Date,
+    endDate: Date,
+    intervalMinutes: number = 10,
+    machineNumbers?: string[],
+  ): Promise<ResponseFormat<any>> {
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      // Format dates for string comparison
+      const startString = this.formatDateToString(start);
+      const endString = this.formatDateToString(end);
+
+      console.log('Search period:', {
+        startString,
+        endString,
+      });
+
+      // ดึงข้อมูลเครื่องจักร
+      const machineQuery = machineNumbers?.length
+        ? { machine_number: { $in: machineNumbers } }
+        : {};
+
+      const machines = await this.machineInfoModel
+        .find(machineQuery)
+        .select('machine_number work_center')
+        .lean();
+
+      // ใช้ aggregation pipeline แทน
+      const timelines = await this.timelineMachineModel.aggregate([
+        {
+          $match: {
+            machine_number: { $in: machines.map((m) => m.machine_number) },
+          },
+        },
+        {
+          $match: {
+            datetime: {
+              $gte: startString,
+              $lte: endString,
+            },
+          },
+        },
+        {
+          $sort: { datetime: 1 },
+        },
+      ]);
+
+      console.log(`Found ${timelines.length} timeline records`);
+      if (timelines.length > 0) {
+        console.log('Sample timeline:', timelines[0]);
+      }
+
+      // สร้าง time slots
+      const timeSlots = [];
+      let currentTime = start;
+
+      while (currentTime < end) {
+        const slotStart = new Date(currentTime);
+        const slotEnd = new Date(
+          Math.min(
+            currentTime.getTime() + intervalMinutes * 60 * 1000,
+            end.getTime(),
+          ),
+        );
+
+        // หาข้อมูลในช่วงเวลานี้
+        const slotsData = timelines.filter((t) => {
+          const timelineDate = this.parseTimelineDate(t.datetime);
+          return timelineDate >= slotStart && timelineDate < slotEnd;
+        });
+
+        timeSlots.push({
+          start_time: slotStart,
+          end_time: slotEnd,
+          status_summary: this.calculateStatusDuration(
+            slotsData,
+            slotStart,
+            slotEnd,
+          ),
+        });
+
+        currentTime = new Date(
+          currentTime.getTime() + intervalMinutes * 60 * 1000,
+        );
+      }
+
+      // สร้างผลลัพธ์สำหรับแต่ละเครื่อง
+      const machineAnalysis = machines.map((machine) => {
+        const machineTimelines = timelines.filter(
+          (t) => t.machine_number === machine.machine_number,
+        );
+
+        return {
+          machine_number: machine.machine_number,
+          work_center: machine.work_center,
+          total_summary: this.calculateTotalStatusDuration(
+            machineTimelines,
+            start,
+            end,
+          ),
+          time_slots: timeSlots.map((slot) => ({
+            ...slot,
+            status_summary: this.calculateStatusDuration(
+              machineTimelines.filter((t) => {
+                const timelineDate = this.parseTimelineDate(t.datetime);
+                return (
+                  timelineDate >= slot.start_time &&
+                  timelineDate < slot.end_time
+                );
+              }),
+              slot.start_time,
+              slot.end_time,
+            ),
+          })),
+        };
+      });
+
+      return {
+        status: 'success',
+        message: 'Retrieved machine status analysis successfully',
+        data: machineAnalysis,
+      };
+    } catch (error) {
+      console.error('Error in getMachineStatusByPeriod:', error);
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to analyze machine status',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // เพิ่มเมธอดสำหรับคำนวณสรุปรวม
+  private calculateTotalStatusDuration(
+    timelines: any[],
+    startTime: Date,
+    endTime: Date,
+  ) {
+    const statusMap = new Map<string, number>();
+    const totalDuration = endTime.getTime() - startTime.getTime();
+
+    if (timelines.length === 0) {
+      return {
+        UNKNOWN: {
+          percentage: 100,
+          duration_minutes: totalDuration / (1000 * 60),
+          duration_hours: (totalDuration / (1000 * 60 * 60)).toFixed(2),
+        },
+      };
+    }
+
+    for (let i = 0; i < timelines.length; i++) {
+      const current = timelines[i];
+      const next = timelines[i + 1];
+
+      // แปลง datetime string เป็น Date object
+      const currentDate = this.parseTimelineDate(current.datetime);
+      const nextDate = next ? this.parseTimelineDate(next.datetime) : endTime;
+      const previousDate =
+        i === 0 ? startTime : this.parseTimelineDate(current.datetime);
+
+      const duration = nextDate.getTime() - previousDate.getTime();
+
+      statusMap.set(
+        current.status,
+        (statusMap.get(current.status) || 0) + duration,
+      );
+    }
+
+    const result = {};
+    statusMap.forEach((duration, status) => {
+      result[status] = {
+        percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
+        duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
+        duration_hours: Number((duration / (1000 * 60 * 60)).toFixed(2)),
+      };
+    });
+
+    return result;
+  }
+
+  private calculateStatusDuration(
+    timelines: any[],
+    startTime: Date,
+    endTime: Date,
+  ) {
+    const statusMap = new Map<string, number>();
+    const totalDuration = endTime.getTime() - startTime.getTime();
+
+    if (timelines.length === 0) {
+      return {
+        UNKNOWN: {
+          percentage: 100,
+          duration_minutes: totalDuration / (1000 * 60),
+        },
+      };
+    }
+
+    // คำนวณระยะเวลาของแต่ละ status
+    for (let i = 0; i < timelines.length; i++) {
+      const current = timelines[i];
+      const next = timelines[i + 1];
+
+      // แปลง datetime string เป็น Date object
+      const currentDate = this.parseTimelineDate(current.datetime);
+      const nextDate = next ? this.parseTimelineDate(next.datetime) : endTime;
+      const previousDate =
+        i === 0 ? startTime : this.parseTimelineDate(current.datetime);
+
+      const duration = nextDate.getTime() - previousDate.getTime();
+
+      statusMap.set(
+        current.status,
+        (statusMap.get(current.status) || 0) + duration,
+      );
+    }
+
+    // แปลงเป็นเปอร์เซ็นต์
+    const result = {};
+    statusMap.forEach((duration, status) => {
+      result[status] = {
+        percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
+        duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
+      };
+    });
+
+    return result;
   }
 }

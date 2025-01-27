@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   Post,
   Query,
   UseGuards,
@@ -53,5 +55,31 @@ export class MachineInfoController {
   @Post(':machineNumber/toggle')
   async toggleCounter(@Param('machineNumber') machineNumber: string) {
     return this.machineInfoService.toggleCounter(machineNumber);
+  }
+
+  @Get('analysis')
+  async getMachineStatusAnalysis(
+    @Query('start_date') startDate: string,
+    @Query('end_date') endDate: string,
+    @Query('machine_numbers') machineNumbers?: string,
+    @Query('interval_minutes', new ParseIntPipe({ optional: true }))
+    intervalMinutes: number = 10,
+  ) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+
+    // แปลง machine_numbers string เป็น array
+    const machines = machineNumbers?.split(',').filter(Boolean);
+
+    return await this.machineInfoService.getMachineStatusByPeriod(
+      start,
+      end,
+      intervalMinutes,
+      machines,
+    );
   }
 }
