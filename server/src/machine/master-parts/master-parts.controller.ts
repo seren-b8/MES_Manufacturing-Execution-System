@@ -10,6 +10,7 @@ import {
   Query,
   HttpStatus,
   UseGuards,
+  HttpException,
 } from '@nestjs/common';
 import { MasterPartsService } from './master-parts.service';
 import { ResponseFormat } from 'src/shared/interface';
@@ -60,5 +61,32 @@ export class MasterPartsController {
   @Delete(':id')
   async remove(@Param('id') id: string): Promise<ResponseFormat<MasterPart>> {
     return this.masterPartsService.remove(id);
+  }
+
+  @Post('update-all-part-info')
+  async updateAllPartInfo(): Promise<
+    ResponseFormat<{
+      totalCount: number;
+      updatedCount: number;
+      errors: Array<{ materialNumber: string; error: string }>;
+    }>
+  > {
+    try {
+      const result = await this.masterPartsService.updateAllPartNumberAndName();
+      return {
+        status: 'success',
+        message: `อัพเดทสำเร็จ ${result.updatedCount} จาก ${result.totalCount} รายการ`,
+        data: [result],
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: (error as Error).message,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }

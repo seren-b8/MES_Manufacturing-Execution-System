@@ -235,4 +235,71 @@ export class MasterPartsService {
       );
     }
   }
+
+  private splitPartNumberAndName(description: string): {
+    partNumber: string;
+    partName: string;
+  } {
+    const firstSpaceIndex = description.indexOf(' ');
+
+    if (firstSpaceIndex === -1) {
+      return {
+        partNumber: description,
+        partName: '',
+      };
+    }
+
+    const partNumber = description.substring(0, firstSpaceIndex);
+    const partName = description.substring(firstSpaceIndex + 1).trim();
+
+    return { partNumber, partName };
+  }
+
+  async updateAllPartNumberAndName(): Promise<{
+    totalCount: number;
+    updatedCount: number;
+    errors: Array<{ materialNumber: string; error: string }>;
+  }> {
+    // ดึงข้อมูลทั้งหมดที่มี material_description
+    const masterParts = await this.masterPartModel.find({
+      material_description: { $exists: true, $ne: null },
+    });
+
+    let updatedCount = 0;
+    const errors: Array<{ materialNumber: string; error: string }> = [];
+
+    // วนลูปอัพเดททีละรายการ
+    for (const masterPart of masterParts) {
+      try {
+        if (!masterPart.material_description) {
+          throw new Error('ไม่มี material_description');
+        }
+
+        // แยก part_number และ part_name
+        const { partNumber, partName } = this.splitPartNumberAndName(
+          masterPart.material_description,
+        );
+
+        // อัพเดทข้อมูล
+        masterPart.part_number = partNumber;
+        masterPart.part_name = partName;
+        await masterPart.save();
+
+        updatedCount++;
+      } catch (error) {
+        // เก็บ error กรณีมีปัญหา
+        errors.push({
+          materialNumber: masterPart.material_number,
+          error: (error as Error).message,
+        });
+      }
+    }
+
+    // ส่งผลลัพธ์การอัพเดท
+    return {
+      totalCount: masterParts.length,
+      updatedCount,
+      errors,
+    };
+  }
 }
