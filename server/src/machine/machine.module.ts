@@ -8,6 +8,8 @@ import { DatabaseModule } from 'src/shared/modules/database/database.module';
 import { MachineCavityService } from './machine-cavity/machine-cavity.service';
 import { MasterNotGoodController } from './master-not-good/master-not-good.controller';
 import { MasterNotGoodService } from './master-not-good/master-not-good.service';
+import { MasterPartsController } from './master-parts/master-parts.controller';
+import { MasterPartsService } from './master-parts/master-parts.service';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule],
@@ -15,12 +17,14 @@ import { MasterNotGoodService } from './master-not-good/master-not-good.service'
     MachineInfoController,
     MachineCavityController,
     MasterNotGoodController,
+    MasterPartsController,
   ],
   providers: [
     MachineService,
     MachineInfoService,
     MachineCavityService,
     MasterNotGoodService,
+    MasterPartsService,
   ],
   exports: [MachineInfoService],
 })

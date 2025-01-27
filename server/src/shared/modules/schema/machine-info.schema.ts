@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: false, collection: 'machine_info' })
 export class MachineInfo extends Document {
@@ -18,7 +18,7 @@ export class MachineInfo extends Document {
   @Prop({ default: null })
   work_center: string; // changed from Workcenter
 
-  @Prop({ default: 'OFF' })
+  @Prop({ default: 'OFF', enum: ['ON', 'OFF', 'ALARM', 'SETUP'] })
   status: string; // changed from Status
 
   @Prop({ default: 0 })
@@ -27,28 +27,38 @@ export class MachineInfo extends Document {
   @Prop({ default: 0 })
   recorded_counter: number; // ค่าที่บันทึกไปแล้ว
 
-  @Prop({ default: 0 })
-  available_counter: number; // ค่าที่สามารถบันทึกได้ (counter - recorded_counter)
-
   @Prop({ default: false })
   is_counter_paused: boolean;
 
   @Prop({ default: null })
   pause_start_counter: number; // เก็บค่า counter ตอนเริ่ม pause
 
+  @Prop({
+    type: [
+      {
+        material_number: String,
+        cavity_id: { type: Types.ObjectId, ref: 'MasterCavity' },
+      },
+    ],
+  })
+  material_cavities: {
+    material_number: string;
+    cavity_id: Types.ObjectId;
+  }[];
+
   @Prop({ default: 0 })
   sleep_count: number; // changed from SleepCount
 
   @Prop({ default: 0 })
-  cycletime: string;
+  cycletime: number; // changed from CycleTime
 
   @Prop({ default: 0 })
-  logtime_count: string; // changed from LogtimeCount
+  logtime_count: number; // changed from LogtimeCount
 
   @Prop({ default: 0 })
-  logtime_status: string; // changed from LogtimeStatus
+  logtime_status: number; // changed from LogtimeStatus
 
-  @Prop({ default: null })
+  @Prop()
   updated_at: Date;
 }
 

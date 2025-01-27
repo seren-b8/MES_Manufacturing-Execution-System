@@ -38,6 +38,7 @@ import {
   ProductionRecordSchema,
 } from 'src/shared/modules/schema/production-record.schema';
 import { SAPSyncLog, SAPSyncLogSchema } from '../schema/sap_sync_log.schema';
+import { MasterPart, MasterPartSchema } from '../schema/master_parts.schema';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { SAPSyncLog, SAPSyncLogSchema } from '../schema/sap_sync_log.schema';
       { name: User.name, schema: UserSchema },
       { name: SAPSyncLog.name, schema: SAPSyncLogSchema },
       { name: ProductionOrder.name, schema: ProductionOrderSchema },
+      { name: MasterPart.name, schema: MasterPartSchema },
     ]),
   ],
   exports: [MongooseModule],

@@ -7,6 +7,8 @@ import {
   Param,
   UseGuards,
   Query,
+  Delete,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   CreateProductionRecordDto,
@@ -14,6 +16,7 @@ import {
 } from '../dto/production-reccord.dto';
 import { ProductionRecordService } from './production-reccord.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
+import { Types } from 'mongoose';
 
 @Controller('production-records')
 @UseGuards(JwtAuthGuard)
@@ -36,6 +39,7 @@ export class ProductionRecordController {
     @Query('is_not_good') isNotGood?: boolean,
     @Query('confirmation_status') confirmationStatus?: string,
     @Query('is_synced_to_sap') isSyncedToSap?: boolean,
+    @Query('assign_order_id') assignOrderId?: string,
   ) {
     const query: any = {};
 
@@ -44,6 +48,13 @@ export class ProductionRecordController {
         $gte: new Date(startDate),
         $lte: new Date(endDate),
       };
+    }
+
+    if (assignOrderId) {
+      if (!Types.ObjectId.isValid(assignOrderId)) {
+        throw new BadRequestException('Invalid assign_order_id format');
+      }
+      query.assign_order_id = new Types.ObjectId(assignOrderId);
     }
 
     if (isNotGood !== undefined) {
@@ -67,5 +78,10 @@ export class ProductionRecordController {
     @Body() updateDto: UpdateProductionRecordDto,
   ) {
     return await this.productionRecordService.update(id, updateDto);
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    return await this.productionRecordService.delete(id);
   }
 }

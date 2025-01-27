@@ -11,6 +11,8 @@ import {
 import { ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
+import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
+import { PopulatedMachineInfo } from 'src/shared/interface/machine-info';
 
 @Injectable()
 export class ProductionRecordService {
@@ -80,30 +82,14 @@ export class ProductionRecordService {
 
       // Check machine counter if recording good products
       if (!createDto.is_not_good) {
-        const machine = await this.machineInfoModel.findOne({
-          machine_number: assignOrder.machine_number,
-        });
-
-        const availableCounter = machine.is_counter_paused
-          ? machine.pause_start_counter - machine.recorded_counter
-          : machine.counter - machine.recorded_counter;
-
-        if (createDto.quantity > availableCounter) {
-          throw new HttpException(
-            {
-              status: 'error',
-              message: `Cannot record ${createDto.quantity} pieces. Available counter is ${availableCounter}`,
-              data: [
-                {
-                  machine_number: assignOrder.machine_number,
-                  requested_quantity: createDto.quantity,
-                  available_counter: availableCounter,
-                },
-              ],
-            },
-            HttpStatus.BAD_REQUEST,
-          );
-        }
+        const machine = await this.machineInfoModel
+          .findOne({
+            machine_number: assignOrder.machine_number,
+          })
+          .populate<PopulatedMachineInfo>({
+            path: 'material_cavities.cavity_id',
+            select: 'cavity runner parts',
+          });
 
         if (!machine) {
           throw new HttpException(
@@ -116,18 +102,35 @@ export class ProductionRecordService {
           );
         }
 
-        const currentCounter = machine.counter || 0;
+        const populatedAssignOrder = await assignOrder.populate<{
+          production_order_id: { material_number: string };
+        }>('production_order_id');
+        const materialNumber =
+          populatedAssignOrder.production_order_id.material_number;
 
-        if (createDto.quantity > currentCounter) {
+        const cavityInfo = machine.material_cavities?.find(
+          (mc) => mc.material_number === materialNumber,
+        );
+        const cavityCount = cavityInfo?.cavity_id?.cavity || 1;
+
+        const availableCounter = calculateAvailableCounter(
+          machine.counter,
+          machine.recorded_counter,
+          cavityCount,
+          machine.is_counter_paused,
+          machine.pause_start_counter,
+        );
+
+        if (createDto.quantity > availableCounter) {
           throw new HttpException(
             {
               status: 'error',
-              message: `Cannot record ${createDto.quantity} pieces. Current counter is only ${currentCounter}`,
+              message: `Cannot record ${createDto.quantity} pieces. Available counter is ${availableCounter}`,
               data: [
                 {
                   machine_number: assignOrder.machine_number,
                   requested_quantity: createDto.quantity,
-                  current_counter: currentCounter,
+                  available_counter: availableCounter,
                 },
               ],
             },
@@ -170,7 +173,7 @@ export class ProductionRecordService {
         }
         await this.machineInfoModel.findOneAndUpdate(
           { machine_number: assignOrder.machine_number },
-          { $inc: { counter: -createDto.quantity } },
+          { $inc: { recorded_counter: createDto.quantity } },
         );
       }
 
@@ -307,12 +310,12 @@ export class ProductionRecordService {
 
         if (
           updateDto.confirmation_status === 'rejected' &&
-          !updateDto.rejection_reason
+          (updateDto.rejection_reason ?? '') === ''
         ) {
           throw new HttpException(
             {
               status: 'error',
-              message: 'Rejection reason is required',
+              message: 'Rejection reason is required ',
               data: [],
             },
             HttpStatus.BAD_REQUEST,
@@ -397,9 +400,15 @@ export class ProductionRecordService {
         );
       }
 
-      const machine = await this.machineInfoModel.findOne({
-        machine_number: record.assign_order_id['machine_number'],
-      });
+      const machine = await this.machineInfoModel
+        .findOne({
+          machine_number: record.assign_order_id['machine_number'],
+        })
+        .populate<PopulatedMachineInfo>({
+          // เพิ่ม populate เหมือน create
+          path: 'material_cavities.cavity_id',
+          select: 'cavity runner parts',
+        });
 
       if (!machine) {
         throw new HttpException(

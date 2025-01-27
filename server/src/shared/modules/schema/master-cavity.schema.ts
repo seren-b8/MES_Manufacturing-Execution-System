@@ -1,46 +1,28 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 @Schema({ collection: 'master_cavity' })
 export class MasterCavity extends Document {
-  @Prop({ default: null })
-  material_number: string; // changed from Mat_No
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'MasterPart' }], required: true })
+  parts: Types.ObjectId[];
 
-  @Prop({ default: null })
-  material_description: string; // changed from Mat_Desc
-
-  @Prop({ default: null })
-  part_number_1: string; // changed from part_no1
-
-  @Prop({ default: null })
-  part_number_2: string; // changed from part_no2
-
-  @Prop({ default: null })
-  part_name_1: string; // changed from part_name1
-
-  @Prop({ default: null })
-  part_name_2: string; // changed from part_name2
-
-  @Prop({ default: null })
-  color: string;
-
-  @Prop({ default: null })
+  @Prop({ required: true })
   cavity: number;
 
-  @Prop({ default: null })
-  weight: number;
-
-  @Prop({ default: null })
+  @Prop()
   runner: number;
 
-  @Prop({ default: null })
-  tonnage: number; // changed from ton
+  @Prop()
+  tonnage: number;
 
-  @Prop({ default: null })
+  @Prop()
   cycle_time: number;
 
-  @Prop({ default: null })
+  @Prop()
   customer: string;
+
+  @Prop()
+  color: string;
 }
 
 export const MasterCavitySchema = SchemaFactory.createForClass(MasterCavity);

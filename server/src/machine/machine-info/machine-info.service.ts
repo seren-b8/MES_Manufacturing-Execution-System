@@ -7,6 +7,8 @@ import {
   IEmployee,
   IEmployeeDetail,
   IUser,
+  PopulatedCavityData,
+  PopulatedMachineInfo,
 } from 'src/shared/interface/machine-info';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
@@ -15,6 +17,8 @@ import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { CreateMachineInfoDto } from '../dto/machine-info.dto';
+import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
+import { number } from 'yargs';
 
 @Injectable()
 export class MachineInfoService {
@@ -37,7 +41,12 @@ export class MachineInfoService {
   async findByWorkCenter(work_center: string): Promise<ResponseFormat<any>> {
     try {
       // ดึงข้อมูลเครื่องจักรตาม work center
-      const machine = await this.machineInfoModel.findOne({ work_center });
+      const machine = await this.machineInfoModel
+        .findOne({ work_center })
+        .populate<PopulatedMachineInfo>({
+          path: 'material_cavities.cavity_id',
+          select: 'cavity runner parts',
+        });
       if (!machine) {
         throw new HttpException(
           {
@@ -77,6 +86,12 @@ export class MachineInfoService {
           })
           .populate('user_id', 'employee_id first_name last_name');
       }
+      const materialNumber = activeOrder?.production_order_id?.material_number;
+      // เปลี่ยนจาก material_cavity_map เป็น material_cavities
+      const cavityInfo = machine.material_cavities?.find(
+        (mc) => mc.material_number === materialNumber,
+      );
+      const cavityCount = cavityInfo?.cavity_id?.cavity || 1;
 
       // รวมข้อมูลทั้งหมด
       const machineStatus = {
@@ -85,9 +100,13 @@ export class MachineInfoService {
           machine_number: machine.machine_number,
           status: machine.status,
           counter: machine.counter,
-          available_counter: machine.is_counter_paused
-            ? machine.pause_start_counter - machine.recorded_counter
-            : machine.counter - machine.recorded_counter,
+          available_counter: calculateAvailableCounter(
+            machine.counter,
+            machine.recorded_counter,
+            cavityCount,
+            machine.is_counter_paused,
+            machine.pause_start_counter,
+          ),
           is_counter_paused: machine.is_counter_paused,
           cycle_time: machine.cycletime,
           tonnage: machine.tonnage,
@@ -215,88 +234,55 @@ export class MachineInfoService {
   async getAllMachinesDetails(): Promise<ResponseFormat<any>> {
     try {
       // 1. ดึงข้อมูลเครื่องจักรทั้งหมด
-      const machines = await this.machineInfoModel.find().lean();
+      const machines = (await this.machineInfoModel
+        .find()
+        .populate<{
+          material_cavities: {
+            material_number: string;
+            cavity_id: PopulatedCavityData;
+          }[];
+        }>({
+          path: 'material_cavities.cavity_id',
+          select: 'cavity runner parts',
+        })
+        .lean()) as PopulatedMachineInfo[];
 
       // 2. ดึงข้อมูลที่เกี่ยวข้องและรวมข้อมูล
       const machinesWithDetails = await Promise.all(
         machines.map(async (machine) => {
           try {
             // ดึง orders ทั้งหมดของเครื่อง
-            const allOrders =
-              (await this.assignOrderModel.find({
-                machine_number: machine.machine_number,
-              })) || [];
-
-            const allProductionOrder =
-              (await this.productionOrderModel.find({
-                work_center: machine.work_center,
-                assign_stage: false,
-              })) || [];
-
-            // หา active order
-            const activeOrder = await this.assignOrderModel
-              .findOne({
-                machine_number: machine.machine_number,
-                status: 'active',
-              })
-              .populate<{ production_order_id: ProductionOrder }>(
-                'production_order_id',
-              );
-
-            const cavity = await this.masterCavityModel.findOne({
-              material_number:
-                activeOrder?.production_order_id?.material_number,
-            });
-
-            // ดึงพนักงานที่ active สำหรับ order นี้
-            let activeEmployees: IEmployeeDetail[] = []; // เปลี่ยน type ให้ถูกต้อง
-            if (activeOrder?._id) {
-              try {
-                // 1. ดึง AssignEmployee พร้อม user_id
-                const assignEmployees = await this.assignEmployeeModel
-                  .find({
-                    assign_order_id: activeOrder._id.toString(),
+            const [allOrders, allProductionOrder, activeOrder] =
+              await Promise.all([
+                this.assignOrderModel.find({
+                  machine_number: machine.machine_number,
+                }) || [],
+                this.productionOrderModel.find({
+                  work_center: machine.work_center,
+                  assign_stage: false,
+                }) || [],
+                this.assignOrderModel
+                  .findOne({
+                    machine_number: machine.machine_number,
                     status: 'active',
                   })
-                  .populate<{ user_id: IUser }>('user_id')
-                  .lean();
+                  .populate<{ production_order_id: ProductionOrder }>(
+                    'production_order_id',
+                  ),
+              ]);
 
-                // 2. ดึงข้อมูลพนักงานแยกต่างหาก
-                const employeeIds = assignEmployees
-                  .map((assign) => assign.user_id?.employee_id)
-                  .filter((id): id is string => !!id);
+            const materialNumber =
+              activeOrder?.production_order_id?.material_number;
+            const cavityInfo = machine.material_cavities?.find(
+              (mc) => mc.material_number === materialNumber,
+            );
+            const cavityData = cavityInfo?.cavity_id;
+            const cavityCount = cavityData?.cavity || 1;
 
-                const employees = await this.employeeModel
-                  .find<IEmployee>({ employee_id: { $in: employeeIds } })
-                  .lean();
-
-                // 3. Map ข้อมูลเข้าด้วยกัน
-                activeEmployees = assignEmployees.map(
-                  (assign): IEmployeeDetail => {
-                    const userData = assign.user_id || ({} as IUser);
-                    const employeeData =
-                      employees.find(
-                        (emp) => emp.employee_id === userData.employee_id,
-                      ) || ({} as IEmployee);
-
-                    return {
-                      id: userData._id.toString() || '',
-                      employee_id: userData.employee_id || '',
-                      name:
-                        employeeData.first_name && employeeData.last_name
-                          ? `${employeeData.first_name} ${employeeData.last_name}`.trim()
-                          : 'N/A',
-                    };
-                  },
-                );
-              } catch (error) {
-                console.error('Error fetching active employees:', {
-                  message: (error as Error).message,
-                  stack: (error as Error).stack,
-                });
-                activeEmployees = [];
-              }
-            }
+            // ดึงพนักงานที่ active สำหรับ order นี้
+            let activeEmployees = await this.getActiveEmployees(
+              activeOrder?._id.toString(),
+            );
 
             // ตรวจสอบว่า production_order_id มีข้อมูลหรือไม่
             const productionOrder = activeOrder?.production_order_id;
@@ -310,9 +296,13 @@ export class MachineInfoService {
                 line: machine.line || '',
                 status: machine.status || 'unknown',
                 counter: machine.counter,
-                available_counter: machine.is_counter_paused
-                  ? machine.pause_start_counter - machine.recorded_counter
-                  : machine.counter - machine.recorded_counter || 0,
+                available_counter: calculateAvailableCounter(
+                  machine.counter,
+                  machine.recorded_counter,
+                  cavityCount,
+                  machine.is_counter_paused,
+                  machine.pause_start_counter,
+                ),
                 is_counter_paused: machine.is_counter_paused || false,
                 cycle_time: machine.cycletime || 0,
                 thonnage: machine.tonnage || 0,
@@ -343,8 +333,8 @@ export class MachineInfoService {
                         target_quantity: productionOrder.target_quantity,
                         taget_daly: productionOrder.plan_target_day,
                         plan_cycle_time: productionOrder.plan_cycle_time,
-                        weight: cavity?.weight || 0,
-                        weight_runner: cavity?.runner || 0,
+                        weight: cavityData?.parts?.[0]?.weight || 0,
+                        weight_runner: cavityData?.runner || 0,
                       },
                       production_summary: {
                         ...(activeOrder.current_summary || {}),
@@ -384,6 +374,7 @@ export class MachineInfoService {
               error,
             );
             // Return minimal machine info if there's an error processing details
+
             return {
               machine_info: {
                 work_center: machine.work_center || '',
@@ -527,7 +518,6 @@ export class MachineInfoService {
         updateData = {
           is_counter_paused: true,
           pause_start_counter: machine.counter,
-          available_counter: machine.counter - machine.recorded_counter,
         };
       } else {
         // Resume counter
@@ -536,8 +526,6 @@ export class MachineInfoService {
           is_counter_paused: false,
           pause_start_counter: null,
           recorded_counter: machine.recorded_counter + counterDifference,
-          available_counter:
-            machine.counter - (machine.recorded_counter + counterDifference),
         };
       }
 
@@ -590,7 +578,6 @@ export class MachineInfoService {
           recorded_counter: 0,
           is_counter_paused: true,
           pause_start_counter: 0,
-          available_counter: 0,
         },
         { new: true },
       );
@@ -613,18 +600,46 @@ export class MachineInfoService {
     }
   }
 
-  async getAvailableCounter(machineNumber: string): Promise<number> {
-    const machine = await this.machineInfoModel.findOne({
-      machine_number: machineNumber,
-    });
-    if (!machine) {
-      throw new Error('Machine not found');
-    }
+  private async getActiveEmployees(
+    assignOrderId?: string,
+  ): Promise<IEmployeeDetail[]> {
+    if (!assignOrderId) return [];
 
-    if (machine.is_counter_paused) {
-      return machine.pause_start_counter - machine.recorded_counter;
-    }
+    try {
+      const assignEmployees = await this.assignEmployeeModel
+        .find({
+          assign_order_id: assignOrderId,
+          status: 'active',
+        })
+        .populate<{ user_id: IUser }>('user_id')
+        .lean();
 
-    return machine.counter - machine.recorded_counter;
+      const employeeIds = assignEmployees
+        .map((assign) => assign.user_id?.employee_id)
+        .filter((id): id is string => !!id);
+
+      const employees = await this.employeeModel
+        .find<IEmployee>({ employee_id: { $in: employeeIds } })
+        .lean();
+
+      return assignEmployees.map((assign): IEmployeeDetail => {
+        const userData = assign.user_id || ({} as IUser);
+        const employeeData =
+          employees.find((emp) => emp.employee_id === userData.employee_id) ||
+          ({} as IEmployee);
+
+        return {
+          id: userData._id.toString() || '',
+          employee_id: userData.employee_id || '',
+          name:
+            employeeData.first_name && employeeData.last_name
+              ? `${employeeData.first_name} ${employeeData.last_name}`.trim()
+              : 'N/A',
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching active employees:', error);
+      return [];
+    }
   }
 }

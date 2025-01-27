@@ -1,64 +1,19 @@
-// src/dto/create-master-cavity.dto.ts
-import { IsNotEmpty, IsString, IsNumber, IsOptional } from 'class-validator';
+import { OmitType, PartialType } from '@nestjs/mapped-types';
+import { Type } from 'class-transformer';
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsNumber,
+  ValidateNested,
+  IsArray,
+} from 'class-validator';
 
-export class CreateMasterCavityDto {
+// create-master-cavity.dto.ts
+export class CreatePartDto {
   @IsNotEmpty()
   @IsString()
   material_number: string;
-
-  @IsNotEmpty()
-  @IsString()
-  material_description: string;
-
-  @IsOptional()
-  @IsString()
-  part_number_1?: string;
-
-  @IsOptional()
-  @IsString()
-  part_number_2?: string;
-
-  @IsOptional()
-  @IsString()
-  part_name_1?: string;
-
-  @IsOptional()
-  @IsString()
-  part_name_2?: string;
-
-  @IsOptional()
-  @IsString()
-  color?: string;
-
-  @IsNotEmpty()
-  @IsNumber()
-  cavity: number;
-
-  @IsNotEmpty()
-  @IsNumber()
-  weight: number;
-
-  @IsNotEmpty()
-  @IsNumber()
-  runner: number;
-
-  @IsNotEmpty()
-  @IsNumber()
-  tonnage: number;
-
-  @IsNotEmpty()
-  @IsNumber()
-  cycle_time: number;
-
-  @IsOptional()
-  @IsString()
-  customer?: string;
-}
-
-export class UpdateMasterCavityDto {
-  @IsString()
-  @IsOptional()
-  material_number?: string;
 
   @IsString()
   @IsOptional()
@@ -66,31 +21,60 @@ export class UpdateMasterCavityDto {
 
   @IsString()
   @IsOptional()
-  part_number_1?: string;
+  part_number?: string;
 
   @IsString()
   @IsOptional()
-  part_number_2?: string;
+  part_name?: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  weight: number;
+}
+
+export class CreateMasterCavityDto {
+  @IsNotEmpty()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePartDto)
+  parts: CreatePartDto[];
+
+  @IsNotEmpty()
+  @IsNumber()
+  cavity: number;
+
+  @IsNotEmpty()
+  @IsNumber()
+  runner: number;
+
+  @IsNumber()
+  @IsOptional()
+  tonnage?: number;
+
+  @IsNumber()
+  @IsOptional()
+  cycle_time?: number;
 
   @IsString()
   @IsOptional()
-  part_name_1?: string;
-
-  @IsString()
-  @IsOptional()
-  part_name_2?: string;
+  customer?: string;
 
   @IsString()
   @IsOptional()
   color?: string;
+}
+
+// update-master-cavity.dto.ts
+export class UpdatePartDto extends PartialType(CreatePartDto) {}
+
+export class UpdateMasterCavityDto {
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => UpdatePartDto)
+  parts?: UpdatePartDto[];
 
   @IsNumber()
   @IsOptional()
   cavity?: number;
-
-  @IsNumber()
-  @IsOptional()
-  weight?: number;
 
   @IsNumber()
   @IsOptional()
@@ -107,4 +91,17 @@ export class UpdateMasterCavityDto {
   @IsString()
   @IsOptional()
   customer?: string;
+
+  @IsString()
+  @IsOptional()
+  color?: string;
+}
+
+export class CreateFromPartsDto extends OmitType(CreateMasterCavityDto, [
+  'parts',
+] as const) {
+  @IsArray()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  material_numbers: string[];
 }

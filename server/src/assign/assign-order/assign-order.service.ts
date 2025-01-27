@@ -105,7 +105,6 @@ export class AssignOrderService {
           recorded_counter: 0,
           is_counter_paused: true,
           pause_start_counter: 0,
-          available_counter: 0,
         },
       );
 
@@ -236,6 +235,22 @@ export class AssignOrderService {
         );
       }
 
+      if (updateDto.status === 'completed') {
+        const machine = await this.machineInfoModel.findOne({
+          machine_number: order.machine_number,
+        });
+        if (!machine.is_counter_paused) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'Counter must be paused before completing order',
+              data: [],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+
       // Type assertion to ensure order.status is treated as OrderStatus
       const currentStatus = order.status as OrderStatus;
 
@@ -291,7 +306,6 @@ export class AssignOrderService {
             recorded_counter: 0,
             is_counter_paused: true,
             pause_start_counter: 0,
-            available_counter: 0,
           },
         );
       }
