@@ -695,35 +695,16 @@ export class MachineInfoService {
     try {
       const start = new Date(startDate);
       const end = new Date(endDate);
-
-      // Format dates for string comparison
       const startString = this.formatDateToString(start);
       const endString = this.formatDateToString(end);
 
-      console.log('Search period:', {
-        startString,
-        endString,
-      });
-
-      // ดึงข้อมูลเครื่องจักร
-      const machineQuery = machineNumbers?.length
-        ? { machine_number: { $in: machineNumbers } }
-        : {};
-
-      const machines = await this.machineInfoModel
-        .find(machineQuery)
-        .select('machine_number work_center')
-        .lean();
-
-      // ใช้ aggregation pipeline แทน
-      const timelines = await this.timelineMachineModel.aggregate([
+      // ใช้ aggregation pipeline เพื่อคำนวณ summary ใน MongoDB
+      const timelineAggregation = await this.timelineMachineModel.aggregate([
         {
           $match: {
-            machine_number: { $in: machines.map((m) => m.machine_number) },
-          },
-        },
-        {
-          $match: {
+            machine_number: machineNumbers?.length
+              ? { $in: machineNumbers }
+              : { $exists: true },
             datetime: {
               $gte: startString,
               $lte: endString,
@@ -731,77 +712,150 @@ export class MachineInfoService {
           },
         },
         {
-          $sort: { datetime: 1 },
+          $group: {
+            _id: {
+              machine_number: '$machine_number',
+              status: '$status',
+              timeSlot: {
+                $subtract: [
+                  {
+                    $divide: [
+                      {
+                        $subtract: [
+                          { $toDate: '$datetime' },
+                          new Date(startString),
+                        ],
+                      },
+                      1000 * 60 * intervalMinutes,
+                    ],
+                  },
+                  {
+                    $mod: [
+                      {
+                        $divide: [
+                          {
+                            $subtract: [
+                              { $toDate: '$datetime' },
+                              new Date(startString),
+                            ],
+                          },
+                          1000 * 60 * intervalMinutes,
+                        ],
+                      },
+                      1,
+                    ],
+                  },
+                ],
+              },
+            },
+            count: { $sum: 1 },
+            first_datetime: { $min: '$datetime' },
+            last_datetime: { $max: '$datetime' },
+          },
         },
+        {
+          $group: {
+            _id: {
+              machine_number: '$_id.machine_number',
+              timeSlot: '$_id.timeSlot',
+            },
+            statuses: {
+              $push: {
+                status: '$_id.status',
+                count: '$count',
+                first_datetime: '$first_datetime',
+                last_datetime: '$last_datetime',
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: '$_id.machine_number',
+            time_slots: {
+              $push: {
+                slot_number: '$_id.timeSlot',
+                statuses: '$statuses',
+              },
+            },
+          },
+        },
+        { $sort: { _id: 1 } },
       ]);
 
-      console.log(`Found ${timelines.length} timeline records`);
-      if (timelines.length > 0) {
-        console.log('Sample timeline:', timelines[0]);
-      }
+      // แปลงผลลัพธ์เป็นรูปแบบที่ต้องการ
+      const machineAnalysis = timelineAggregation.map((machineData) => {
+        const machine_number = machineData._id;
+        const totalDuration = end.getTime() - start.getTime();
 
-      // สร้าง time slots
-      const timeSlots = [];
-      let currentTime = start;
-
-      while (currentTime < end) {
-        const slotStart = new Date(currentTime);
-        const slotEnd = new Date(
-          Math.min(
-            currentTime.getTime() + intervalMinutes * 60 * 1000,
-            end.getTime(),
-          ),
-        );
-
-        // หาข้อมูลในช่วงเวลานี้
-        const slotsData = timelines.filter((t) => {
-          const timelineDate = this.parseTimelineDate(t.datetime);
-          return timelineDate >= slotStart && timelineDate < slotEnd;
+        // คำนวณ total summary
+        const statusSummary = {};
+        machineData.time_slots.forEach((slot) => {
+          slot.statuses.forEach((status) => {
+            if (!statusSummary[status.status]) {
+              statusSummary[status.status] = {
+                count: 0,
+                duration: 0,
+              };
+            }
+            statusSummary[status.status].count += status.count;
+            statusSummary[status.status].duration +=
+              new Date(status.last_datetime).getTime() -
+              new Date(status.first_datetime).getTime();
+          });
         });
 
-        timeSlots.push({
-          start_time: slotStart,
-          end_time: slotEnd,
-          status_summary: this.calculateStatusDuration(
-            slotsData,
-            slotStart,
-            slotEnd,
-          ),
+        // แปลงเป็นเปอร์เซ็นต์
+        const total_summary = {};
+        Object.entries(statusSummary).forEach(([status, data]) => {
+          total_summary[status] = {
+            percentage: Number(
+              (
+                ((data as { duration: number }).duration / totalDuration) *
+                100
+              ).toFixed(2),
+            ),
+            duration_minutes: Number(
+              ((data as { duration: number }).duration / (1000 * 60)).toFixed(
+                2,
+              ),
+            ),
+            duration_hours: Number(
+              (
+                (data as { duration: number }).duration /
+                (1000 * 60 * 60)
+              ).toFixed(2),
+            ),
+          };
         });
-
-        currentTime = new Date(
-          currentTime.getTime() + intervalMinutes * 60 * 1000,
-        );
-      }
-
-      // สร้างผลลัพธ์สำหรับแต่ละเครื่อง
-      const machineAnalysis = machines.map((machine) => {
-        const machineTimelines = timelines.filter(
-          (t) => t.machine_number === machine.machine_number,
-        );
 
         return {
-          machine_number: machine.machine_number,
-          work_center: machine.work_center,
-          total_summary: this.calculateTotalStatusDuration(
-            machineTimelines,
-            start,
-            end,
-          ),
-          time_slots: timeSlots.map((slot) => ({
-            ...slot,
-            status_summary: this.calculateStatusDuration(
-              machineTimelines.filter((t) => {
-                const timelineDate = this.parseTimelineDate(t.datetime);
-                return (
-                  timelineDate >= slot.start_time &&
-                  timelineDate < slot.end_time
-                );
-              }),
-              slot.start_time,
-              slot.end_time,
-            ),
-          })),
+          machine_number,
+          total_summary,
+          time_slots: machineData.time_slots
+            .sort((a, b) => a.slot_number - b.slot_number)
+            .map((slot) => {
+              const slotStart = new Date(
+                start.getTime() +
+                  slot.slot_number * intervalMinutes * 60 * 1000,
+              );
+              const slotEnd = new Date(
+                Math.min(
+                  slotStart.getTime() + intervalMinutes * 60 * 1000,
+                  end.getTime(),
+                ),
+              );
+
+              return {
+                start_time: slotStart,
+                end_time: slotEnd,
+                status_summary: this.calculateSlotSummary(
+                  slot.statuses,
+                  slotStart,
+                  slotEnd,
+                ),
+              };
+            }),
         };
       });
 
@@ -821,6 +875,35 @@ export class MachineInfoService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  private calculateSlotSummary(
+    statuses: any[],
+    slotStart: Date,
+    slotEnd: Date,
+  ) {
+    const statusMap = new Map<string, number>();
+    const totalDuration = slotEnd.getTime() - slotStart.getTime();
+
+    statuses.forEach((status) => {
+      const duration =
+        new Date(status.last_datetime).getTime() -
+        new Date(status.first_datetime).getTime();
+      statusMap.set(
+        status.status,
+        (statusMap.get(status.status) || 0) + duration,
+      );
+    });
+
+    const result = {};
+    statusMap.forEach((duration, status) => {
+      result[status] = {
+        percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
+        duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
+      };
+    });
+
+    return result;
   }
 
   // เพิ่มเมธอดสำหรับคำนวณสรุปรวม
