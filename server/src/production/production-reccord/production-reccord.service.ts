@@ -177,7 +177,7 @@ export class ProductionRecordService {
         );
       }
 
-      const serial = this.generateSerialCode(assignOrder.machine_number);
+      const serial = await this.generateSerialCode(assignOrder.machine_number);
 
       const newRecord = new this.productionRecordModel({
         ...createDto,

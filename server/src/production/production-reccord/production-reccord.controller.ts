@@ -40,6 +40,7 @@ export class ProductionRecordController {
     @Query('confirmation_status') confirmationStatus?: string,
     @Query('is_synced_to_sap') isSyncedToSap?: boolean,
     @Query('assign_order_id') assignOrderId?: string,
+    @Query('serial_code') serialCode?: string,
   ) {
     const query: any = {};
 
@@ -67,6 +68,10 @@ export class ProductionRecordController {
 
     if (isSyncedToSap !== undefined) {
       query.is_synced_to_sap = isSyncedToSap;
+    }
+
+    if (serialCode !== undefined) {
+      query.serial_code = serialCode;
     }
 
     return await this.productionRecordService.findAll(query, page, limit);
