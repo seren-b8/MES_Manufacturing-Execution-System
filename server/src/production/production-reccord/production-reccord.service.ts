@@ -177,6 +177,8 @@ export class ProductionRecordService {
         );
       }
 
+      const serial = this.generateSerialCode(assignOrder.machine_number);
+
       const newRecord = new this.productionRecordModel({
         ...createDto,
         assign_order_id: assignOrder._id,
@@ -184,6 +186,7 @@ export class ProductionRecordService {
         master_not_good_id: createDto.master_not_good_id
           ? new Types.ObjectId(createDto.master_not_good_id)
           : undefined,
+        serial_code: serial,
       });
 
       const savedRecord = await newRecord.save();
@@ -480,5 +483,32 @@ export class ProductionRecordService {
     } catch (error) {
       console.error('Failed to update assign order summary:', error);
     }
+  }
+
+  async generateSerialCode(machine_number: string): Promise<string> {
+    // สร้าง prefix ตามวันที่
+    const today = new Date();
+    const prefix = `PR${today.getFullYear().toString().slice(-2)}${(
+      today.getMonth() + 1
+    )
+      .toString()
+      .padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+
+    // ค้นหา serial code ล่าสุดของวันนี้
+    const latestRecord = await this.productionRecordModel
+      .findOne({
+        serial_code: new RegExp(`^${prefix}-${machine_number}-`),
+      })
+      .sort({ serial_code: -1 });
+
+    // คำนวณเลข sequence ถัดไป
+    let sequence = 1;
+    if (latestRecord) {
+      const lastSequence = parseInt(latestRecord.serial_code.split('-')[2]);
+      sequence = lastSequence + 1;
+    }
+
+    // สร้าง serial code
+    return `${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}`;
   }
 }

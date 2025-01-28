@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import {
-  IAssignEmployee,
   IEmployee,
   IEmployeeDetail,
   IUser,
@@ -18,11 +17,8 @@ import { ProductionOrder } from 'src/shared/modules/schema/production-order.sche
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { CreateMachineInfoDto } from '../dto/machine-info.dto';
 import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
-import { number } from 'yargs';
 import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
-import { time } from 'console';
 import * as _ from 'lodash';
-import * as moment from 'moment';
 
 @Injectable()
 export class MachineInfoService {
@@ -31,7 +27,7 @@ export class MachineInfoService {
 
     @InjectModel(AssignOrder.name) private assignOrderModel: Model<AssignOrder>,
 
-    @InjectModel(MasterCavity.name) private employeeModel: Model<Employee>,
+    @InjectModel(Employee.name) private employeeModel: Model<Employee>,
 
     @InjectModel(MasterCavity.name)
     private masterCavityModel: Model<MasterCavity>,
@@ -639,10 +635,7 @@ export class MachineInfoService {
         return {
           id: userData._id.toString() || '',
           employee_id: userData.employee_id || '',
-          name:
-            employeeData.first_name && employeeData.last_name
-              ? `${employeeData.first_name} ${employeeData.last_name}`.trim()
-              : 'N/A',
+          name: `${employeeData.first_name} ${employeeData.last_name}`.trim(),
         };
       });
     } catch (error) {
@@ -907,99 +900,99 @@ export class MachineInfoService {
   }
 
   // เพิ่มเมธอดสำหรับคำนวณสรุปรวม
-  private calculateTotalStatusDuration(
-    timelines: any[],
-    startTime: Date,
-    endTime: Date,
-  ) {
-    const statusMap = new Map<string, number>();
-    const totalDuration = endTime.getTime() - startTime.getTime();
+  // private calculateTotalStatusDuration(
+  //   timelines: any[],
+  //   startTime: Date,
+  //   endTime: Date,
+  // ) {
+  //   const statusMap = new Map<string, number>();
+  //   const totalDuration = endTime.getTime() - startTime.getTime();
 
-    if (timelines.length === 0) {
-      return {
-        UNKNOWN: {
-          percentage: 100,
-          duration_minutes: totalDuration / (1000 * 60),
-          duration_hours: (totalDuration / (1000 * 60 * 60)).toFixed(2),
-        },
-      };
-    }
+  //   if (timelines.length === 0) {
+  //     return {
+  //       UNKNOWN: {
+  //         percentage: 100,
+  //         duration_minutes: totalDuration / (1000 * 60),
+  //         duration_hours: (totalDuration / (1000 * 60 * 60)).toFixed(2),
+  //       },
+  //     };
+  //   }
 
-    for (let i = 0; i < timelines.length; i++) {
-      const current = timelines[i];
-      const next = timelines[i + 1];
+  //   for (let i = 0; i < timelines.length; i++) {
+  //     const current = timelines[i];
+  //     const next = timelines[i + 1];
 
-      // แปลง datetime string เป็น Date object
-      const currentDate = this.parseTimelineDate(current.datetime);
-      const nextDate = next ? this.parseTimelineDate(next.datetime) : endTime;
-      const previousDate =
-        i === 0 ? startTime : this.parseTimelineDate(current.datetime);
+  //     // แปลง datetime string เป็น Date object
+  //     const currentDate = this.parseTimelineDate(current.datetime);
+  //     const nextDate = next ? this.parseTimelineDate(next.datetime) : endTime;
+  //     const previousDate =
+  //       i === 0 ? startTime : this.parseTimelineDate(current.datetime);
 
-      const duration = nextDate.getTime() - previousDate.getTime();
+  //     const duration = nextDate.getTime() - previousDate.getTime();
 
-      statusMap.set(
-        current.status,
-        (statusMap.get(current.status) || 0) + duration,
-      );
-    }
+  //     statusMap.set(
+  //       current.status,
+  //       (statusMap.get(current.status) || 0) + duration,
+  //     );
+  //   }
 
-    const result = {};
-    statusMap.forEach((duration, status) => {
-      result[status] = {
-        percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
-        duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
-        duration_hours: Number((duration / (1000 * 60 * 60)).toFixed(2)),
-      };
-    });
+  //   const result = {};
+  //   statusMap.forEach((duration, status) => {
+  //     result[status] = {
+  //       percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
+  //       duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
+  //       duration_hours: Number((duration / (1000 * 60 * 60)).toFixed(2)),
+  //     };
+  //   });
 
-    return result;
-  }
+  //   return result;
+  // }
 
-  private calculateStatusDuration(
-    timelines: any[],
-    startTime: Date,
-    endTime: Date,
-  ) {
-    const statusMap = new Map<string, number>();
-    const totalDuration = endTime.getTime() - startTime.getTime();
+  // private calculateStatusDuration(
+  //   timelines: any[],
+  //   startTime: Date,
+  //   endTime: Date,
+  // ) {
+  //   const statusMap = new Map<string, number>();
+  //   const totalDuration = endTime.getTime() - startTime.getTime();
 
-    if (timelines.length === 0) {
-      return {
-        UNKNOWN: {
-          percentage: 100,
-          duration_minutes: totalDuration / (1000 * 60),
-        },
-      };
-    }
+  //   if (timelines.length === 0) {
+  //     return {
+  //       UNKNOWN: {
+  //         percentage: 100,
+  //         duration_minutes: totalDuration / (1000 * 60),
+  //       },
+  //     };
+  //   }
 
-    // คำนวณระยะเวลาของแต่ละ status
-    for (let i = 0; i < timelines.length; i++) {
-      const current = timelines[i];
-      const next = timelines[i + 1];
+  //   // คำนวณระยะเวลาของแต่ละ status
+  //   for (let i = 0; i < timelines.length; i++) {
+  //     const current = timelines[i];
+  //     const next = timelines[i + 1];
 
-      // แปลง datetime string เป็น Date object
-      const currentDate = this.parseTimelineDate(current.datetime);
-      const nextDate = next ? this.parseTimelineDate(next.datetime) : endTime;
-      const previousDate =
-        i === 0 ? startTime : this.parseTimelineDate(current.datetime);
+  //     // แปลง datetime string เป็น Date object
+  //     const currentDate = this.parseTimelineDate(current.datetime);
+  //     const nextDate = next ? this.parseTimelineDate(next.datetime) : endTime;
+  //     const previousDate =
+  //       i === 0 ? startTime : this.parseTimelineDate(current.datetime);
 
-      const duration = nextDate.getTime() - previousDate.getTime();
+  //     const duration = nextDate.getTime() - previousDate.getTime();
 
-      statusMap.set(
-        current.status,
-        (statusMap.get(current.status) || 0) + duration,
-      );
-    }
+  //     statusMap.set(
+  //       current.status,
+  //       (statusMap.get(current.status) || 0) + duration,
+  //     );
+  //   }
 
-    // แปลงเป็นเปอร์เซ็นต์
-    const result = {};
-    statusMap.forEach((duration, status) => {
-      result[status] = {
-        percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
-        duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
-      };
-    });
+  //   // แปลงเป็นเปอร์เซ็นต์
+  //   const result = {};
+  //   statusMap.forEach((duration, status) => {
+  //     result[status] = {
+  //       percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
+  //       duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
+  //     };
+  //   });
 
-    return result;
-  }
+  //   return result;
+  // }
 }
