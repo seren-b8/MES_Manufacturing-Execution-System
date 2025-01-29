@@ -36,21 +36,10 @@ export class MachineInfoController {
     return await this.machineInfoService.getAllMachinesDetails();
   }
 
-  @Get('work-center/:work_center')
-  async findByWorkCenter(@Param('work_center') work_center: string) {
-    return await this.machineInfoService.findByWorkCenter(work_center);
-  }
-
-  @Get('work-center/:work_center/orders')
-  async getProductionOrders(
-    @Param('work_center') work_center: string,
-    @Query('status') status?: 'pending' | 'active' | 'completed',
-  ) {
-    return await this.machineInfoService.getProductionOrdersByWorkCenter(
-      work_center,
-      status,
-    );
-  }
+  // @Get('work-center/:work_center')
+  // async findByWorkCenter(@Param('work_center') work_center: string) {
+  //   return await this.machineInfoService.findByWorkCenter(work_center);
+  // }
 
   @Post(':machineNumber/toggle')
   async toggleCounter(@Param('machineNumber') machineNumber: string) {

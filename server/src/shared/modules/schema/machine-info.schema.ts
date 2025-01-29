@@ -33,19 +33,6 @@ export class MachineInfo extends Document {
   @Prop({ default: null })
   pause_start_counter: number; // เก็บค่า counter ตอนเริ่ม pause
 
-  @Prop({
-    type: [
-      {
-        material_number: String,
-        cavity_id: { type: Types.ObjectId, ref: 'MasterCavity' },
-      },
-    ],
-  })
-  material_cavities: {
-    material_number: string;
-    cavity_id: Types.ObjectId;
-  }[];
-
   @Prop({ default: 0 })
   sleep_count: number; // changed from SleepCount
 

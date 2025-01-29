@@ -29,13 +29,6 @@ export class MachineCavityController {
     return this.machineCavityService.findAll(query);
   }
 
-  // @Get(':id')
-  // async findOne(
-  //   @Param('id') id: string,
-  // ): Promise<ResponseFormat<MasterCavity>> {
-  //   return this.machineCavityService.findOne(id);
-  // }
-
   @Post()
   async create(
     @Body() createDto: CreateMasterCavityDto,
@@ -56,12 +49,12 @@ export class MachineCavityController {
   //   return this.machineCavityService.remove(id);
   // }
 
-  @Post('from-parts')
-  async createFromParts(@Body() createFromPartsDto: CreateFromPartsDto) {
-    const { material_numbers, ...cavityData } = createFromPartsDto;
-    return await this.machineCavityService.createFromExistingPart(
-      material_numbers,
-      cavityData,
-    );
-  }
+  // @Post('from-parts')
+  // async createFromParts(@Body() createFromPartsDto: CreateFromPartsDto) {
+  //   const { material_numbers, ...cavityData } = createFromPartsDto;
+  //   return await this.machineCavityService.createFromExistingPart(
+  //     material_numbers,
+  //     cavityData,
+  //   );
+  // }
 }

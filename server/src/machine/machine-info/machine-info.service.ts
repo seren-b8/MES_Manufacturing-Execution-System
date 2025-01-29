@@ -1,11 +1,18 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  HttpException,
+  HttpStatus,
+  ConsoleLogger,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import {
+  CavityData,
   IEmployee,
   IEmployeeDetail,
   IUser,
+  PartData,
   PopulatedCavityData,
   PopulatedMachineInfo,
 } from 'src/shared/interface/machine-info';
@@ -19,6 +26,7 @@ import { CreateMachineInfoDto } from '../dto/machine-info.dto';
 import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
 import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
 import * as _ from 'lodash';
+import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 
 @Injectable()
 export class MachineInfoService {
@@ -40,259 +48,43 @@ export class MachineInfoService {
 
     @InjectModel(TimelineMachine.name)
     private timelineMachineModel: Model<TimelineMachine>,
+
+    @InjectModel(MasterPart.name) private masterPartModel,
   ) {}
-
-  async findByWorkCenter(work_center: string): Promise<ResponseFormat<any>> {
-    try {
-      // ดึงข้อมูลเครื่องจักรตาม work center
-      const machine = await this.machineInfoModel
-        .findOne({ work_center })
-        .populate<PopulatedMachineInfo>({
-          path: 'material_cavities.cavity_id',
-          select: 'cavity runner parts',
-        });
-      if (!machine) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Machine not found for this work center',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      // ดึงข้อมูล Production Orders ที่ยังไม่ได้ assign
-      const pendingOrders = await this.productionOrderModel
-        .find({
-          work_center,
-          assign_stage: { $ne: true },
-        })
-        .sort({ basic_start_date: 1 });
-
-      // ดึง active order ปัจจุบัน และ populate production_order_id
-      const activeOrder = await this.assignOrderModel
-        .findOne({
-          machine_number: machine.machine_number,
-          status: 'active',
-        })
-        .populate<{ production_order_id: ProductionOrder }>(
-          'production_order_id',
-        );
-
-      // ดึงข้อมูลพนักงานที่กำลังทำงาน
-      let activeEmployee = null;
-      if (activeOrder) {
-        activeEmployee = await this.assignEmployeeModel
-          .findOne({
-            assign_order_id: activeOrder._id,
-            status: 'active',
-          })
-          .populate('user_id', 'employee_id first_name last_name');
-      }
-      const materialNumber = activeOrder?.production_order_id?.material_number;
-      // เปลี่ยนจาก material_cavity_map เป็น material_cavities
-      const cavityInfo = machine.material_cavities?.find(
-        (mc) => mc.material_number === materialNumber,
-      );
-      const cavityCount = cavityInfo?.cavity_id?.cavity || 1;
-
-      // รวมข้อมูลทั้งหมด
-      const machineStatus = {
-        machine_info: {
-          work_center: machine.work_center,
-          machine_number: machine.machine_number,
-          status: machine.status,
-          counter: machine.counter,
-          available_counter: calculateAvailableCounter(
-            machine.counter,
-            machine.recorded_counter,
-            cavityCount,
-            machine.is_counter_paused,
-            machine.pause_start_counter,
-          ),
-          is_counter_paused: machine.is_counter_paused,
-          cycle_time: machine.cycletime,
-          tonnage: machine.tonnage,
-        },
-        current_production: activeOrder
-          ? {
-              order_id: activeOrder._id,
-              production_order: {
-                id: activeOrder.production_order_id._id,
-                order_number: (
-                  activeOrder.production_order_id as ProductionOrder
-                ).order_id,
-                material_number: (
-                  activeOrder.production_order_id as ProductionOrder
-                ).material_number,
-                material_description: (
-                  activeOrder.production_order_id as ProductionOrder
-                ).material_description,
-                target_quantity: (
-                  activeOrder.production_order_id as ProductionOrder
-                ).target_quantity,
-              },
-              current_summary: activeOrder.current_summary,
-              start_time: activeOrder.datetime_open_order,
-            }
-          : null,
-        current_operator: activeEmployee
-          ? {
-              id: activeEmployee.user_id._id,
-              employee_id: activeEmployee.user_id.employee_id,
-              name: `${activeEmployee.user_id.first_name} ${activeEmployee.user_id.last_name}`,
-            }
-          : null,
-        pending_orders: pendingOrders.map((order) => ({
-          id: order._id,
-          order_number: order.order_id,
-          material_number: order.material_number,
-          material_description: order.material_description,
-          target_quantity: order.target_quantity,
-          planned_start_date: order.basic_start_date,
-          planned_end_date: order.basic_finish_date,
-        })),
-      };
-
-      return {
-        status: 'success',
-        message: 'Machine and orders retrieved successfully',
-        data: [machineStatus],
-      };
-    } catch (error) {
-      if (error instanceof HttpException) throw error;
-      throw new HttpException(
-        {
-          status: 'error',
-          message: 'Failed to retrieve machine status',
-          data: [],
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  async getProductionOrdersByWorkCenter(
-    work_center: string,
-    status?: 'pending' | 'active' | 'completed',
-  ): Promise<ResponseFormat<any>> {
-    try {
-      let query: any = { work_center };
-
-      switch (status) {
-        case 'pending':
-          query.assign_stage = { $ne: true };
-          break;
-        case 'active':
-          query.assign_stage = true;
-          break;
-        case 'completed':
-          query.assign_stage = true;
-          break;
-      }
-
-      const orders = await this.productionOrderModel
-        .find(query)
-        .sort({ basic_start_date: 1 });
-
-      const ordersWithStatus = await Promise.all(
-        orders.map(async (order) => {
-          const assignOrder = await this.assignOrderModel
-            .findOne({ production_order_id: order._id })
-            .sort({ datetime_open_order: -1 });
-
-          return {
-            id: order._id,
-            order_number: order.order_id,
-            material_number: order.material_number,
-            material_description: order.material_description,
-            target_quantity: order.target_quantity,
-            planned_start_date: order.basic_start_date,
-            planned_end_date: order.basic_finish_date,
-            current_status: assignOrder ? assignOrder.status : 'pending',
-            production_summary: assignOrder
-              ? assignOrder.current_summary
-              : null,
-          };
-        }),
-      );
-
-      return {
-        status: 'success',
-        message: 'Production orders retrieved successfully',
-        data: ordersWithStatus,
-      };
-    } catch (error) {
-      throw new HttpException(
-        {
-          status: 'error',
-          message: 'Failed to retrieve production orders',
-          data: [],
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
 
   async getAllMachinesDetails(): Promise<ResponseFormat<any>> {
     try {
-      // 1. ดึงข้อมูลเครื่องจักรทั้งหมด
-      const machines = (await this.machineInfoModel
-        .find()
-        .populate<{
-          material_cavities: {
-            material_number: string;
-            cavity_id: PopulatedCavityData;
-          }[];
-        }>({
-          path: 'material_cavities.cavity_id',
-          select: 'cavity runner parts',
-        })
-        .lean()) as PopulatedMachineInfo[];
+      const machines = await this.machineInfoModel.find().lean();
 
-      // 2. ดึงข้อมูลที่เกี่ยวข้องและรวมข้อมูล
       const machinesWithDetails = await Promise.all(
         machines.map(async (machine) => {
           try {
-            // ดึง orders ทั้งหมดของเครื่อง
+            // ดึงข้อมูลพื้นฐาน
             const [allOrders, allProductionOrder, activeOrder] =
               await Promise.all([
                 this.assignOrderModel.find({
                   machine_number: machine.machine_number,
-                }) || [],
+                }),
                 this.productionOrderModel.find({
                   work_center: machine.work_center,
                   assign_stage: false,
-                }) || [],
-                this.assignOrderModel
-                  .findOne({
-                    machine_number: machine.machine_number,
-                    status: 'active',
-                  })
-                  .populate<{ production_order_id: ProductionOrder }>(
-                    'production_order_id',
-                  ),
+                }),
+                this.getActiveOrderData(machine),
               ]);
 
-            const materialNumber =
-              activeOrder?.production_order_id?.material_number;
-            const cavityInfo = machine.material_cavities?.find(
-              (mc) => mc.material_number === materialNumber,
-            );
-            const cavityData = cavityInfo?.cavity_id;
-            const cavityCount = cavityData?.cavity || 1;
+            // ดึงข้อมูล cavity และ part
+            const { cavityData, partData } = activeOrder
+              ? await this.getCavityAndPartData(
+                  activeOrder.production_order.material_number,
+                )
+              : { cavityData: null, partData: null };
 
-            // ดึงพนักงานที่ active สำหรับ order นี้
-            let activeEmployees = await this.getActiveEmployees(
-              activeOrder?._id.toString(),
+            // ดึงข้อมูลพนักงาน
+            const activeEmployees = await this.getActiveEmployees(
+              activeOrder?.order_id.toString(),
             );
-
-            // ตรวจสอบว่า production_order_id มีข้อมูลหรือไม่
-            const productionOrder = activeOrder?.production_order_id;
 
             return {
-              // ข้อมูลพื้นฐานของเครื่อง
               machine_info: {
                 machine_name: machine.machine_name || '',
                 work_center: machine.work_center || '',
@@ -303,16 +95,28 @@ export class MachineInfoService {
                 available_counter: calculateAvailableCounter(
                   machine.counter,
                   machine.recorded_counter,
-                  cavityCount,
+                  cavityData?.cavity || 1,
                   machine.is_counter_paused,
                   machine.pause_start_counter,
                 ),
+                cavity_info: cavityData
+                  ? {
+                      cavity_count: cavityData.cavity,
+                      runner: cavityData.runner,
+                      part_info: partData
+                        ? {
+                            material_number: partData.material_number,
+                            part_number: partData.part_number,
+                            part_name: partData.part_name,
+                            weight: partData.weight,
+                          }
+                        : null,
+                    }
+                  : null,
                 is_counter_paused: machine.is_counter_paused || false,
                 cycle_time: machine.cycletime || 0,
-                thonnage: machine.tonnage || 0,
+                tonnage: machine.tonnage || 0,
               },
-
-              // สรุปข้อมูล orders
               orders_summary: {
                 total_orders: allOrders.length,
                 completed_orders: allOrders.filter(
@@ -322,41 +126,11 @@ export class MachineInfoService {
                   .length,
                 waiting_assign_orders: allProductionOrder.length,
               },
-
-              // ข้อมูล active order
-              active_order:
-                activeOrder && productionOrder
-                  ? {
-                      order_id: activeOrder._id,
-                      production_order: {
-                        id: productionOrder._id,
-                        order_number: productionOrder.order_id,
-                        material_number: productionOrder.material_number,
-                        material_description:
-                          productionOrder.material_description,
-                        target_quantity: productionOrder.target_quantity,
-                        taget_daly: productionOrder.plan_target_day,
-                        plan_cycle_time: productionOrder.plan_cycle_time,
-                        weight: cavityData?.parts?.[0]?.weight || 0,
-                        weight_runner: cavityData?.runner || 0,
-                      },
-                      production_summary: {
-                        ...(activeOrder.current_summary || {}),
-                        achievement_rate: this.calculateAchievementRate(
-                          activeOrder.current_summary?.total_good_quantity || 0,
-                          productionOrder.target_quantity || 0,
-                        ),
-                      },
-                    }
-                  : null,
-
-              // ข้อมูลพนักงานที่ active
+              active_order: activeOrder,
               active_employees: {
                 count: activeEmployees.length,
                 details: activeEmployees,
               },
-
-              // ข้อมูลการผลิตล่าสุด
               latest_production: activeOrder?.datetime_open_order
                 ? {
                     start_time: activeOrder.datetime_open_order,
@@ -364,7 +138,7 @@ export class MachineInfoService {
                       activeOrder.datetime_open_order,
                     ),
                     efficiency: this.calculateEfficiency(
-                      activeOrder.current_summary?.total_good_quantity || 0,
+                      activeOrder.production_summary.total_good_quantity || 0,
                       new Date(activeOrder.datetime_open_order).getTime(),
                       Number(machine.cycletime) || 0,
                       machine.is_counter_paused,
@@ -377,26 +151,7 @@ export class MachineInfoService {
               `Error processing machine ${machine.machine_number}:`,
               error,
             );
-            // Return minimal machine info if there's an error processing details
-
-            return {
-              machine_info: {
-                work_center: machine.work_center || '',
-                machine_number: machine.machine_number || '',
-                line: machine.line || '',
-                status: 'error',
-                counter: 0,
-                cycle_time: 0,
-              },
-              orders_summary: {
-                total_orders: 0,
-                completed_orders: 0,
-                pending_orders: 0,
-              },
-              active_order: null,
-              active_employees: { count: 0, details: [] },
-              latest_production: null,
-            };
+            return this.getErrorMachineData(machine);
           }
         }),
       );
@@ -407,29 +162,7 @@ export class MachineInfoService {
         data: machinesWithDetails,
       };
     } catch (error) {
-      console.error('Error in getAllMachinesDetails:', {
-        error: (error as Error).message,
-        stack: (error as Error).stack,
-        timestamp: new Date().toISOString(),
-        context: 'MachineService.getAllMachinesDetails',
-      });
-
-      if (error instanceof HttpException) throw error;
-
-      const errorDetails = {
-        message: (error as Error).message || 'Unknown error',
-        code: (error as any).code,
-        name: (error as Error).name,
-      };
-
-      throw new HttpException(
-        {
-          status: 'error',
-          message: 'Failed to retrieve machines details',
-          data: [errorDetails],
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      return this.handleServiceError(error);
     }
   }
 
@@ -655,30 +388,6 @@ export class MachineInfoService {
     return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
   }
 
-  private parseTimelineDate(dateString: string): Date {
-    try {
-      const [datePart, timePart] = dateString.split(' ');
-      const [month, day, year] = datePart.split('/');
-      let [hours, minutes, seconds] = timePart.split(':');
-
-      // Handle missing seconds
-      if (!seconds) seconds = '0';
-
-      // Parse all values as integers
-      return new Date(
-        parseInt(year),
-        parseInt(month) - 1,
-        parseInt(day),
-        parseInt(hours),
-        parseInt(minutes),
-        parseInt(seconds),
-      );
-    } catch (error) {
-      console.error('Error parsing date:', dateString, error);
-      return new Date(dateString);
-    }
-  }
-
   async getMachineStatusByPeriod(
     startDate: Date,
     endDate: Date,
@@ -899,100 +608,182 @@ export class MachineInfoService {
     return result;
   }
 
-  // เพิ่มเมธอดสำหรับคำนวณสรุปรวม
-  // private calculateTotalStatusDuration(
-  //   timelines: any[],
-  //   startTime: Date,
-  //   endTime: Date,
-  // ) {
-  //   const statusMap = new Map<string, number>();
-  //   const totalDuration = endTime.getTime() - startTime.getTime();
+  private async getCavityAndPartData(materialNumber: string) {
+    if (!materialNumber) {
+      return { cavityData: null, partData: null };
+    }
 
-  //   if (timelines.length === 0) {
-  //     return {
-  //       UNKNOWN: {
-  //         percentage: 100,
-  //         duration_minutes: totalDuration / (1000 * 60),
-  //         duration_hours: (totalDuration / (1000 * 60 * 60)).toFixed(2),
-  //       },
-  //     };
-  //   }
+    try {
+      // 1. ค้นหาแบบแยก query เพื่อง่ายต่อการ debug
+      const cavity = await this.masterCavityModel
+        .findOne()
+        .populate({
+          path: 'parts',
+          model: 'MasterPart',
+          match: { material_number: materialNumber },
+          select: 'material_number part_number part_name weight',
+        })
+        .lean();
 
-  //   for (let i = 0; i < timelines.length; i++) {
-  //     const current = timelines[i];
-  //     const next = timelines[i + 1];
+      // Debug logs
 
-  //     // แปลง datetime string เป็น Date object
-  //     const currentDate = this.parseTimelineDate(current.datetime);
-  //     const nextDate = next ? this.parseTimelineDate(next.datetime) : endTime;
-  //     const previousDate =
-  //       i === 0 ? startTime : this.parseTimelineDate(current.datetime);
+      if (!cavity) {
+        console.log('No cavity found:', materialNumber);
+        return { cavityData: null, partData: null };
+      }
 
-  //     const duration = nextDate.getTime() - previousDate.getTime();
+      if (!cavity.parts || cavity.parts.length === 0) {
+        console.log('Cavity found but no matching parts');
+        console.log('Cavity ID:', cavity._id);
+        return { cavityData: null, partData: null };
+      }
 
-  //     statusMap.set(
-  //       current.status,
-  //       (statusMap.get(current.status) || 0) + duration,
-  //     );
-  //   }
+      // 2. ถ้าไม่พบข้อมูล ลองค้นหาโดยตรงจาก MasterPart
+      if (!cavity.parts.length) {
+        console.log('Trying direct part query');
+        const part = await this.masterPartModel
+          .findOne({ material_number: materialNumber })
+          .lean();
 
-  //   const result = {};
-  //   statusMap.forEach((duration, status) => {
-  //     result[status] = {
-  //       percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
-  //       duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
-  //       duration_hours: Number((duration / (1000 * 60 * 60)).toFixed(2)),
-  //     };
-  //   });
+        if (part) {
+          console.log('Found part directly:', part);
+          // ค้นหา cavity ที่มี part นี้
+          const cavityWithPart = await this.masterCavityModel
+            .findOne({ parts: part._id })
+            .lean();
 
-  //   return result;
-  // }
+          if (cavityWithPart) {
+            console.log('Found cavity through part:', cavityWithPart);
+            return {
+              cavityData: {
+                cavity: cavityWithPart.cavity,
+                runner: cavityWithPart.runner,
+                tonnage: cavityWithPart.tonnage,
+              },
+              partData: part,
+            };
+          }
+        }
+      }
 
-  // private calculateStatusDuration(
-  //   timelines: any[],
-  //   startTime: Date,
-  //   endTime: Date,
-  // ) {
-  //   const statusMap = new Map<string, number>();
-  //   const totalDuration = endTime.getTime() - startTime.getTime();
+      // 3. ถ้าพบข้อมูลปกติ
+      return {
+        cavityData: {
+          cavity: cavity.cavity,
+          runner: cavity.runner,
+          tonnage: cavity.tonnage,
+        },
+        partData: cavity.parts[0],
+      };
+    } catch (error) {
+      console.error('Error getting cavity and part data:', error);
+      // Log detailed error information
+      console.error('Error details:', {
+        materialNumber,
+        errorMessage: (error as Error).message,
+        errorStack: (error as Error).stack,
+      });
+      return { cavityData: null, partData: null };
+    }
+  }
 
-  //   if (timelines.length === 0) {
-  //     return {
-  //       UNKNOWN: {
-  //         percentage: 100,
-  //         duration_minutes: totalDuration / (1000 * 60),
-  //       },
-  //     };
-  //   }
+  // 2. แยกฟังก์ชันดึงข้อมูล active order
+  private async getActiveOrderData(machine: any) {
+    try {
+      const activeOrder = await this.assignOrderModel
+        .findOne({
+          machine_number: machine.machine_number,
+          status: 'active',
+        })
+        .populate<{ production_order_id: ProductionOrder }>(
+          'production_order_id',
+        )
+        .lean();
 
-  //   // คำนวณระยะเวลาของแต่ละ status
-  //   for (let i = 0; i < timelines.length; i++) {
-  //     const current = timelines[i];
-  //     const next = timelines[i + 1];
+      if (!activeOrder?.production_order_id) return null;
 
-  //     // แปลง datetime string เป็น Date object
-  //     const currentDate = this.parseTimelineDate(current.datetime);
-  //     const nextDate = next ? this.parseTimelineDate(next.datetime) : endTime;
-  //     const previousDate =
-  //       i === 0 ? startTime : this.parseTimelineDate(current.datetime);
+      const { cavityData, partData } = await this.getCavityAndPartData(
+        activeOrder.production_order_id.material_number,
+      );
 
-  //     const duration = nextDate.getTime() - previousDate.getTime();
+      return {
+        order_id: activeOrder._id,
+        production_order: {
+          id: activeOrder.production_order_id._id,
+          order_number: activeOrder.production_order_id.order_id,
+          material_number: activeOrder.production_order_id.material_number,
+          material_description:
+            activeOrder.production_order_id.material_description,
+          target_quantity: activeOrder.production_order_id.target_quantity,
+          target_daily: activeOrder.production_order_id.plan_target_day,
+          plan_cycle_time: activeOrder.production_order_id.plan_cycle_time,
+          part_info: partData
+            ? {
+                weight: (partData as any).weight,
+                weight_runner: cavityData?.runner || 0,
+              }
+            : null,
+        },
+        production_summary: {
+          ...(activeOrder.current_summary || {}),
+          achievement_rate: this.calculateAchievementRate(
+            activeOrder.current_summary?.total_good_quantity || 0,
+            activeOrder.production_order_id.target_quantity || 0,
+          ),
+        },
+        datetime_open_order: activeOrder.datetime_open_order,
+      };
+    } catch (error) {
+      console.error('Error getting active order data:', error);
+      return null;
+    }
+  }
 
-  //     statusMap.set(
-  //       current.status,
-  //       (statusMap.get(current.status) || 0) + duration,
-  //     );
-  //   }
+  private getErrorMachineData(machine: any) {
+    return {
+      machine_info: {
+        work_center: machine.work_center || '',
+        machine_number: machine.machine_number || '',
+        line: machine.line || '',
+        status: 'error',
+        counter: 0,
+        cycle_time: 0,
+        cavity_info: null,
+      },
+      orders_summary: {
+        total_orders: 0,
+        completed_orders: 0,
+        pending_orders: 0,
+        waiting_assign_orders: 0,
+      },
+      active_order: null,
+      active_employees: { count: 0, details: [] },
+      latest_production: null,
+    };
+  }
 
-  //   // แปลงเป็นเปอร์เซ็นต์
-  //   const result = {};
-  //   statusMap.forEach((duration, status) => {
-  //     result[status] = {
-  //       percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
-  //       duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
-  //     };
-  //   });
+  private handleServiceError(error: any): never {
+    console.error('Service error:', {
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+      timestamp: new Date().toISOString(),
+    });
 
-  //   return result;
-  // }
+    if (error instanceof HttpException) throw error;
+
+    throw new HttpException(
+      {
+        status: 'error',
+        message: 'Failed to retrieve machines details',
+        data: [
+          {
+            message: (error as Error).message || 'Unknown error',
+            code: (error as any).code,
+            name: (error as Error).name,
+          },
+        ],
+      },
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+  }
 }

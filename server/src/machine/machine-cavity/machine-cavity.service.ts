@@ -24,7 +24,16 @@ export class MachineCavityService {
 
   async findAll(query: any = {}): Promise<ResponseFormat<MasterCavity>> {
     try {
-      const cavities = await this.machineCavityModel.find(query).lean();
+      const cavities = await this.machineCavityModel
+        .find(query)
+        // .populate({
+        //   path: 'parts',
+        //   select: 'material_number part_number part_name weight',
+        //   model: 'MasterPart',
+        // })
+        .sort({ createdAt: -1 })
+        .lean();
+
       return {
         status: 'success',
         message: 'Retrieved machine cavities successfully',
@@ -122,41 +131,69 @@ export class MachineCavityService {
   ): Promise<ResponseFormat<MasterCavity>> {
     try {
       // Validate unique material numbers within the request
-      const materialNumbers = createDto.parts.map((p) => p.material_number);
-      if (new Set(materialNumbers).size !== materialNumbers.length) {
+      const parts = await this.masterPartModel.find({
+        _id: { $in: createDto.parts },
+      });
+
+      if (parts.length !== createDto.parts.length) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'Duplicate material numbers are not allowed',
+            massage: 'One ormore part IDs not found',
             data: [],
           },
           HttpStatus.BAD_REQUEST,
         );
       }
 
-      // Check if material numbers already exist in database
-      for (const materialNumber of materialNumbers) {
-        const existingCavity = await this.machineCavityModel.findOne({
-          'parts.material_number': materialNumber,
-        });
+      const materialNumbers = parts.map((p) => p.material_number);
+      if (new Set(materialNumbers).size !== materialNumbers.length) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message:
+              'Duplicate material numbers are not allowed in the same cavity',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
 
-        if (existingCavity) {
-          throw new HttpException(
-            {
-              status: 'error',
-              message: `Material number ${materialNumber} already exists`,
-              data: [],
-            },
-            HttpStatus.BAD_REQUEST,
-          );
-        }
+      const existingCavities = await this.machineCavityModel
+        .find()
+        .populate('parts');
+
+      const existingMaterials = existingCavities
+        .map((cavity) =>
+          cavity.parts
+            .filter((part: any) =>
+              materialNumbers.includes(part.material_number),
+            )
+            .map((part: any) => part.material_number),
+        )
+        .flat();
+
+      if (existingMaterials.length > 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Material number(s) ${existingMaterials.join(', ')} already exist in other cavities`,
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
       }
 
       const newCavity = await this.machineCavityModel.create(createDto);
+
+      const populatedCavity = await this.machineCavityModel
+        .findById(newCavity._id)
+        .populate('parts');
+
       return {
         status: 'success',
         message: 'Created machine cavity successfully',
-        data: [newCavity],
+        data: [populatedCavity],
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
@@ -283,85 +320,79 @@ export class MachineCavityService {
     }
   }
 
-  async createFromExistingPart(
-    materialNumbers: string[],
-    cavityData: Omit<CreateMasterCavityDto, 'parts'>,
-  ): Promise<ResponseFormat<MasterCavity>> {
-    try {
-      // หาข้อมูล parts จาก material numbers ที่ส่งมา
-      const parts = await this.masterPartModel
-        .find({
-          material_number: { $in: materialNumbers },
-        })
-        .lean();
+  // async createFromExistingPart(
+  //   materialNumbers: string[],
+  //   cavityData: Omit<CreateMasterCavityDto, 'parts'>,
+  // ): Promise<ResponseFormat<MasterCavity>> {
+  //   try {
+  //     // หาข้อมูล parts จาก material numbers ที่ส่งมา
+  //     const parts = await this.masterPartModel
+  //       .find({
+  //         material_number: { $in: materialNumbers },
+  //       })
+  //       .lean();
 
-      // ตรวจสอบว่าเจอ parts ครบตามที่ส่งมาไหม
-      if (parts.length !== materialNumbers.length) {
-        const foundMaterials = parts.map((p) => p.material_number);
-        const notFound = materialNumbers.filter(
-          (m) => !foundMaterials.includes(m),
-        );
+  //     // ตรวจสอบว่าเจอ parts ครบตามที่ส่งมาไหม
+  //     if (parts.length !== materialNumbers.length) {
+  //       const foundMaterials = parts.map((p) => p.material_number);
+  //       const notFound = materialNumbers.filter(
+  //         (m) => !foundMaterials.includes(m),
+  //       );
 
-        throw new HttpException(
-          {
-            status: 'error',
-            message: `Material numbers not found: ${notFound.join(', ')}`,
-            data: [],
-          },
-          HttpStatus.BAD_REQUEST,
-        );
-      }
+  //       throw new HttpException(
+  //         {
+  //           status: 'error',
+  //           message: `Material numbers not found: ${notFound.join(', ')}`,
+  //           data: [],
+  //         },
+  //         HttpStatus.BAD_REQUEST,
+  //       );
+  //     }
 
-      // ตรวจสอบว่า material numbers เหล่านี้มีใน cavity อื่นหรือไม่
-      for (const materialNumber of materialNumbers) {
-        const existingCavity = await this.machineCavityModel.findOne({
-          'parts.material_number': materialNumber,
-        });
+  //     // ตรวจสอบว่า material numbers เหล่านี้มีใน cavity อื่นหรือไม่
+  //     for (const materialNumber of materialNumbers) {
+  //       const existingCavity = await this.machineCavityModel.findOne({
+  //         'parts.material_number': materialNumber,
+  //       });
 
-        if (existingCavity) {
-          throw new HttpException(
-            {
-              status: 'error',
-              message: `Material number ${materialNumber} already exists in another cavity`,
-              data: [],
-            },
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-      }
+  //       if (existingCavity) {
+  //         throw new HttpException(
+  //           {
+  //             status: 'error',
+  //             message: `Material number ${materialNumber} already exists in another cavity`,
+  //             data: [],
+  //           },
+  //           HttpStatus.BAD_REQUEST,
+  //         );
+  //       }
+  //     }
 
-      // แปลงข้อมูลจาก parts ให้ตรงกับ CreatePartDto
-      const cavityParts = parts.map((part) => ({
-        material_number: part.material_number,
-        material_description: part.material_description,
-        part_number: part.part_number,
-        part_name: part.part_name,
-        weight: part.weight,
-      }));
+  //     // แปลงข้อมูลจาก parts ให้ตรงกับ CreatePartDto
+  //     const cavityParts = parts.map((part) => [part._id]);
 
-      // สร้าง cavity ใหม่
-      const createDto = {
-        ...cavityData,
-        parts: cavityParts,
-      };
+  //     // สร้าง cavity ใหม่
+  //     const createDto = {
+  //       ...cavityData,
+  //       parts: cavityParts,
+  //     };
 
-      const newCavity = await this.machineCavityModel.create(createDto);
+  //     const newCavity = await this.machineCavityModel.create(createDto);
 
-      return {
-        status: 'success',
-        message: 'Created machine cavity from existing parts successfully',
-        data: [newCavity],
-      };
-    } catch (error) {
-      if (error instanceof HttpException) throw error;
-      throw new HttpException(
-        {
-          status: 'error',
-          message: 'Failed to create machine cavity',
-          data: [],
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
+  //     return {
+  //       status: 'success',
+  //       message: 'Created machine cavity from existing parts successfully',
+  //       data: [newCavity],
+  //     };
+  //   } catch (error) {
+  //     if (error instanceof HttpException) throw error;
+  //     throw new HttpException(
+  //       {
+  //         status: 'error',
+  //         message: 'Failed to create machine cavity',
+  //         data: [],
+  //       },
+  //       HttpStatus.INTERNAL_SERVER_ERROR,
+  //     );
+  //   }
+  // }
 }
