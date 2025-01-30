@@ -5,13 +5,16 @@ import {
   ConsoleLogger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import {
+  CavityAndPartResult,
   CavityData,
+  DailySummaryData,
   IEmployee,
   IEmployeeDetail,
   IUser,
+  MachineDetailResponse,
   PartData,
   PopulatedCavityData,
   PopulatedMachineInfo,
@@ -27,6 +30,9 @@ import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
 import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
 import * as _ from 'lodash';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
+import { ProductionRecordService } from 'src/production/production-reccord/production-reccord.service';
+import * as moment from 'moment';
+import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 
 @Injectable()
 export class MachineInfoService {
@@ -49,7 +55,11 @@ export class MachineInfoService {
     @InjectModel(TimelineMachine.name)
     private timelineMachineModel: Model<TimelineMachine>,
 
-    @InjectModel(MasterPart.name) private masterPartModel,
+    @InjectModel(MasterPart.name)
+    private masterPartModel: Model<MasterPart>,
+
+    @InjectModel(ProductionRecord.name)
+    private productionRecordModel: Model<ProductionRecord>,
   ) {}
 
   async getAllMachinesDetails(): Promise<ResponseFormat<any>> {
@@ -59,8 +69,9 @@ export class MachineInfoService {
       const machinesWithDetails = await Promise.all(
         machines.map(async (machine) => {
           try {
+            const activeOrder = await this.getActiveOrderData(machine);
             // ดึงข้อมูลพื้นฐาน
-            const [allOrders, allProductionOrder, activeOrder] =
+            const [allOrders, allProductionOrder, dailySummary] =
               await Promise.all([
                 this.assignOrderModel.find({
                   machine_number: machine.machine_number,
@@ -69,7 +80,9 @@ export class MachineInfoService {
                   work_center: machine.work_center,
                   assign_stage: false,
                 }),
-                this.getActiveOrderData(machine),
+                activeOrder
+                  ? this.getDailySummary(activeOrder.order_id.toString())
+                  : null,
               ]);
 
             // ดึงข้อมูล cavity และ part
@@ -143,6 +156,7 @@ export class MachineInfoService {
                       Number(machine.cycletime) || 0,
                       machine.is_counter_paused,
                     ),
+                    daily_summary: dailySummary?.data || [],
                   }
                 : null,
             };
@@ -228,6 +242,94 @@ export class MachineInfoService {
     if (!theoreticalOutput) return 0;
     const efficiency = (totalGood / theoreticalOutput) * 100;
     return Math.round(efficiency * 100) / 100; // Round to 2 decimal places
+  }
+
+  async getDailySummary(orderId: string): Promise<ResponseFormat<any>> {
+    try {
+      const orderObjectId = new Types.ObjectId(orderId);
+
+      // Get AssignOrder data for validation
+      const assignOrder = await this.assignOrderModel.findById(orderObjectId);
+      if (!assignOrder) {
+        throw new Error('Order not found');
+      }
+
+      // Get start date from order's datetime_open_order
+      const startDate = moment(assignOrder.datetime_open_order);
+
+      // Adjust to nearest 8:00 AM backward
+      const adjustedStartDate = moment(startDate)
+        .startOf('day')
+        .add(8, 'hours');
+
+      if (startDate.hour() < 8) {
+        adjustedStartDate.subtract(1, 'day');
+      }
+
+      // Create array of date ranges
+      const dateRanges = [];
+      const currentDate = moment();
+      let currentRange = moment(adjustedStartDate);
+
+      while (currentRange.isBefore(currentDate)) {
+        dateRanges.push({
+          start: moment(currentRange),
+          end: moment(currentRange).add(1, 'day'),
+        });
+        currentRange.add(1, 'day');
+      }
+
+      // Get production records for each date range
+      const dailySummaries = await Promise.all(
+        dateRanges.map(async (range) => {
+          // Find all production records within the time range
+          const records = await this.productionRecordModel
+            .find({
+              assign_order_id: orderObjectId,
+              createdAt: {
+                $gte: range.start.toDate(),
+                $lt: range.end.toDate(),
+              },
+            })
+            .lean();
+
+          // Initialize summary with just quantity data
+          const summary = {
+            date: range.start.format('YYYY-MM-DD'),
+            total_quantity: 0,
+            good_quantity: 0,
+            not_good_quantity: 0,
+          };
+
+          // Process records
+          records.forEach((record) => {
+            const quantity = record.quantity || 0;
+            summary.total_quantity += quantity;
+
+            if (record.is_not_good) {
+              summary.not_good_quantity += quantity;
+            } else {
+              summary.good_quantity += quantity;
+            }
+          });
+
+          return summary;
+        }),
+      );
+
+      return {
+        status: 'success',
+        message: 'Daily production summaries retrieved successfully',
+        data: dailySummaries,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message:
+          (error as Error).message || 'Failed to retrieve daily summaries',
+        data: [],
+      };
+    }
   }
 
   async toggleCounter(
@@ -400,7 +502,6 @@ export class MachineInfoService {
       const startString = this.formatDateToString(start);
       const endString = this.formatDateToString(end);
 
-      // ใช้ aggregation pipeline เพื่อคำนวณ summary ใน MongoDB
       const timelineAggregation = await this.timelineMachineModel.aggregate([
         {
           $match: {
@@ -414,150 +515,125 @@ export class MachineInfoService {
           },
         },
         {
+          // Calculate interval start time for each record
+          $addFields: {
+            interval_start: {
+              $dateFromParts: {
+                year: { $year: { $toDate: '$datetime' } },
+                month: { $month: { $toDate: '$datetime' } },
+                day: { $dayOfMonth: { $toDate: '$datetime' } },
+                hour: { $hour: { $toDate: '$datetime' } },
+                minute: {
+                  $multiply: [
+                    {
+                      $floor: {
+                        $divide: [
+                          { $minute: { $toDate: '$datetime' } },
+                          intervalMinutes,
+                        ],
+                      },
+                    },
+                    intervalMinutes,
+                  ],
+                },
+              },
+            },
+          },
+        },
+        {
           $group: {
             _id: {
               machine_number: '$machine_number',
               status: '$status',
-              timeSlot: {
-                $subtract: [
+              interval_start: '$interval_start',
+            },
+            duration: {
+              $sum: {
+                $min: [
                   {
-                    $divide: [
-                      {
-                        $subtract: [
-                          { $toDate: '$datetime' },
-                          new Date(startString),
-                        ],
-                      },
-                      1000 * 60 * intervalMinutes,
-                    ],
-                  },
-                  {
-                    $mod: [
-                      {
-                        $divide: [
+                    $dateDiff: {
+                      startDate: { $toDate: '$datetime' },
+                      endDate: {
+                        $min: [
                           {
-                            $subtract: [
-                              { $toDate: '$datetime' },
-                              new Date(startString),
-                            ],
+                            $toDate: { $ifNull: ['$next_datetime', endString] },
                           },
-                          1000 * 60 * intervalMinutes,
+                          {
+                            $dateAdd: {
+                              startDate: '$interval_start',
+                              unit: 'minute',
+                              amount: intervalMinutes,
+                            },
+                          },
                         ],
                       },
-                      1,
-                    ],
+                      unit: 'minute',
+                    },
                   },
+                  intervalMinutes,
                 ],
               },
             },
-            count: { $sum: 1 },
-            first_datetime: { $min: '$datetime' },
-            last_datetime: { $max: '$datetime' },
           },
         },
         {
           $group: {
             _id: {
               machine_number: '$_id.machine_number',
-              timeSlot: '$_id.timeSlot',
+              interval_start: '$_id.interval_start',
             },
-            statuses: {
+            status_durations: {
               $push: {
                 status: '$_id.status',
-                count: '$count',
-                first_datetime: '$first_datetime',
-                last_datetime: '$last_datetime',
+                duration: '$duration',
               },
             },
           },
         },
         {
+          $sort: {
+            '_id.machine_number': 1,
+            '_id.interval_start': 1,
+          },
+        },
+        {
           $group: {
             _id: '$_id.machine_number',
-            time_slots: {
+            intervals: {
               $push: {
-                slot_number: '$_id.timeSlot',
-                statuses: '$statuses',
+                start_time: '$_id.interval_start',
+                status_durations: '$status_durations',
               },
             },
           },
         },
-        { $sort: { _id: 1 } },
       ]);
 
-      // แปลงผลลัพธ์เป็นรูปแบบที่ต้องการ
       const machineAnalysis = timelineAggregation.map((machineData) => {
-        const machine_number = machineData._id;
-        const totalDuration = end.getTime() - start.getTime();
-
-        // คำนวณ total summary
-        const statusSummary = {};
-        machineData.time_slots.forEach((slot) => {
-          slot.statuses.forEach((status) => {
-            if (!statusSummary[status.status]) {
-              statusSummary[status.status] = {
-                count: 0,
-                duration: 0,
-              };
-            }
-            statusSummary[status.status].count += status.count;
-            statusSummary[status.status].duration +=
-              new Date(status.last_datetime).getTime() -
-              new Date(status.first_datetime).getTime();
-          });
-        });
-
-        // แปลงเป็นเปอร์เซ็นต์
-        const total_summary = {};
-        Object.entries(statusSummary).forEach(([status, data]) => {
-          total_summary[status] = {
-            percentage: Number(
-              (
-                ((data as { duration: number }).duration / totalDuration) *
-                100
-              ).toFixed(2),
-            ),
-            duration_minutes: Number(
-              ((data as { duration: number }).duration / (1000 * 60)).toFixed(
-                2,
-              ),
-            ),
-            duration_hours: Number(
-              (
-                (data as { duration: number }).duration /
-                (1000 * 60 * 60)
-              ).toFixed(2),
-            ),
+        const intervals = machineData.intervals.map((interval) => {
+          const timeline = {
+            start_time: interval.start_time,
           };
+
+          // Initialize all statuses to 0
+          const allStatuses = new Set<string>(
+            interval.status_durations.map((sd) => sd.status),
+          );
+          allStatuses.forEach((status: string) => {
+            timeline[status as keyof typeof timeline] = 0;
+          });
+
+          // Add duration for each status
+          interval.status_durations.forEach((statusData) => {
+            timeline[statusData.status] = statusData.duration;
+          });
+
+          return timeline;
         });
 
         return {
-          machine_number,
-          total_summary,
-          time_slots: machineData.time_slots
-            .sort((a, b) => a.slot_number - b.slot_number)
-            .map((slot) => {
-              const slotStart = new Date(
-                start.getTime() +
-                  slot.slot_number * intervalMinutes * 60 * 1000,
-              );
-              const slotEnd = new Date(
-                Math.min(
-                  slotStart.getTime() + intervalMinutes * 60 * 1000,
-                  end.getTime(),
-                ),
-              );
-
-              return {
-                start_time: slotStart,
-                end_time: slotEnd,
-                status_summary: this.calculateSlotSummary(
-                  slot.statuses,
-                  slotStart,
-                  slotEnd,
-                ),
-              };
-            }),
+          machine_number: machineData._id,
+          intervals,
         };
       });
 
@@ -608,7 +684,9 @@ export class MachineInfoService {
     return result;
   }
 
-  private async getCavityAndPartData(materialNumber: string) {
+  private async getCavityAndPartData(
+    materialNumber: string,
+  ): Promise<CavityAndPartResult> {
     if (!materialNumber) {
       return { cavityData: null, partData: null };
     }
@@ -633,8 +711,8 @@ export class MachineInfoService {
       }
 
       if (!cavity.parts || cavity.parts.length === 0) {
-        console.log('Cavity found but no matching parts');
-        console.log('Cavity ID:', cavity._id);
+        // console.log('Cavity found but no matching parts');
+        // console.log('Cavity ID:', cavity._id);
         return { cavityData: null, partData: null };
       }
 

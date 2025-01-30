@@ -39,7 +39,6 @@ export class ProductionRecord extends Document {
   @Prop({
     required: true,
     unique: true,
-    index: true,
   })
   serial_code: string;
 
@@ -66,6 +65,9 @@ export class ProductionRecord extends Document {
 
   @Prop({ type: Date })
   sap_sync_timestamp: Date;
+
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const ProductionRecordSchema =
@@ -73,7 +75,6 @@ export const ProductionRecordSchema =
 
 ProductionRecordSchema.index({ assign_order_id: 1, is_synced_to_sap: 1 });
 ProductionRecordSchema.index({ assign_employee_ids: 1, created_at: -1 });
-ProductionRecordSchema.index({ serial_code: 1 });
 ProductionRecordSchema.index({
   serial_code: 1,
   created_at: -1,

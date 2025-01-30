@@ -38,14 +38,6 @@ export interface PopulatedCavityData {
   }[];
 }
 
-// export interface PopulatedMachineInfo
-//   extends Omit<MachineInfo, 'material_cavities'> {
-//   material_cavities: {
-//     material_number: string;
-//     cavity_id: PopulatedCavityData;
-//   }[];
-// }
-
 // interfaces/machine.interface.ts
 
 export interface PartData {
@@ -113,4 +105,101 @@ export interface PopulatedMachineInfo
     material_number: string;
     cavity_id: CavityData;
   }>;
+}
+
+// Define interfaces for type safety
+export interface DailySummaryData {
+  total_quantity: number;
+  good_quantity: number;
+  not_good_quantity: number;
+  records_count: number;
+}
+
+export interface MachineDetailResponse {
+  machine_info: {
+    machine_name: string;
+    work_center: string;
+    machine_number: string;
+    line: string;
+    status: string;
+    counter: number;
+    available_counter: number;
+    cavity_info: any; // Define proper type if needed
+    is_counter_paused: boolean;
+    cycle_time: number;
+    tonnage: number;
+  };
+  orders_summary: {
+    total_orders: number;
+    completed_orders: number;
+    pending_orders: number;
+    waiting_assign_orders: number;
+  };
+  daily_production: DailySummaryData & {
+    efficiency: number;
+    period: {
+      start: Date;
+      end: Date;
+    };
+  };
+  active_order: any; // Define proper type if needed
+  active_employees: {
+    count: number;
+    details: any[]; // Define proper type if needed
+  };
+  latest_production: {
+    start_time: Date;
+    running_time: number;
+    efficiency: number;
+  } | null;
+}
+
+// Type definitions
+interface MasterPart {
+  _id: string;
+  material_number: string;
+  part_number: string;
+  part_name: string;
+  weight: number;
+}
+
+export interface MasterCavity {
+  _id: string;
+  cavity: number;
+  runner: number;
+  tonnage: number;
+  parts: MasterPart[]; // Will be populated
+}
+
+export interface CavityData2 {
+  cavity: number;
+  runner: number;
+  tonnage: number;
+}
+
+interface BaseMasterPart {
+  material_number: string;
+  part_number: string;
+  part_name: string;
+  weight: number;
+}
+
+// interface BaseMasterCavity {
+//   cavity: number;
+//   runner: number;
+//   tonnage: number;
+//   parts: Types.ObjectId[] | BaseMasterPart[];
+// }
+
+// // Extended interfaces for Mongoose documents
+// interface MasterPart extends BaseMasterPart {
+//   _id: Types.ObjectId;
+// }
+
+interface MasterCavity extends BaseMasterCavity {
+  _id: Types.ObjectId;
+}
+export interface CavityAndPartResult {
+  cavityData: CavityData2 | null;
+  partData: any;
 }

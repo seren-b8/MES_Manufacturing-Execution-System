@@ -17,6 +17,7 @@ import {
 import { ProductionRecordService } from './production-reccord.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Types } from 'mongoose';
+import { query } from 'mssql';
 
 @Controller('production-records')
 @UseGuards(JwtAuthGuard)
@@ -85,8 +86,25 @@ export class ProductionRecordController {
     return await this.productionRecordService.update(id, updateDto);
   }
 
+  @Get('daily')
+  async getdaily() {
+    const date = new Date();
+    return await this.productionRecordService.getDailySummary(date);
+  }
+
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return await this.productionRecordService.delete(id);
+  }
+
+  @Post('confirm-by-serial')
+  async confirmBySerial(
+    @Body('serial_code') serialCode: string,
+    @Body('confirmed_by') confirmedBy: string,
+  ) {
+    return await this.productionRecordService.confirmBySerial(
+      serialCode,
+      confirmedBy,
+    );
   }
 }

@@ -1200,6 +1200,11 @@
   resolved "https://registry.npmmirror.com/@types/mime/-/mime-1.3.5.tgz"
   integrity sha512-/pyBZWSLD2n0dcHE3hq8s8ZvcETHtEuF+3E7XVt0Ig2nvsVQXdghHVcEkIWjy9A0wKfTn97a/PSDYohKIlnP/w==
 
+"@types/moment@^2.11.29":
+  version "2.11.29"
+  resolved "https://registry.npmjs.org/@types/moment/-/moment-2.11.29.tgz"
+  integrity sha512-D5WIgbLYQzvgfsDnBhZFSTnt/BjGPOE+Jsh3k1BYYijJAkrn7ceeLvU4jtjKKXXuXN42O3ARlU4D/P9ezbQYFA==
+
 "@types/mssql@^9.1.6":
   version "9.1.6"
   resolved "https://registry.npmjs.org/@types/mssql/-/mssql-9.1.6.tgz"

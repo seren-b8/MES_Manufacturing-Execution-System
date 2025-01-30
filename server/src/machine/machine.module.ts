@@ -10,6 +10,7 @@ import { MasterNotGoodController } from './master-not-good/master-not-good.contr
 import { MasterNotGoodService } from './master-not-good/master-not-good.service';
 import { MasterPartsController } from './master-parts/master-parts.controller';
 import { MasterPartsService } from './master-parts/master-parts.service';
+import { ProductionRecordService } from 'src/production/production-reccord/production-reccord.service';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule],
@@ -25,6 +26,7 @@ import { MasterPartsService } from './master-parts/master-parts.service';
     MachineCavityService,
     MasterNotGoodService,
     MasterPartsService,
+    ProductionRecordService,
   ],
   exports: [MachineInfoService],
 })

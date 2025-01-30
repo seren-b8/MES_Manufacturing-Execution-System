@@ -16,6 +16,7 @@ import { PopulatedMachineInfo } from 'src/shared/interface/machine-info';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
+import { User } from 'src/shared/modules/schema/user.schema';
 
 @Injectable()
 export class ProductionRecordService {
@@ -42,6 +43,8 @@ export class ProductionRecordService {
     private masterCavityModel: Model<MasterCavity>,
 
     @InjectModel(MasterPart.name) private masterPartModel: Model<MasterPart>,
+
+    @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
   private async validateMachineCounter(assignOrder: any, quantity: number) {
@@ -73,8 +76,6 @@ export class ProductionRecordService {
 
       // กำหนดค่า cavity count
       const cavityCount = cavityData?.cavity || 1;
-
-      console.log(cavityCount);
 
       // Debug logs
       console.log('Cavity and Counter Info:', {
@@ -665,6 +666,646 @@ export class ProductionRecordService {
     }
 
     // สร้าง serial code
-    return `${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}`;
+    return `B8MES|${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}`;
+  }
+
+  async getDailySummary(date?: Date): Promise<ResponseFormat<any>> {
+    try {
+      const targetDate = date || new Date();
+
+      // Convert to Bangkok timezone and set time range
+      const bangkokOffset = 7 * 60;
+      const startDate = new Date(targetDate);
+      startDate.setMinutes(startDate.getMinutes() + bangkokOffset);
+      startDate.setHours(8, 0, 0, 0);
+      startDate.setMinutes(startDate.getMinutes() - bangkokOffset);
+
+      const endDate = new Date(targetDate);
+      endDate.setMinutes(endDate.getMinutes() + bangkokOffset);
+      endDate.setDate(endDate.getDate() + 1);
+      endDate.setHours(8, 0, 0, 0);
+      endDate.setMinutes(endDate.getMinutes() - bangkokOffset);
+
+      const matchStage = {
+        $match: {
+          createdAt: {
+            $gte: startDate,
+            $lt: endDate,
+          },
+          confirmation_status: {
+            $in: ['pending', 'confirmed'],
+          },
+        },
+      };
+
+      const summary = await this.productionRecordModel.aggregate([
+        matchStage,
+        {
+          $lookup: {
+            from: 'assign_orders',
+            localField: 'assign_order_id',
+            foreignField: '_id',
+            as: 'assign_order',
+          },
+        },
+        {
+          $unwind: {
+            path: '$assign_order',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
+            from: 'production_orders',
+            localField: 'assign_order.production_order_id',
+            foreignField: '_id',
+            as: 'production_order',
+          },
+        },
+        {
+          $unwind: {
+            path: '$production_order',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        // First group by assign order to get individual order stats
+        {
+          $group: {
+            _id: {
+              work_center: '$assign_order.work_center',
+              machine_number: '$assign_order.machine_number',
+              assign_order_id: '$assign_order._id',
+              order_id: '$production_order.order_id',
+              material_number: '$production_order.material_number',
+              material_description: '$production_order.material_description',
+            },
+            good_quantity: {
+              $sum: {
+                $cond: [{ $eq: ['$is_not_good', false] }, '$quantity', 0],
+              },
+            },
+            not_good_quantity: {
+              $sum: {
+                $cond: [{ $eq: ['$is_not_good', true] }, '$quantity', 0],
+              },
+            },
+            pending_good_quantity: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$is_not_good', false] },
+                      { $eq: ['$confirmation_status', 'pending'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            confirmed_good_quantity: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$is_not_good', false] },
+                      { $eq: ['$confirmation_status', 'confirmed'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            pending_not_good_quantity: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$is_not_good', true] },
+                      { $eq: ['$confirmation_status', 'pending'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            confirmed_not_good_quantity: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$is_not_good', true] },
+                      { $eq: ['$confirmation_status', 'confirmed'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            total_quantity: { $sum: '$quantity' },
+            records_count: { $sum: 1 },
+            start_time: { $min: '$createdAt' },
+            end_time: { $max: '$createdAt' },
+            order_status: { $first: '$assign_order.status' },
+          },
+        },
+        // Then group by machine to get machine totals and order details
+        {
+          $group: {
+            _id: {
+              work_center: '$_id.work_center',
+              machine_number: '$_id.machine_number',
+            },
+            orders: {
+              $push: {
+                assign_order_id: '$_id.assign_order_id',
+                order_id: '$_id.order_id',
+                material_number: '$_id.material_number',
+                material_description: '$_id.material_description',
+                good_quantity: '$good_quantity',
+                not_good_quantity: '$not_good_quantity',
+                pending_good_quantity: '$pending_good_quantity',
+                confirmed_good_quantity: '$confirmed_good_quantity',
+                pending_not_good_quantity: '$pending_not_good_quantity',
+                confirmed_not_good_quantity: '$confirmed_not_good_quantity',
+                total_quantity: '$total_quantity',
+                records_count: '$records_count',
+                start_time: '$start_time',
+                end_time: '$end_time',
+                order_status: '$order_status',
+              },
+            },
+            total_good_quantity: { $sum: '$good_quantity' },
+            total_not_good_quantity: { $sum: '$not_good_quantity' },
+            total_pending_good: { $sum: '$pending_good_quantity' },
+            total_confirmed_good: { $sum: '$confirmed_good_quantity' },
+            total_pending_not_good: { $sum: '$pending_not_good_quantity' },
+            total_confirmed_not_good: { $sum: '$confirmed_not_good_quantity' },
+            total_quantity: { $sum: '$total_quantity' },
+            total_records: { $sum: '$records_count' },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            work_center: '$_id.work_center',
+            machine_number: '$_id.machine_number',
+            orders: 1,
+            machine_summary: {
+              good_quantity: '$total_good_quantity',
+              not_good_quantity: '$total_not_good_quantity',
+              pending_good_quantity: '$total_pending_good',
+              confirmed_good_quantity: '$total_confirmed_good',
+              pending_not_good_quantity: '$total_pending_not_good',
+              confirmed_not_good_quantity: '$total_confirmed_not_good',
+              total_quantity: '$total_quantity',
+              records_count: '$total_records',
+            },
+          },
+        },
+        {
+          $sort: {
+            work_center: 1,
+            machine_number: 1,
+          },
+        },
+      ]);
+
+      // Calculate overall summary from machine summaries
+      const overallSummary = summary.reduce(
+        (acc, curr) => {
+          const machineSummary = curr.machine_summary;
+          acc.total_quantity += machineSummary.total_quantity;
+          acc.total_good_quantity += machineSummary.good_quantity;
+          acc.total_not_good_quantity += machineSummary.not_good_quantity;
+          acc.total_records += machineSummary.records_count;
+          acc.total_pending_good += machineSummary.pending_good_quantity;
+          acc.total_confirmed_good += machineSummary.confirmed_good_quantity;
+          acc.total_pending_not_good +=
+            machineSummary.pending_not_good_quantity;
+          acc.total_confirmed_not_good +=
+            machineSummary.confirmed_not_good_quantity;
+          return acc;
+        },
+        {
+          total_quantity: 0,
+          total_good_quantity: 0,
+          total_not_good_quantity: 0,
+          total_records: 0,
+          total_pending_good: 0,
+          total_confirmed_good: 0,
+          total_pending_not_good: 0,
+          total_confirmed_not_good: 0,
+        },
+      );
+
+      return {
+        status: 'success',
+        message: 'Daily production summary retrieved successfully',
+        data: [
+          {
+            date: targetDate,
+            time_range: {
+              start: startDate,
+              end: endDate,
+            },
+            summary,
+            overall_summary: overallSummary,
+          },
+        ],
+      };
+    } catch (error) {
+      console.error('Error in getDailySummary:', error);
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to retrieve daily summary: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async getDailyProductionData(): Promise<ResponseFormat<any>> {
+    try {
+      // Aggregate production records
+      const productionSummary = await this.productionRecordModel.aggregate([
+        // Stage 1: Add date fields for grouping
+        {
+          $addFields: {
+            dateOnly: {
+              $dateToString: {
+                format: '%Y-%m-%d',
+                date: '$createdAt',
+              },
+            },
+          },
+        },
+
+        // Stage 2: Lookup assign_orders
+        {
+          $lookup: {
+            from: 'assign_orders',
+            localField: 'assign_order_id',
+            foreignField: '_id',
+            as: 'assign_order',
+          },
+        },
+        {
+          $unwind: '$assign_order',
+        },
+
+        // Stage 3: Lookup production_orders
+        {
+          $lookup: {
+            from: 'production_orders',
+            localField: 'assign_order.production_order_id',
+            foreignField: '_id',
+            as: 'production_order',
+          },
+        },
+        {
+          $unwind: '$production_order',
+        },
+
+        // Stage 4: Group by date, assign_order_id and status
+        {
+          $group: {
+            _id: {
+              date: '$dateOnly',
+              assign_order_id: '$assign_order_id',
+              confirmation_status: '$confirmation_status',
+              is_not_good: '$is_not_good',
+            },
+            work_center: { $first: '$assign_order.work_center' },
+            machine_number: { $first: '$assign_order.machine_number' },
+            material_number: { $first: '$production_order.material_number' },
+            material_description: {
+              $first: '$production_order.material_description',
+            },
+            quantity: { $sum: '$quantity' },
+            records_count: { $sum: 1 },
+          },
+        },
+
+        // Stage 5: Group by date and assign_order_id
+        {
+          $group: {
+            _id: {
+              date: '$_id.date',
+              assign_order_id: '$_id.assign_order_id',
+            },
+            work_center: { $first: '$work_center' },
+            machine_number: { $first: '$machine_number' },
+            material_number: { $first: '$material_number' },
+            material_description: { $first: '$material_description' },
+            production_details: {
+              $push: {
+                confirmation_status: '$_id.confirmation_status',
+                is_not_good: '$_id.is_not_good',
+                quantity: '$quantity',
+                records_count: '$records_count',
+              },
+            },
+            total_quantity: { $sum: '$quantity' },
+            total_records: { $sum: '$records_count' },
+          },
+        },
+
+        // Stage 6: Calculate quantities for each status
+        {
+          $project: {
+            _id: 0,
+            date: '$_id.date',
+            assign_order_id: '$_id.assign_order_id',
+            work_center: 1,
+            machine_number: 1,
+            material_number: 1,
+            material_description: 1,
+            total_quantity: 1,
+            total_records: 1,
+            pending_good_quantity: {
+              $reduce: {
+                input: {
+                  $filter: {
+                    input: '$production_details',
+                    as: 'detail',
+                    cond: {
+                      $and: [
+                        { $eq: ['$$detail.confirmation_status', 'pending'] },
+                        { $eq: ['$$detail.is_not_good', false] },
+                      ],
+                    },
+                  },
+                },
+                initialValue: 0,
+                in: { $add: ['$$value', '$$this.quantity'] },
+              },
+            },
+            confirmed_good_quantity: {
+              $reduce: {
+                input: {
+                  $filter: {
+                    input: '$production_details',
+                    as: 'detail',
+                    cond: {
+                      $and: [
+                        { $eq: ['$$detail.confirmation_status', 'confirmed'] },
+                        { $eq: ['$$detail.is_not_good', false] },
+                      ],
+                    },
+                  },
+                },
+                initialValue: 0,
+                in: { $add: ['$$value', '$$this.quantity'] },
+              },
+            },
+            pending_not_good_quantity: {
+              $reduce: {
+                input: {
+                  $filter: {
+                    input: '$production_details',
+                    as: 'detail',
+                    cond: {
+                      $and: [
+                        { $eq: ['$$detail.confirmation_status', 'pending'] },
+                        { $eq: ['$$detail.is_not_good', true] },
+                      ],
+                    },
+                  },
+                },
+                initialValue: 0,
+                in: { $add: ['$$value', '$$this.quantity'] },
+              },
+            },
+            confirmed_not_good_quantity: {
+              $reduce: {
+                input: {
+                  $filter: {
+                    input: '$production_details',
+                    as: 'detail',
+                    cond: {
+                      $and: [
+                        { $eq: ['$$detail.confirmation_status', 'confirmed'] },
+                        { $eq: ['$$detail.is_not_good', true] },
+                      ],
+                    },
+                  },
+                },
+                initialValue: 0,
+                in: { $add: ['$$value', '$$this.quantity'] },
+              },
+            },
+          },
+        },
+
+        // Stage 7: Sort by date and work_center
+        {
+          $sort: {
+            date: -1,
+            work_center: 1,
+            machine_number: 1,
+          },
+        },
+
+        // Stage 8: Group records by date
+        {
+          $group: {
+            _id: '$date',
+            records: {
+              $push: {
+                assign_order_id: '$assign_order_id',
+                work_center: '$work_center',
+                machine_number: '$machine_number',
+                material_number: '$material_number',
+                material_description: '$material_description',
+                total_quantity: '$total_quantity',
+                total_records: '$total_records',
+                pending_good_quantity: '$pending_good_quantity',
+                confirmed_good_quantity: '$confirmed_good_quantity',
+                pending_not_good_quantity: '$pending_not_good_quantity',
+                confirmed_not_good_quantity: '$confirmed_not_good_quantity',
+              },
+            },
+            daily_total: {
+              $sum: '$total_quantity',
+            },
+            daily_pending_good: {
+              $sum: '$pending_good_quantity',
+            },
+            daily_confirmed_good: {
+              $sum: '$confirmed_good_quantity',
+            },
+            daily_pending_not_good: {
+              $sum: '$pending_not_good_quantity',
+            },
+            daily_confirmed_not_good: {
+              $sum: '$confirmed_not_good_quantity',
+            },
+            daily_records: {
+              $sum: '$total_records',
+            },
+          },
+        },
+
+        // Stage 9: Final sort by date
+        {
+          $sort: {
+            _id: -1,
+          },
+        },
+      ]);
+
+      return {
+        status: 'success',
+        message: 'Production summary retrieved successfully',
+        data: productionSummary.map((day) => ({
+          date: day._id,
+          summary: day.records,
+          daily_summary: {
+            total_quantity: day.daily_total,
+            pending_good_quantity: day.daily_pending_good,
+            confirmed_good_quantity: day.daily_confirmed_good,
+            pending_not_good_quantity: day.daily_pending_not_good,
+            confirmed_not_good_quantity: day.daily_confirmed_not_good,
+            total_records: day.daily_records,
+          },
+        })),
+      };
+    } catch (error) {
+      console.error('Error in getDailyProductionData:', error);
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to retrieve production summary: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async confirmBySerial(
+    serialCode: string,
+    confirmedBy: string,
+  ): Promise<ResponseFormat<any>> {
+    try {
+      const user = await this.userModel.findOne({
+        imployee_id: confirmedBy,
+      });
+
+      if (!user) {
+        throw new HttpException(
+          {
+            status: 'success',
+            message: 'user not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      // Find record by serial code
+      const record = await this.productionRecordModel.findOne({
+        serial_code: serialCode,
+      });
+
+      if (!record) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Production record not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const assignOrder = await this.assignOrderModel.findById(
+        record.assign_order_id,
+      );
+
+      if (!assignOrder) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'assign order not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const productionOrder = await this.assignOrderModel.findById(
+        assignOrder.production_order_id,
+      );
+
+      if (!productionOrder) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'production order not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // Check if record is already confirmed
+      if (record.confirmation_status === 'confirmed') {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Record is already confirmed',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // Update the record
+      const updatedRecord = await this.productionRecordModel
+        .findByIdAndUpdate(
+          record._id,
+          {
+            $set: {
+              confirmation_status: 'confirmed',
+              confirmed_by: user._id,
+              confirmed_at: new Date(),
+            },
+          },
+          { new: true },
+        )
+        .populate('master_not_good_id', 'case_english case_thai')
+        .populate('confirmed_by');
+
+      const dataReturn = [
+        {
+          quantity: record.quantity,
+          production_date: record.createdAt || new Date(),
+          material_number: productionOrder.machine_number,
+          serial_code: serialCode,
+        },
+      ];
+
+      return {
+        status: 'success',
+        message: 'Production record confirmed successfully',
+        data: dataReturn,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to confirm production record: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
