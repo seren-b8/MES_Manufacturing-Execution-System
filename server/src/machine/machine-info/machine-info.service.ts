@@ -156,7 +156,13 @@ export class MachineInfoService {
                       Number(machine.cycletime) || 0,
                       machine.is_counter_paused,
                     ),
-                    daily_summary: dailySummary?.data || [],
+                    // daily_summary: dailySummary?.data || [],
+                    daily_total_quantity:
+                      dailySummary?.data[0]?.total_quantity || 0,
+                    daily_good_quantity:
+                      dailySummary?.data[0]?.good_quantity || 0,
+                    daily_not_good_quantity:
+                      dailySummary?.data[0]?.not_good_quantity || 0,
                   }
                 : null,
             };
@@ -244,7 +250,9 @@ export class MachineInfoService {
     return Math.round(efficiency * 100) / 100; // Round to 2 decimal places
   }
 
-  async getDailySummary(orderId: string): Promise<ResponseFormat<any>> {
+  async getDailySummary(
+    orderId: string,
+  ): Promise<ResponseFormat<DailySummaryData>> {
     try {
       const orderObjectId = new Types.ObjectId(orderId);
 
@@ -255,72 +263,51 @@ export class MachineInfoService {
       }
 
       // Get start date from order's datetime_open_order
-      const startDate = moment(assignOrder.datetime_open_order);
+      const now = moment();
 
       // Adjust to nearest 8:00 AM backward
-      const adjustedStartDate = moment(startDate)
-        .startOf('day')
-        .add(8, 'hours');
+      const startDate = moment(now).startOf('day').add(8, 'hours');
 
-      if (startDate.hour() < 8) {
-        adjustedStartDate.subtract(1, 'day');
+      if (now.hour() < 8) {
+        startDate.subtract(1, 'day');
       }
+
+      const endDate = moment(startDate).add(1, 'day');
 
       // Create array of date ranges
-      const dateRanges = [];
-      const currentDate = moment();
-      let currentRange = moment(adjustedStartDate);
+      const records = await this.productionRecordModel
+        .find({
+          assign_order_id: orderObjectId,
+          createdAt: {
+            $gte: startDate.toDate(),
+            $lt: endDate.toDate(),
+          },
+        })
+        .lean();
 
-      while (currentRange.isBefore(currentDate)) {
-        dateRanges.push({
-          start: moment(currentRange),
-          end: moment(currentRange).add(1, 'day'),
-        });
-        currentRange.add(1, 'day');
-      }
-
+      const summary = {
+        date: startDate.format('YYYY-MM-DD'),
+        total_quantity: 0,
+        good_quantity: 0,
+        not_good_quantity: 0,
+      };
       // Get production records for each date range
-      const dailySummaries = await Promise.all(
-        dateRanges.map(async (range) => {
-          // Find all production records within the time range
-          const records = await this.productionRecordModel
-            .find({
-              assign_order_id: orderObjectId,
-              createdAt: {
-                $gte: range.start.toDate(),
-                $lt: range.end.toDate(),
-              },
-            })
-            .lean();
 
-          // Initialize summary with just quantity data
-          const summary = {
-            date: range.start.format('YYYY-MM-DD'),
-            total_quantity: 0,
-            good_quantity: 0,
-            not_good_quantity: 0,
-          };
+      records.forEach((record) => {
+        const quantity = record.quantity || 0;
+        summary.total_quantity += quantity;
 
-          // Process records
-          records.forEach((record) => {
-            const quantity = record.quantity || 0;
-            summary.total_quantity += quantity;
-
-            if (record.is_not_good) {
-              summary.not_good_quantity += quantity;
-            } else {
-              summary.good_quantity += quantity;
-            }
-          });
-
-          return summary;
-        }),
-      );
+        if (record.is_not_good) {
+          summary.not_good_quantity += quantity;
+        } else {
+          summary.good_quantity += quantity;
+        }
+      });
 
       return {
         status: 'success',
-        message: 'Daily production summaries retrieved successfully',
-        data: dailySummaries,
+        message: 'Daily production summary retrieved successfully',
+        data: [summary], // ส่งกลับเป็น array เพื่อให้ตรงกับ ResponseFormat
       };
     } catch (error) {
       return {

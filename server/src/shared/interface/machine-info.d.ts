@@ -108,12 +108,6 @@ export interface PopulatedMachineInfo
 }
 
 // Define interfaces for type safety
-export interface DailySummaryData {
-  total_quantity: number;
-  good_quantity: number;
-  not_good_quantity: number;
-  records_count: number;
-}
 
 export interface MachineDetailResponse {
   machine_info: {
@@ -202,4 +196,11 @@ interface MasterCavity extends BaseMasterCavity {
 export interface CavityAndPartResult {
   cavityData: CavityData2 | null;
   partData: any;
+}
+
+export interface DailySummaryData {
+  date: string;
+  total_quantity: number;
+  good_quantity: number;
+  not_good_quantity: number;
 }
