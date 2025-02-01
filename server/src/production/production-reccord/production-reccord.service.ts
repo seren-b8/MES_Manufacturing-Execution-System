@@ -17,6 +17,7 @@ import { ProductionOrder } from 'src/shared/modules/schema/production-order.sche
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import { User } from 'src/shared/modules/schema/user.schema';
+import { Employee } from '../../shared/interface/employee';
 
 @Injectable()
 export class ProductionRecordService {
@@ -651,22 +652,34 @@ export class ProductionRecordService {
       .toString()
       .padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
 
+    console.log('Searching Pattern:', `^B8MES\\|${prefix}-${machine_number}-`);
+
     // ค้นหา serial code ล่าสุดของวันนี้
     const latestRecord = await this.productionRecordModel
       .findOne({
-        serial_code: new RegExp(`^${prefix}-${machine_number}-`),
+        serial_code: new RegExp(`^B8MES\\|${prefix}-${machine_number}-`),
       })
       .sort({ serial_code: -1 });
+
+    console.log('Latest Record:', latestRecord);
+    console.log('Prefix:', prefix);
 
     // คำนวณเลข sequence ถัดไป
     let sequence = 1;
     if (latestRecord) {
-      const lastSequence = parseInt(latestRecord.serial_code.split('-')[2]);
+      // เพิ่ม log เพื่อดูค่าที่แยกออกมา
+      const parts = latestRecord.serial_code.split('-');
+      console.log('Split parts:', parts);
+
+      const lastSequence = parseInt(parts[2]);
+      console.log('Last sequence:', lastSequence);
       sequence = lastSequence + 1;
     }
 
-    // สร้าง serial code
-    return `B8MES|${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}`;
+    const result = `B8MES|${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}`;
+    console.log('Generated code:', result);
+
+    return result;
   }
 
   async getDailySummary(date?: Date): Promise<ResponseFormat<any>> {
@@ -1191,11 +1204,11 @@ export class ProductionRecordService {
 
   async confirmBySerial(
     serialCode: string,
-    confirmedBy: string,
+    employeeId: string,
   ): Promise<ResponseFormat<any>> {
     try {
       const user = await this.userModel.findOne({
-        imployee_id: confirmedBy,
+        imployee_id: { $regex: `.*${employeeId}.*`, $options: 'i' },
       });
 
       if (!user) {

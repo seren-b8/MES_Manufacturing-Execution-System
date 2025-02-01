@@ -17,10 +17,8 @@ import {
 import { ProductionRecordService } from './production-reccord.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Types } from 'mongoose';
-import { query } from 'mssql';
 
 @Controller('production-records')
-@UseGuards(JwtAuthGuard)
 export class ProductionRecordController {
   constructor(
     private readonly productionRecordService: ProductionRecordService,
@@ -32,6 +30,7 @@ export class ProductionRecordController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   async findAll(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 10,
@@ -79,6 +78,7 @@ export class ProductionRecordController {
   }
 
   @Put(':id')
+  @UseGuards(JwtAuthGuard)
   async update(
     @Param('id') id: string,
     @Body() updateDto: UpdateProductionRecordDto,
@@ -87,12 +87,14 @@ export class ProductionRecordController {
   }
 
   @Get('daily')
+  @UseGuards(JwtAuthGuard)
   async getdaily() {
     const date = new Date();
     return await this.productionRecordService.getDailySummary(date);
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
   async remove(@Param('id') id: string) {
     return await this.productionRecordService.delete(id);
   }
@@ -100,11 +102,11 @@ export class ProductionRecordController {
   @Post('confirm-by-serial')
   async confirmBySerial(
     @Body('serial_code') serialCode: string,
-    @Body('confirmed_by') confirmedBy: string,
+    @Body('employee_id') employeeId: string,
   ) {
     return await this.productionRecordService.confirmBySerial(
       serialCode,
-      confirmedBy,
+      employeeId,
     );
   }
 }
