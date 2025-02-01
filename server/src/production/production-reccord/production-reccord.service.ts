@@ -79,14 +79,14 @@ export class ProductionRecordService {
       const cavityCount = cavityData?.cavity || 1;
 
       // Debug logs
-      console.log('Cavity and Counter Info:', {
-        material_number: productionOrder.material_number,
-        cavity_data: cavityData,
-        part_data: partData,
-        cavity_count: cavityCount,
-        machine_counter: machine.counter,
-        recorded_counter: machine.recorded_counter,
-      });
+      // console.log('Cavity and Counter Info:', {
+      //   material_number: productionOrder.material_number,
+      //   cavity_data: cavityData,
+      //   part_data: partData,
+      //   cavity_count: cavityCount,
+      //   machine_counter: machine.counter,
+      //   recorded_counter: machine.recorded_counter,
+      // });
 
       const availableCounter = calculateAvailableCounter(
         machine.counter,
@@ -146,26 +146,26 @@ export class ProductionRecordService {
 
       // กรณีไม่พบ cavity
       if (!cavity) {
-        console.log('No cavity found for material:', materialNumber);
+        // console.log('No cavity found for material:', materialNumber);
         return { cavityData: null, partData: null };
       }
 
       // กรณีพบ cavity แต่ไม่มี part ที่ตรงกัน
       if (!cavity.parts?.length) {
-        console.log('Trying to find part directly');
+        // console.log('Trying to find part directly');
         const part = await this.masterPartModel
           .findOne({ material_number: materialNumber })
           .lean();
 
         if (part) {
-          console.log('Found part:', part);
+          // console.log('Found part:', part);
           // ค้นหา cavity ที่มี part นี้
           const cavityWithPart = await this.masterCavityModel
             .findOne({ parts: part._id })
             .lean();
 
           if (cavityWithPart) {
-            console.log('Found cavity through part:', cavityWithPart);
+            // console.log('Found cavity through part:', cavityWithPart);
             return {
               cavityData: {
                 cavity: cavityWithPart.cavity,
@@ -652,7 +652,7 @@ export class ProductionRecordService {
       .toString()
       .padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
 
-    console.log('Searching Pattern:', `^B8MES\\|${prefix}-${machine_number}-`);
+    // console.log('Searching Pattern:', `^B8MES\\|${prefix}-${machine_number}-`);
 
     // ค้นหา serial code ล่าสุดของวันนี้
     const latestRecord = await this.productionRecordModel
@@ -661,23 +661,23 @@ export class ProductionRecordService {
       })
       .sort({ serial_code: -1 });
 
-    console.log('Latest Record:', latestRecord);
-    console.log('Prefix:', prefix);
+    // console.log('Latest Record:', latestRecord);
+    // console.log('Prefix:', prefix);
 
     // คำนวณเลข sequence ถัดไป
     let sequence = 1;
     if (latestRecord) {
       // เพิ่ม log เพื่อดูค่าที่แยกออกมา
       const parts = latestRecord.serial_code.split('-');
-      console.log('Split parts:', parts);
+      // console.log('Split parts:', parts);
 
       const lastSequence = parseInt(parts[2]);
-      console.log('Last sequence:', lastSequence);
+      // console.log('Last sequence:', lastSequence);
       sequence = lastSequence + 1;
     }
 
     const result = `B8MES|${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}`;
-    console.log('Generated code:', result);
+    // console.log('Generated code:', result);
 
     return result;
   }
