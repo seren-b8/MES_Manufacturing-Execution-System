@@ -9,6 +9,8 @@ import {
   Query,
   Delete,
   BadRequestException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   CreateProductionRecordDto,
@@ -17,14 +19,33 @@ import {
 import { ProductionRecordService } from './production-reccord.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Types } from 'mongoose';
+import { ResponseFormat } from 'src/shared/interface';
+import axios from 'axios';
+
+interface PrintRequestDto {
+  customerName?: string;
+  model?: string;
+  jobOrder?: string;
+  partCode?: string;
+  mat?: string;
+  color?: string;
+  partName?: string;
+  matNo?: string;
+  quantityStd?: number;
+  producer?: string;
+  serial_number?: string;
+}
 
 @Controller('production-records')
 export class ProductionRecordController {
+  private readonly PRINT_SERVICE_URL = 'http://172.101.21.52:5000/printtest';
+
   constructor(
     private readonly productionRecordService: ProductionRecordService,
   ) {}
 
   @Post()
+  @UseGuards(JwtAuthGuard)
   async create(@Body() createDto: CreateProductionRecordDto) {
     return await this.productionRecordService.create(createDto);
   }
@@ -108,5 +129,48 @@ export class ProductionRecordController {
       serialCode,
       employeeId,
     );
+  }
+
+  @Post('print-label')
+  async printLabel(
+    @Body() data: PrintRequestDto,
+  ): Promise<ResponseFormat<any>> {
+    try {
+      const printPayload = {
+        form_data: {
+          customerName: data?.customerName ?? '-',
+          model: data?.model ?? '-',
+          supplier: 'Serenity',
+          jobOrder: data?.jobOrder ?? '-',
+          partCode: data?.partCode ?? '-',
+          mat: data?.mat ?? '-',
+          color: data?.color ?? '-',
+          partName: data?.partName ?? '-',
+          matNo: data?.matNo,
+          quantityStd: data?.quantityStd,
+          producer: data?.producer,
+          date: new Date().toISOString().split('T')[0],
+        },
+        serial_number: data?.serial_number,
+        state: '1',
+      };
+
+      const response = await axios.post(this.PRINT_SERVICE_URL, printPayload);
+
+      return {
+        status: 'success',
+        message: 'Print request sent successfully',
+        data: [response.data],
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: (error as Error).message || 'Failed to send print request',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }

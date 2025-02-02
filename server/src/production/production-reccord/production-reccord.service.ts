@@ -1,4 +1,9 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  HttpException,
+  HttpStatus,
+  ConsoleLogger,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
@@ -1208,7 +1213,7 @@ export class ProductionRecordService {
   ): Promise<ResponseFormat<any>> {
     try {
       const user = await this.userModel.findOne({
-        imployee_id: { $regex: `.*${employeeId}.*`, $options: 'i' },
+        employee_id: { $regex: `.*${employeeId}.*`, $options: 'i' },
       });
 
       if (!user) {
@@ -1251,10 +1256,11 @@ export class ProductionRecordService {
           HttpStatus.NOT_FOUND,
         );
       }
-
-      const productionOrder = await this.assignOrderModel.findById(
+      const ProductionOrder_id = new Types.ObjectId(
         assignOrder.production_order_id,
       );
+      const productionOrder =
+        await this.productionOrderModel.findById(ProductionOrder_id);
 
       if (!productionOrder) {
         throw new HttpException(
@@ -1299,7 +1305,7 @@ export class ProductionRecordService {
         {
           quantity: record.quantity,
           production_date: record.createdAt || new Date(),
-          material_number: productionOrder.machine_number,
+          material_number: productionOrder.material_number,
           serial_code: serialCode,
         },
       ];
