@@ -31,7 +31,7 @@ import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.sche
 import * as _ from 'lodash';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import { ProductionRecordService } from 'src/production/production-reccord/production-reccord.service';
-import * as moment from 'moment';
+import * as moment from 'moment-timezone';
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 
 @Injectable()
@@ -263,16 +263,27 @@ export class MachineInfoService {
       }
 
       // Get start date from order's datetime_open_order
-      const now = moment();
+      const now = moment().utc();
 
-      // Adjust to nearest 8:00 AM backward
-      const startDate = moment(now).startOf('day').add(8, 'hours');
+      // const bkkNow = moment(now).tz('Asia/Bangkok');
 
-      if (now.hour() < 8) {
+      // Adjust to nearest 8:00 AM Bangkok time backward
+      const startDate = moment(now)
+        .tz('Asia/Bangkok')
+        .startOf('day')
+        .add(8, 'hours')
+        .utc(); // แปลงกลับเป็น UTC
+
+      if (moment(now).tz('Asia/Bangkok').hour() < 8) {
         startDate.subtract(1, 'day');
       }
 
-      const endDate = moment(startDate).add(1, 'day');
+      const endDate = moment(startDate).utc().add(1, 'day');
+
+      // console.log('Start date:', startDate.format('YYYY-MM-DD HH:mm:ss'));
+      // console.log('End date:', endDate.format('YYYY-MM-DD HH:mm:ss'));
+      // console.log('Now:', now.format('YYYY-MM-DD HH:mm:ss'));
+      // console.log('BKK Now:', bkkNow.format('YYYY-MM-DD HH:mm:ss'));
 
       // Create array of date ranges
       const records = await this.productionRecordModel
