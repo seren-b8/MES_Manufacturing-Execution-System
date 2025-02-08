@@ -1,23 +1,13 @@
-import {
-  Injectable,
-  HttpException,
-  HttpStatus,
-  ConsoleLogger,
-} from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import {
   CavityAndPartResult,
-  CavityData,
   DailySummaryData,
   IEmployee,
   IEmployeeDetail,
   IUser,
-  MachineDetailResponse,
-  PartData,
-  PopulatedCavityData,
-  PopulatedMachineInfo,
 } from 'src/shared/interface/machine-info';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
@@ -265,8 +255,6 @@ export class MachineInfoService {
       // Get start date from order's datetime_open_order
       const now = moment().utc();
 
-      // const bkkNow = moment(now).tz('Asia/Bangkok');
-
       // Adjust to nearest 8:00 AM Bangkok time backward
       const startDate = moment(now)
         .tz('Asia/Bangkok')
@@ -279,11 +267,6 @@ export class MachineInfoService {
       }
 
       const endDate = moment(startDate).utc().add(1, 'day');
-
-      // console.log('Start date:', startDate.format('YYYY-MM-DD HH:mm:ss'));
-      // console.log('End date:', endDate.format('YYYY-MM-DD HH:mm:ss'));
-      // console.log('Now:', now.format('YYYY-MM-DD HH:mm:ss'));
-      // console.log('BKK Now:', bkkNow.format('YYYY-MM-DD HH:mm:ss'));
 
       // Create array of date ranges
       const records = await this.productionRecordModel

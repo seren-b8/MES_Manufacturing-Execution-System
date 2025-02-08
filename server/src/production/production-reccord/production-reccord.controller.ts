@@ -173,4 +173,17 @@ export class ProductionRecordController {
       );
     }
   }
+
+  @Get('daily-summary')
+  async getDailySummary(
+    @Body('start_date') startDate: string,
+    @Body('end_date') endDate: string,
+    @Body('order_id') orderId: string,
+  ) {
+    return await this.productionRecordService.findDateRangeSummary(
+      startDate,
+      endDate,
+      orderId,
+    );
+  }
 }

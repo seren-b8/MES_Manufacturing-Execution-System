@@ -17,13 +17,15 @@ import { ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
-import { PopulatedMachineInfo } from 'src/shared/interface/machine-info';
+import {
+  DailySummaryData,
+  PopulatedMachineInfo,
+} from 'src/shared/interface/machine-info';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import { User } from 'src/shared/modules/schema/user.schema';
-import { Employee } from '../../shared/interface/employee';
-
+import * as moment from 'moment-timezone';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -1325,6 +1327,107 @@ export class ProductionRecordService {
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  async findDateRangeSummary(
+    startDate: string,
+    endDate: string,
+    orderId: string,
+  ): Promise<ResponseFormat<DailySummaryData>> {
+    try {
+      const orderObjectId = new Types.ObjectId(orderId);
+
+      // Get AssignOrder data for validation
+      const assignOrder = await this.assignOrderModel.findById(orderObjectId);
+      if (!assignOrder) {
+        throw new Error('Order not found');
+      }
+
+      // Convert input dates to moment objects in Bangkok timezone
+      const start = moment(startDate).tz('Asia/Bangkok');
+      const end = moment(endDate).tz('Asia/Bangkok');
+
+      // Validate date range
+      if (!start.isValid() || !end.isValid()) {
+        throw new Error('Invalid date format');
+      }
+      if (end.isBefore(start)) {
+        throw new Error('End date must be after start date');
+      }
+
+      // Create array of dates within range
+      const dates: moment.Moment[] = [];
+      let currentDate = start.clone();
+
+      while (currentDate.isSameOrBefore(end, 'day')) {
+        dates.push(currentDate.clone());
+        currentDate.add(1, 'day');
+      }
+
+      // Process each day in the range
+      const summaries: DailySummaryData[] = await Promise.all(
+        dates.map(async (date) => {
+          // Set time to 8:00 AM Bangkok time for start of production day
+          const dayStart = date.clone().startOf('day').add(8, 'hours');
+          const dayEnd = dayStart.clone().add(12, 'hours');
+
+          console.log('dateRange:', dayStart.format(), ' - ', dayEnd.format());
+          // Convert to UTC for database query
+          const utcStart = dayStart.utc();
+          const utcEnd = dayEnd.utc();
+
+          // Get production records for this day
+          const dayRecords = await this.productionRecordModel
+            .find({
+              assign_order_id: orderObjectId,
+              createdAt: {
+                $gte: utcStart.toDate(),
+                $lt: utcEnd.toDate(),
+              },
+            })
+            .lean();
+
+          // Calculate summary for this day
+          const daySummary: DailySummaryData = {
+            date: date.format('YYYY-MM-DD'),
+            total_quantity: 0,
+            good_quantity: 0,
+            not_good_quantity: 0,
+          };
+
+          dayRecords.forEach((record) => {
+            const quantity = record.quantity || 0;
+            daySummary.total_quantity += quantity;
+
+            if (record.is_not_good) {
+              daySummary.not_good_quantity += quantity;
+            } else {
+              daySummary.good_quantity += quantity;
+            }
+          });
+
+          return daySummary;
+        }),
+      );
+
+      // Remove days with no production if needed
+      const nonEmptySummaries = summaries.filter(
+        (summary) => summary.total_quantity > 0,
+      );
+
+      return {
+        status: 'success',
+        message: 'Production summaries retrieved successfully',
+        data: nonEmptySummaries,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message:
+          (error as Error).message || 'Failed to retrieve production summaries',
+        data: [],
+      };
     }
   }
 }
