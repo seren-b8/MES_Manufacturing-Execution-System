@@ -60,21 +60,4 @@ export class SapSyncController {
 
     return this.sapSyncService.retrySyncLog(new Types.ObjectId(id));
   }
-
-  @Post('sync-records')
-  async syncSpecificRecords(@Query('record_ids') recordIds: string) {
-    const ids = recordIds.split(',').filter((id) => Types.ObjectId.isValid(id));
-
-    if (ids.length === 0) {
-      return {
-        status: 'error',
-        message: 'No valid record IDs provided',
-        data: [],
-      };
-    }
-
-    return this.sapSyncService.syncSpecificRecords(
-      ids.map((id) => new Types.ObjectId(id)),
-    );
-  }
 }

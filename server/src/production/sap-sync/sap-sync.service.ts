@@ -39,7 +39,7 @@ export class SapProductionSyncService {
 
     private readonly sqlService: SqlService,
   ) {}
-
+  // sync log generator service ------------------------------
   private async transformProductionRecord(
     record: any,
   ): Promise<PopulatedProductionRecord> {
@@ -171,6 +171,7 @@ export class SapProductionSyncService {
 
     return Array.from(groupedMap.values());
   }
+  // sync log generator service ------------------------------
 
   private async sendToSap(
     syncLog: SAPSyncLog,
@@ -198,7 +199,7 @@ export class SapProductionSyncService {
       '${groupedData.sequence_no.padStart(6, '0')}',
       '${groupedData.activity.padStart(4, '0')}',
       '',
-      ${syncLog.quantity.toFixed(3)},
+      ${syncLog.quantity.toFixed(3)},  
       'ST',
       ${syncLog.quantity.toFixed(3)},
       0,
@@ -318,27 +319,6 @@ export class SapProductionSyncService {
   }
   // เพิ่มเมธอดต่อไปนี้ใน SapProductionSyncService
 
-  async getSyncLogs(filter: any) {
-    try {
-      const logs = await this.sapSyncLogModel
-        .find(filter)
-        .sort({ createdAt: -1 })
-        .lean();
-
-      return {
-        status: 'success',
-        message: 'Retrieved sync logs successfully',
-        data: logs,
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        message: 'Failed to retrieve sync logs: ' + (error as Error).message,
-        data: [],
-      };
-    }
-  }
-
   async retrySyncLog(logId: Types.ObjectId) {
     try {
       const syncLog = await this.sapSyncLogModel.findById(logId);
@@ -431,91 +411,53 @@ export class SapProductionSyncService {
     }
   }
 
-  async syncSpecificRecords(recordIds: Types.ObjectId[]) {
+  async getSyncLogs(filter: any) {
     try {
-      const records = await this.productionRecordModel
-        .find({
-          _id: { $in: recordIds },
-          confirmation_status: 'confirmed',
-        })
-        .populate('assign_order_id')
-        .populate('master_not_good_id')
-        .populate('assign_employee_ids')
+      const logs = await this.sapSyncLogModel
+        .find(filter)
+        .sort({ createdAt: -1 })
         .lean();
-
-      if (records.length === 0) {
-        return {
-          status: 'error',
-          message: 'No confirmed records found with provided IDs',
-          data: [],
-        };
-      }
-
-      const pendingRecords = await Promise.all(
-        records.map((record) => this.transformProductionRecord(record)),
-      );
-
-      const groupedData = await this.groupProductionRecords(pendingRecords);
-      const allSyncLogs = [];
-
-      for (const group of groupedData) {
-        const syncLogs = await this.createSyncLogs(recordIds, group);
-        allSyncLogs.push(...syncLogs);
-      }
-
-      for (const syncLog of allSyncLogs) {
-        try {
-          const group = groupedData.find(
-            (g) =>
-              (syncLog.sync_type === 'SNC' && g.snc_quantity > 0) ||
-              (syncLog.sync_type === 'EMP' &&
-                g.employee_quantities.has(syncLog.employee_id)),
-          );
-
-          if (!group) {
-            throw new Error(
-              `No matching group found for sync log ${syncLog._id}`,
-            );
-          }
-
-          await this.sendToSap(syncLog, group);
-
-          await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
-            status: 'completed',
-            sync_timestamp: new Date(),
-          });
-        } catch (error) {
-          await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
-            status: 'failed',
-            error_message: (error as Error).message,
-          });
-        }
-      }
-
-      await this.productionRecordModel.updateMany(
-        { _id: { $in: recordIds } },
-        {
-          is_synced_to_sap: true,
-          sap_sync_timestamp: new Date(),
-        },
-      );
 
       return {
         status: 'success',
-        message: 'Synced specific records successfully',
-        data: [
-          {
-            totalRecords: records.length,
-            syncLogs: allSyncLogs.length,
-          },
-        ],
+        message: 'Retrieved sync logs successfully',
+        data: logs,
       };
     } catch (error) {
       return {
         status: 'error',
-        message: 'Failed to sync specific records: ' + (error as Error).message,
+        message: 'Failed to retrieve sync logs: ' + (error as Error).message,
         data: [],
       };
     }
   }
 }
+
+// INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG')
+//       VALUES (
+//         '700',
+//       '${tid}', // รหัสรายการ หาก order_id เดียวกัน ให้ใช้รหัสเดียวกัน
+//       1, // หาก tid เดียวกัน ให้เพิ่มขึ้นทีละ 1
+//       '${syncLog.employee_id}',  // รหัสพนักงาน
+//       '${groupedData.order_id.padStart(12, '0')}', // รหัสใบสั่งงาน
+//       '${groupedData.sequence_no.padStart(6, '0')}', // ลำดับใบสั่งงาน
+//       '${groupedData.activity.padStart(4, '0')}', // กิจกรรม
+//       '',
+//       ${syncLog.quantity.toFixed(3)},  // จำนวน งาน OK
+//       'ST',
+//       ${syncLog.quantity.toFixed(3)}, // จำนวน งาน NG
+//       0,
+//       0,
+//       '',
+//       CONVERT(VARCHAR(50),GETDATE(),112), // วันที่
+//       ${syncLog.quantity.toFixed(3)}, // time job
+//       'STD',
+//       '',
+//       '',
+//       CONVERT(VARCHAR(50),GETDATE(),112),
+//       REPLACE(CONVERT(VARCHAR(8),GETDATE(),108),':',''),
+//       'ADMINIT',
+//       '1620',
+//       '${groupedData.is_not_good ? groupedData.case_ng || '' : ''}',
+//       'Team'
+//       )`;

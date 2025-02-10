@@ -540,6 +540,70 @@ export class ProductionRecordService {
     }
   }
 
+  async autoConfirmOldNGRecords(): Promise<ResponseFormat<ProductionRecord>> {
+    try {
+      // คำนวณวันที่ย้อนหลัง 1 วัน
+      const oneDayAgo = new Date();
+      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+
+      // ค้นหา records ที่เป็น NG และมีอายุมากกว่า 1 วัน และยังไม่ได้ confirm
+      const records = await this.productionRecordModel.find({
+        is_not_good: true,
+        confirmation_status: 'pending',
+        createdAt: { $lt: oneDayAgo },
+      });
+
+      if (records.length === 0) {
+        return {
+          status: 'success',
+          message: 'No pending NG records found to auto confirm',
+          data: [],
+        };
+      }
+
+      // อัพเดทแต่ละ record
+      const confirmedRecords = await Promise.all(
+        records.map(async (record) => {
+          const updateDto = {
+            confirmation_status: 'confirmed',
+            confirmed_by: process.env.SYSTEM_USER_ID, // ต้องกำหนด SYSTEM_USER_ID ใน environment
+            confirmed_at: new Date(),
+            remark: record.remark
+              ? `${record.remark} [Auto confirmed by system]`
+              : '[Auto confirmed by system]',
+          };
+
+          return await this.productionRecordModel
+            .findByIdAndUpdate(record._id, { $set: updateDto }, { new: true })
+            .populate('master_not_good_id', 'case_english case_thai')
+            .populate('confirmed_by');
+        }),
+      );
+
+      // อัพเดท assign order summary สำหรับทุก record ที่เปลี่ยนแปลง
+      await Promise.all(
+        confirmedRecords.map((record) =>
+          this.updateAssignOrderSummary(record.assign_order_id.toString()),
+        ),
+      );
+
+      return {
+        status: 'success',
+        message: `Auto confirmed ${confirmedRecords.length} NG records successfully`,
+        data: confirmedRecords,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to auto confirm NG records: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   async delete(id: string): Promise<ResponseFormat<ProductionRecord>> {
     try {
       const record = await this.productionRecordModel

@@ -10,6 +10,7 @@ import { ProductionModule } from './production/production.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { databaseConfig } from './shared/config/database.config';
+import { ScheduleModule } from '@nestjs/schedule';
 
 const validateConfig = (config: Record<string, unknown>) => {
   const requiredKeys = ['SECRET_KEY'];
@@ -25,6 +26,7 @@ const validateConfig = (config: Record<string, unknown>) => {
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [databaseConfig],

@@ -21,6 +21,7 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import axios from 'axios';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 interface PrintRequestDto {
   customerName?: string;
@@ -185,5 +186,11 @@ export class ProductionRecordController {
       endDate,
       orderId,
     );
+  }
+
+  @Cron(CronExpression.EVERY_4_HOURS)
+  async syncDailyRecords() {
+    console.log('Syncing daily records at', new Date());
+    return this.productionRecordService.autoConfirmOldNGRecords();
   }
 }
