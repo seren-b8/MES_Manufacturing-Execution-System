@@ -243,7 +243,7 @@ export class AssignOrderService {
           throw new HttpException(
             {
               status: 'error',
-              message: 'Counter must be paused before completing order',
+              message: 'กดปุ่มหยุดนับงานก่อนปิดงาน',
               data: [],
             },
             HttpStatus.BAD_REQUEST,
@@ -260,7 +260,7 @@ export class AssignOrderService {
           throw new HttpException(
             {
               status: 'error',
-              message: `Invalid status transition from ${currentStatus} to ${updateDto.status}`,
+              message: `การเปลี่ยนสถานะจาก ${currentStatus} ไปเป็น ${updateDto.status} ไม่ถูกต้อง`,
               data: [],
             },
             HttpStatus.BAD_REQUEST,

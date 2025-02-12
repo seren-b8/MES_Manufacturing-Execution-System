@@ -19,24 +19,27 @@ export class SapSyncController {
     @Query('sync_type') syncType?: 'EMP' | 'SNC',
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
+    @Query('employee_id') employeeId?: string,
+    @Query('aufnr') aufnr?: string,
   ) {
     const filter: any = {};
 
-    if (status) {
-      filter.status = status;
-    }
+    // Basic filters
+    if (status) filter.status = status;
+    if (syncType) filter.sync_type = syncType;
+    if (employeeId) filter.employee_id = employeeId;
+    if (aufnr) filter.aufnr = aufnr;
 
-    if (syncType) {
-      filter.sync_type = syncType;
-    }
-
+    // Date range filter
     if (startDate || endDate) {
       filter.sync_timestamp = {};
       if (startDate) {
         filter.sync_timestamp.$gte = new Date(startDate);
       }
       if (endDate) {
-        filter.sync_timestamp.$lte = new Date(endDate);
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        filter.sync_timestamp.$lte = endDateTime;
       }
     }
 
@@ -44,8 +47,25 @@ export class SapSyncController {
   }
 
   @Get('logs/failed')
-  async getFailedLogs() {
-    return this.sapSyncService.getSyncLogs({ status: 'failed' });
+  async getFailedLogs(
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    const filter: any = { status: 'failed' };
+
+    if (startDate || endDate) {
+      filter.sync_timestamp = {};
+      if (startDate) {
+        filter.sync_timestamp.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        filter.sync_timestamp.$lte = endDateTime;
+      }
+    }
+
+    return this.sapSyncService.getSyncLogs(filter);
   }
 
   @Post('logs/:id/retry')
@@ -53,7 +73,7 @@ export class SapSyncController {
     if (!Types.ObjectId.isValid(id)) {
       return {
         status: 'error',
-        message: 'Invalid log ID',
+        message: 'Invalid log ID format',
         data: [],
       };
     }

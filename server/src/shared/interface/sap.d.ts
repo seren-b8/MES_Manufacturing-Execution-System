@@ -67,3 +67,15 @@ export interface PopulatedUser {
   _id: Types.ObjectId;
   employee_id: string;
 }
+
+export interface SAPSyncData {
+  tid: string; // Transaction ID
+  employeeId: string; // รหัสพนักงาน
+  orderId: string; // รหัสใบสั่งงาน
+  sequenceNo: string; // ลำดับใบสั่งงาน
+  activity: string; // กิจกรรม
+  quantity: number; // จำนวน
+  isNotGood: boolean; // เป็นงานเสียหรือไม่
+  caseNg: string; // รหัสงานเสีย
+  date: Date; // วันที่บันทึก
+}

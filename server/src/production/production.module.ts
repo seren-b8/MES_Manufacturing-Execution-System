@@ -10,6 +10,7 @@ import { ProductionRecordController } from './production-reccord/production-recc
 import { SapSyncController } from './sap-sync/sap-sync.controller';
 import { SapProductionSyncService } from './sap-sync/sap-sync.service';
 import { SAPDataTransformationService } from './sap-sync/sap-transformmation.service';
+import { SapSyncValidationService } from './sap-sync/sap-sync-validation.service';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule],
@@ -25,6 +26,7 @@ import { SAPDataTransformationService } from './sap-sync/sap-transformmation.ser
     ProductionRecordService,
     SapProductionSyncService,
     SAPDataTransformationService,
+    SapSyncValidationService,
   ],
   exports: [
     SapOrderService,

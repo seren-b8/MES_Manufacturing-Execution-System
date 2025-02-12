@@ -332,6 +332,7 @@ export class ProductionRecordService {
         await this.validateMachineCounter(assignOrder, createDto.quantity);
       } else {
         await this.validateNotGoodRecord(createDto);
+        await this.validateMachineCounter(assignOrder, createDto.quantity);
       }
 
       // สร้าง serial code
@@ -632,15 +633,10 @@ export class ProductionRecordService {
         );
       }
 
-      const machine = await this.machineInfoModel
-        .findOne({
-          machine_number: record.assign_order_id['machine_number'],
-        })
-        .populate<PopulatedMachineInfo>({
-          // เพิ่ม populate เหมือน create
-          path: 'material_cavities.cavity_id',
-          select: 'cavity runner parts',
-        });
+      const machine = await this.machineInfoModel.findOne({
+        machine_number: record.assign_order_id['machine_number'],
+      });
+      // ลบ populate ออกก่อนเนื่องจากมีปัญหากับ schema
 
       if (!machine) {
         throw new HttpException(

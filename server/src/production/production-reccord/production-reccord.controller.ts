@@ -190,7 +190,7 @@ export class ProductionRecordController {
 
   @Cron(CronExpression.EVERY_4_HOURS)
   async syncDailyRecords() {
-    console.log('Syncing daily records at', new Date());
+    // console.log('Syncing daily records at', new Date());
     return this.productionRecordService.autoConfirmOldNGRecords();
   }
 }
