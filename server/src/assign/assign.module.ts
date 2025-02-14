@@ -11,6 +11,6 @@ import { AssignEmployeeService } from './assign-employee/assign-employee.service
   imports: [MongooseSchemaModule, DatabaseModule],
   controllers: [AssignOrderController, AssignEmployeeController],
   providers: [AssignService, AssignOrderService, AssignEmployeeService],
-  exports: [AssignService],
+  exports: [AssignService, AssignEmployeeService],
 })
 export class AssignModule {}

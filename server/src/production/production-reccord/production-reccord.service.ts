@@ -26,6 +26,7 @@ import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import { User } from 'src/shared/modules/schema/user.schema';
 import * as moment from 'moment-timezone';
+import { AssignEmployeeService } from 'src/assign/assign-employee/assign-employee.service';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -53,6 +54,8 @@ export class ProductionRecordService {
     @InjectModel(MasterPart.name) private masterPartModel: Model<MasterPart>,
 
     @InjectModel(User.name) private userModel: Model<User>,
+
+    private AssignEmployeeService: AssignEmployeeService,
   ) {}
 
   private async validateMachineCounter(assignOrder: any, quantity: number) {
@@ -303,6 +306,7 @@ export class ProductionRecordService {
 
   async create(
     createDto: CreateProductionRecordDto,
+    userId: string,
   ): Promise<ResponseFormat<ProductionRecord>> {
     try {
       // ตรวจสอบ assign order
@@ -314,6 +318,15 @@ export class ProductionRecordService {
       const assignEmployeeIds = await this.validateAssignEmployees(
         assignOrder._id as Types.ObjectId,
       );
+
+      if (!assignEmployeeIds || assignEmployeeIds.length === 0) {
+        const newAssignEmployee = await this.AssignEmployeeService.create({
+          user_id: userId,
+          assign_order_id: createDto.assign_order_id,
+        });
+        assignEmployeeIds.push(newAssignEmployee.data[0]._id);
+        console.log('New Assign Employee:', newAssignEmployee);
+      }
 
       // ตรวจสอบจำนวน
       if (createDto.quantity <= 0) {

@@ -18,6 +18,7 @@ import {
 import { User } from 'src/shared/modules/schema/user.schema';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import e from 'express';
+import { IAssignEmployeeDocument } from 'src/shared/interface/assign.emp';
 
 @Injectable()
 export class AssignEmployeeService {
@@ -30,7 +31,7 @@ export class AssignEmployeeService {
 
   async create(
     createDto: CreateAssignEmployeeDto,
-  ): Promise<ResponseFormat<AssignEmployee>> {
+  ): Promise<ResponseFormat<IAssignEmployeeDocument>> {
     try {
       // Check if user exists and is active
       const user = await this.userModel.findById(createDto.user_id);
@@ -86,11 +87,13 @@ export class AssignEmployeeService {
       });
 
       const savedAssignment = await newAssignment.save();
+      const typedAssignment =
+        savedAssignment.toObject() as IAssignEmployeeDocument;
 
       return {
         status: 'success',
         message: 'Employee assigned successfully',
-        data: [savedAssignment],
+        data: [typedAssignment],
       };
     } catch (error) {
       if (error instanceof HttpException) {

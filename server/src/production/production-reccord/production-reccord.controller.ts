@@ -22,6 +22,8 @@ import { Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import axios from 'axios';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { AuthGuard } from '@nestjs/passport';
+import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
 
 interface PrintRequestDto {
   customerName?: string;
@@ -47,8 +49,11 @@ export class ProductionRecordController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  async create(@Body() createDto: CreateProductionRecordDto) {
-    return await this.productionRecordService.create(createDto);
+  async create(
+    @GetUserId() userId: string,
+    @Body() createDto: CreateProductionRecordDto,
+  ) {
+    return await this.productionRecordService.create(createDto, userId);
   }
 
   @Get()

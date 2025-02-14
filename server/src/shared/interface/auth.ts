@@ -27,3 +27,11 @@ export interface TLoginDto {
   employee_id: string;
   password: string;
 }
+
+export interface JwtPayload {
+  sub: string; // user id จาก MongoDB
+  employee_id: string; // รหัสพนักงาน
+  role: string; // สิทธิ์การใช้งาน
+  iat?: number; // issued at timestamp
+  exp?: number; // expiration timestamp
+}

@@ -11,9 +11,10 @@ import { SapSyncController } from './sap-sync/sap-sync.controller';
 import { SapProductionSyncService } from './sap-sync/sap-sync.service';
 import { SAPDataTransformationService } from './sap-sync/sap-transformmation.service';
 import { SapSyncValidationService } from './sap-sync/sap-sync-validation.service';
+import { AssignModule } from 'src/assign/assign.module';
 
 @Module({
-  imports: [MongooseSchemaModule, DatabaseModule],
+  imports: [MongooseSchemaModule, DatabaseModule, AssignModule],
   controllers: [
     SqlOrderController,
     ProductionOrderController,
