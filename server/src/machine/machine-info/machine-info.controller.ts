@@ -17,6 +17,7 @@ import { promises } from 'dns';
 import { Response } from 'express';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import { ResponseFormat } from 'src/shared/interface';
+import { registerAs } from '@nestjs/config';
 
 // Controller
 @Controller('machine-info')
@@ -70,5 +71,10 @@ export class MachineInfoController {
       intervalMinutes,
       machines,
     );
+  }
+
+  @Post('reset-counter')
+  async resetCounter(@Query('machine_number') machineNumber: string) {
+    return await this.machineInfoService.resetCounter(machineNumber);
   }
 }

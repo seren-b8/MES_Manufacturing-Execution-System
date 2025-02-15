@@ -23,6 +23,7 @@ import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import { ProductionRecordService } from 'src/production/production-reccord/production-reccord.service';
 import * as moment from 'moment-timezone';
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
+import { promises } from 'dns';
 
 @Injectable()
 export class MachineInfoService {
@@ -125,8 +126,9 @@ export class MachineInfoService {
                 completed_orders: allOrders.filter(
                   (o) => o?.status === 'completed',
                 ).length,
-                pending_orders: allOrders.filter((o) => o?.status === 'pending')
-                  .length,
+                suspended_orders: allOrders.filter(
+                  (o) => o?.status === 'suspended',
+                ).length,
                 waiting_assign_orders: allProductionOrder.length,
               },
               active_order: activeOrder,
@@ -377,6 +379,17 @@ export class MachineInfoService {
     machineNumber: string,
   ): Promise<ResponseFormat<MachineInfo>> {
     try {
+      if (!machineNumber) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine number is required',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       const machine = await this.machineInfoModel.findOne({
         machine_number: machineNumber,
       });
@@ -392,13 +405,13 @@ export class MachineInfoService {
         );
       }
 
+      const updateData = {
+        recorded_counter: machine.counter,
+      };
+
       const updatedMachine = await this.machineInfoModel.findOneAndUpdate(
         { machine_number: machineNumber },
-        {
-          recorded_counter: 0,
-          is_counter_paused: true,
-          pause_start_counter: 0,
-        },
+        updateData,
         { new: true },
       );
 
