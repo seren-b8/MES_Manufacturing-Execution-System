@@ -38,7 +38,7 @@ export class SapProductionSyncService {
     const validatedEmpId =
       this.validationService.validateAndTruncateEmployeeId(employeeId);
 
-    const tid = this.validationService.createTID(validatedEmpId);
+    const tid = this.validationService.createTID();
 
     this.validationService.validateSAPFields({
       employeeId: validatedEmpId,

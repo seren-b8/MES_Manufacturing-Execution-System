@@ -13,6 +13,7 @@ import { databaseConfig } from './shared/config/database.config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from './auth/guard/custom-throttler.guard';
+import { MesCacheModule } from './shared/modules/cache/cache.module';
 
 const validateConfig = (config: Record<string, unknown>) => {
   const requiredKeys = ['SECRET_KEY'];
@@ -40,7 +41,7 @@ const validateConfig = (config: Record<string, unknown>) => {
       {
         name: 'default',
         ttl: 60000, // เป็นมิลลิวินาที (60 วินาที)
-        limit: 50, // จำกัดการเรียกใช้งาน 50 ครั้ง
+        limit: 500, // จำกัดการเรียกใช้งาน 50 ครั้ง
       },
     ]),
     DatabaseModule,
@@ -50,6 +51,7 @@ const validateConfig = (config: Record<string, unknown>) => {
     MachineModule,
     ProductionModule,
     AuthModule,
+    MesCacheModule,
   ],
   controllers: [AppController],
   providers: [

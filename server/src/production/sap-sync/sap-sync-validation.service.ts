@@ -1,9 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
+import { SAPSyncLog } from 'src/shared/modules/schema/sap_sync_log.schema';
 
 @Injectable()
 export class SapSyncValidationService {
+  constructor(
+    @InjectModel(SAPSyncLog.name)
+    private readonly sapSyncLogModel: Model<SAPSyncLog>,
+  ) {}
   private readonly EMP_ID_MAX_LENGTH = 11;
   private readonly TID_MAX_LENGTH = 32;
   private readonly SAP_FIELD_CONSTRAINTS = {
@@ -254,18 +260,46 @@ export class SapSyncValidationService {
     return employeeId.substring(0, this.EMP_ID_MAX_LENGTH);
   }
 
-  createTID(employeeId: string): string {
-    const validatedEmpId = this.validateAndTruncateEmployeeId(employeeId);
-    const now = new Date();
-    const timeComponent = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const tid = `${timeComponent}${validatedEmpId}`;
+  async createTID(): Promise<string> {
+    try {
+      // คำนำหน้าพื้นฐานสำหรับ TID
+      const base = 'TID';
 
-    if (tid.length > this.TID_MAX_LENGTH) {
-      throw new Error(
-        `Generated TID exceeds maximum length of ${this.TID_MAX_LENGTH} characters`,
-      );
+      // กำหนดความยาวของส่วนต่อท้าย
+      const suffixLength = 17; // ปรับเป็น 17 ตัวอักษร
+
+      // ค้นหาเรคอร์ดล่าสุดเพื่อดึงรหัสที่ถูกสร้างล่าสุด
+      const lastRecord = await this.sapSyncLogModel
+        .findOne()
+        .sort({ tid: -1 })
+        .lean()
+        .exec();
+
+      // กำหนดค่าเริ่มต้นให้กับส่วนต่อท้าย
+      let nextSuffix = 'B4F60E209F1369AB01'; // ค่าเริ่มต้นที่มีความยาว 17 ตัวอักษร
+
+      if (lastRecord && lastRecord.tid) {
+        // แยกส่วนต่อท้ายออกจากรหัสที่สร้างล่าสุด
+        const lastGenerated = lastRecord.tid.slice(base.length);
+
+        // ตรวจสอบว่ารูปแบบถูกต้อง
+        if (/^[0-9A-F]+$/.test(lastGenerated)) {
+          // เพิ่มค่าเลขฐานสิบหกและจัดรูปแบบให้เป็นตัวอักษรพิมพ์ใหญ่
+          nextSuffix = (BigInt(`0x${lastGenerated}`) + BigInt(1))
+            .toString(16)
+            .toUpperCase()
+            .padStart(suffixLength, '0');
+        }
+      }
+
+      // รวมคำนำหน้าและส่วนต่อท้าย
+      return `${base}${nextSuffix}`;
+    } catch (error) {
+      console.error('Error generating TID:', error);
+
+      // ในกรณีที่มีข้อผิดพลาด ใช้ timestamp เป็นค่าสำรอง
+      const timestamp = new Date().getTime().toString(16).toUpperCase();
+      return `TID${timestamp.padStart(17, '0')}`;
     }
-
-    return tid;
   }
 }
