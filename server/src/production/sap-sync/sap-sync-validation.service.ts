@@ -193,15 +193,6 @@ export class SapSyncValidationService {
   }
 
   private isValidEmployeeId(employeeId: string): boolean {
-    console.log(employeeId);
-    console.log(
-      Boolean(
-        employeeId &&
-          employeeId.length <= this.EMP_ID_MAX_LENGTH &&
-          /^[A-Za-z0-9]+$/.test(employeeId),
-      ),
-    );
-
     if (employeeId === 'SNC') {
       console.log('Special case, allowing');
       return true;
