@@ -67,6 +67,9 @@ export class SAPSyncLog {
 
   @Prop()
   agrnd?: string; // Reason code (for NG only)
+
+  @Prop({ type: Number, default: 60 })
+  cycle_time_per_unit?: number; //Cycle time per unit (in seconds)
 }
 
 export const SAPSyncLogSchema = SchemaFactory.createForClass(SAPSyncLog);

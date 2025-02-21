@@ -61,6 +61,7 @@ export interface GroupedProductionData {
   case_ng?: string;
   employee_quantities: Map<string, number>;
   snc_quantity: number;
+  cycle_time_per_unit?: number;
 }
 
 export interface PopulatedUser {

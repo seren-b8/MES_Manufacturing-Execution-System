@@ -68,6 +68,8 @@ export class SapProductionSyncService {
       // ข้อมูลงานเสีย
       is_not_good: groupedData.is_not_good,
       agrnd: groupedData.is_not_good ? groupedData.case_ng : undefined,
+
+      cycle_time_per_unit: groupedData.cycle_time_per_unit || 60,
     });
   }
 
@@ -115,8 +117,12 @@ export class SapProductionSyncService {
     const ngQuantity = syncLog.is_not_good
       ? syncLog.quantity.toFixed(3)
       : '0.000';
-    const timeJob = syncLog.quantity.toFixed(3);
-
+    // คำนวณเวลาที่ใช้ในการทำงานจริง (หน่วยเป็นชั่วโมง)
+    // ตัวอย่าง: สมมติว่ามีข้อมูล cycle_time_per_unit ในหน่วยวินาที
+    const cycleTimePerUnitInSeconds = syncLog.cycle_time_per_unit || 60; // ค่าเริ่มต้น 60 วินาที
+    const totalTimeInHours =
+      (syncLog.quantity * cycleTimePerUnitInSeconds) / 3600;
+    const timeJob = totalTimeInHours.toFixed(3);
     return `
       INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
       VALUES (
@@ -383,13 +389,14 @@ export class SapProductionSyncService {
         let totalQuantity = 0;
         let isNotGood = false;
         let caseNg: string | undefined;
+        let cycleTimePerUnit = 60; // ค่าเริ่มต้น 60 วินาที
 
         // รวมจำนวนและข้อมูลงานเสีย
         for (const record of groupRecords) {
           totalQuantity += record.quantity;
           if (record.is_not_good) {
             isNotGood = true;
-            caseNg = record.master_not_good_id?.case_english;
+            caseNg = record.master_not_good_id?.case_code;
           }
 
           // รวมจำนวนต่อพนักงาน
@@ -400,6 +407,10 @@ export class SapProductionSyncService {
               (empQuantities.get(empId) || 0) +
                 record.quantity / record.assign_employee_ids.length,
             );
+          }
+          // ดึง cycle_time_per_unit จากข้อมูลเครื่องจักรหรือ assign_order
+          if (record.assign_order_id.machine_info?.cycle_time) {
+            cycleTimePerUnit = record.assign_order_id.machine_info.cycle_time;
           }
         }
 
@@ -412,6 +423,7 @@ export class SapProductionSyncService {
           case_ng: caseNg,
           employee_quantities: empQuantities,
           snc_quantity: totalQuantity % 1, // เศษทศนิยมจะถูกส่งเป็น SNC
+          cycle_time_per_unit: cycleTimePerUnit,
         };
 
         // ส่งข้อมูลไป SAP
@@ -439,29 +451,85 @@ export class SapProductionSyncService {
     productionRecordIds: Types.ObjectId[],
     groupedData: GroupedProductionData,
   ): Promise<void> {
+    // สร้าง TID เดียวสำหรับทุกรายการในกลุ่มเดียวกัน
+    const sharedTid = await this.validationService.createTID();
+    let itemCounter = 1; // เริ่มนับ item จาก 1
+
     // สร้าง sync logs สำหรับพนักงานแต่ละคน
     for (const [employeeId, quantity] of groupedData.employee_quantities) {
-      const syncLog = await this.createSyncLogEntry(
+      const syncLog = await this.createSyncLogEntryWithSharedTid(
         productionRecordIds,
         employeeId,
         quantity,
         'EMP',
         groupedData,
+        sharedTid,
+        itemCounter++, // เพิ่มค่า itemCounter หลังจากใช้
       );
       await this.sendToSap(syncLog, groupedData);
     }
 
     // สร้าง sync log สำหรับ SNC ถ้ามี
     if (groupedData.snc_quantity > 0) {
-      const sncSyncLog = await this.createSyncLogEntry(
+      const sncSyncLog = await this.createSyncLogEntryWithSharedTid(
         productionRecordIds,
         'SNC',
         groupedData.snc_quantity,
         'SNC',
         groupedData,
+        sharedTid,
+        itemCounter++, // เพิ่มค่า itemCounter หลังจากใช้
       );
       await this.sendToSap(sncSyncLog, groupedData);
     }
+  }
+
+  // เมธอดใหม่ที่รับ TID และ itemno จากภายนอก
+  private async createSyncLogEntryWithSharedTid(
+    productionRecordIds: Types.ObjectId[],
+    employeeId: string,
+    quantity: number,
+    syncType: 'EMP' | 'SNC',
+    groupedData: GroupedProductionData,
+    sharedTid: string,
+    itemno: number,
+  ): Promise<SAPSyncLog> {
+    const now = new Date();
+
+    const validatedEmpId =
+      this.validationService.validateAndTruncateEmployeeId(employeeId);
+
+    this.validationService.validateSAPFields({
+      employeeId: validatedEmpId,
+      orderId: groupedData.order_id,
+      sequenceNo: groupedData.sequence_no,
+      activity: groupedData.activity,
+    });
+
+    return await this.sapSyncLogModel.create({
+      // ข้อมูลอ้างอิง
+      production_record_ids: productionRecordIds,
+      employee_id: employeeId,
+      quantity,
+      sync_type: syncType,
+      status: 'pending',
+
+      // ข้อมูล SAP
+      tid: sharedTid,
+      itemno: itemno, // ใช้ค่า itemno ที่ส่งมา
+      aufnr: groupedData.order_id.padStart(12, '0'),
+      aplfl: groupedData.sequence_no.padStart(6, '0'),
+      vornr: groupedData.activity.padStart(4, '0'),
+      budat: this.formatDate(now),
+      erdat: this.formatDate(now),
+      erzet: this.formatTime(now),
+
+      // ข้อมูลงานเสีย
+      is_not_good: groupedData.is_not_good,
+      agrnd: groupedData.is_not_good ? groupedData.case_ng : undefined,
+
+      cycle_time_per_unit: groupedData.cycle_time_per_unit || 60,
+    });
   }
 }
 // INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG')
