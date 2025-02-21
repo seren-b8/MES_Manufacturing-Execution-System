@@ -11,6 +11,8 @@ import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { databaseConfig } from './shared/config/database.config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from './auth/guard/custom-throttler.guard';
 
 const validateConfig = (config: Record<string, unknown>) => {
   const requiredKeys = ['SECRET_KEY'];
@@ -34,6 +36,13 @@ const validateConfig = (config: Record<string, unknown>) => {
       envFilePath: '.env',
       cache: true,
     }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60000, // เป็นมิลลิวินาที (60 วินาที)
+        limit: 50, // จำกัดการเรียกใช้งาน 50 ครั้ง
+      },
+    ]),
     DatabaseModule,
     MongooseSchemaModule,
     AssignModule,
@@ -43,7 +52,13 @@ const validateConfig = (config: Record<string, unknown>) => {
     AuthModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: 'APP_GUARD',
+      useClass: CustomThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {
   constructor() {

@@ -12,6 +12,9 @@ export class MasterNotGood extends Document {
 
   @Prop({ default: null })
   description: string; // changed from DESCRIPTION
+
+  @Prop({ default: null })
+  case_code: string;
 }
 
 export const MasterNotGoodSchema = SchemaFactory.createForClass(MasterNotGood);

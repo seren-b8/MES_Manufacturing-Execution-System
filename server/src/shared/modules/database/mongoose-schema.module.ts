@@ -49,6 +49,10 @@ import { User, UserSchema } from 'src/shared/modules/schema/user.schema';
 
 // SAP Integration
 import { SAPSyncLog, SAPSyncLogSchema } from '../schema/sap_sync_log.schema';
+import {
+  MachineCounterLog,
+  MachineCounterLogSchema,
+} from '../schema/machine-counter-log.schema';
 
 @Module({
   imports: [
@@ -71,6 +75,9 @@ import { SAPSyncLog, SAPSyncLogSchema } from '../schema/sap_sync_log.schema';
       // User Management
       { name: Employee.name, schema: EmployeeSchema },
       { name: User.name, schema: UserSchema },
+
+      // Counter log
+      { name: MachineCounterLog.name, schema: MachineCounterLogSchema },
 
       // SAP Integration
       { name: SAPSyncLog.name, schema: SAPSyncLogSchema },

@@ -34,6 +34,7 @@ import { AssignModule } from 'src/assign/assign.module';
     ProductionOrderService,
     ProductionRecordService,
     SapProductionSyncService,
+    SapSyncValidationService,
   ],
 })
 export class ProductionModule {}

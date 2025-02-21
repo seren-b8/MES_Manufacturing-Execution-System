@@ -18,11 +18,6 @@ export class SapProductionSyncService {
     private readonly validationService: SapSyncValidationService,
   ) {}
 
-  private createTID(employeeId: string): string {
-    const now = new Date();
-    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}${employeeId}`;
-  }
-
   private formatDate(date: Date): string {
     return date.toISOString().slice(0, 10).replace(/-/g, '');
   }
@@ -39,7 +34,18 @@ export class SapProductionSyncService {
     groupedData: GroupedProductionData,
   ): Promise<SAPSyncLog> {
     const now = new Date();
-    const tid = this.createTID(employeeId);
+
+    const validatedEmpId =
+      this.validationService.validateAndTruncateEmployeeId(employeeId);
+
+    const tid = this.validationService.createTID(validatedEmpId);
+
+    this.validationService.validateSAPFields({
+      employeeId: validatedEmpId,
+      orderId: groupedData.order_id,
+      sequenceNo: groupedData.sequence_no,
+      activity: groupedData.activity,
+    });
 
     return await this.sapSyncLogModel.create({
       // ข้อมูลอ้างอิง
@@ -76,6 +82,32 @@ export class SapProductionSyncService {
       TILE: 'Team',
     };
 
+    const validatedFields = {
+      TID: this.validationService.validateAndTruncateField(syncLog.tid, 'TID'),
+      EMPLOYEE: this.validationService.validateAndTruncateField(
+        syncLog.employee_id,
+        'EMPLOYEE',
+      ),
+      AUFNR: this.validationService.validateAndTruncateField(
+        syncLog.aufnr,
+        'AUFNR',
+      ),
+      APLFL: this.validationService.validateAndTruncateField(
+        syncLog.aplfl,
+        'APLFL',
+      ),
+      VORNR: this.validationService.validateAndTruncateField(
+        syncLog.vornr,
+        'VORNR',
+      ),
+      AGRND:
+        syncLog.is_not_good && syncLog.agrnd
+          ? this.validationService.validateAndTruncateField(
+              syncLog.agrnd,
+              'AGRND',
+            )
+          : '',
+    };
     // กำหนดจำนวนตามประเภทงาน
     const okQuantity = syncLog.is_not_good
       ? '0.000'
@@ -89,12 +121,12 @@ export class SapProductionSyncService {
       INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
       VALUES (
         '${SAP_CONSTANTS.MANDT}',
-        '${syncLog.tid}',
+        '${validatedFields.TID}',
         ${syncLog.itemno},
-        '${syncLog.employee_id}',
-        '${syncLog.aufnr}',
-        '${syncLog.aplfl}',
-        '${syncLog.vornr}',
+        '${validatedFields.EMPLOYEE}',
+        '${validatedFields.AUFNR}',
+        '${validatedFields.APLFL}',
+        '${validatedFields.VORNR}',
         '',
         ${okQuantity},                    /* LMNGA: จำนวนงาน OK */
         '${SAP_CONSTANTS.MEINH}',
@@ -111,7 +143,7 @@ export class SapProductionSyncService {
         '${syncLog.erzet}',
         '${SAP_CONSTANTS.ERNAM}',
         '${SAP_CONSTANTS.WERKS}',
-        '${syncLog.is_not_good ? syncLog.agrnd || '' : ''}',
+        '${validatedFields.AGRND}',
         '${SAP_CONSTANTS.TILE}'
       )`;
   }
@@ -120,7 +152,27 @@ export class SapProductionSyncService {
     syncLog: SAPSyncLog,
     groupedData: GroupedProductionData,
   ): Promise<void> {
-    // Validation logic remains the same
+    try {
+      this.validationService.validateSAPFields({
+        employeeId: syncLog.employee_id,
+        orderId: syncLog.aufnr,
+        sequenceNo: syncLog.aplfl,
+        activity: syncLog.vornr,
+      });
+
+      // เพิ่มการตรวจสอบอื่นๆ ตามความต้องการ
+      if (syncLog.quantity <= 0) {
+        throw new Error('Quantity must be greater than 0');
+      }
+
+      if (syncLog.is_not_good && !syncLog.agrnd) {
+        throw new Error('Reason code is required for not good items');
+      }
+    } catch (error) {
+      throw new Error(
+        `Failed to validate before sending to SAP: ${(error as Error).message}`,
+      );
+    }
   }
 
   private async sendToSap(
