@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import moment from 'moment';
 import { ISAPConfirmationLog } from 'src/shared/interface/sap';
-import { SqlService } from 'src/shared/services/sql.service';
 
 @Injectable()
 export class SAPDataTransformationService {
   // แปลงข้อมูลให้ตรงกับ format ที่ SAP ต้องการ
   transformToSAPFormat(data: any): ISAPConfirmationLog {
-    const now = new Date();
+    const now = moment.tz('Asia/Bangkok').toDate();
     const tid = this.generateTID(data.employee_id || 'SNC');
 
     return {
