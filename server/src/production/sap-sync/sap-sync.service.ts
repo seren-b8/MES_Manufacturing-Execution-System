@@ -6,6 +6,7 @@ import { ProductionRecord } from 'src/shared/modules/schema/production-record.sc
 import { SAPSyncLog } from 'src/shared/modules/schema/sap_sync_log.schema';
 import { GroupedProductionData } from 'src/shared/interface/sap';
 import { SapSyncValidationService } from './sap-sync-validation.service';
+import moment from 'moment';
 
 @Injectable()
 export class SapProductionSyncService {
@@ -33,7 +34,7 @@ export class SapProductionSyncService {
     syncType: 'EMP' | 'SNC',
     groupedData: GroupedProductionData,
   ): Promise<SAPSyncLog> {
-    const now = new Date();
+    const now = moment.tz('Asia/Bangkok').toDate();
 
     const validatedEmpId =
       this.validationService.validateAndTruncateEmployeeId(employeeId);
@@ -494,7 +495,7 @@ export class SapProductionSyncService {
     sharedTid: string,
     itemno: number,
   ): Promise<SAPSyncLog> {
-    const now = new Date();
+    const now = moment.tz('Asia/Bangkok').toDate();
 
     const validatedEmpId =
       this.validationService.validateAndTruncateEmployeeId(employeeId);
