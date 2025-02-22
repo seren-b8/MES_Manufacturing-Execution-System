@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import moment from 'moment';
+import * as moment from 'moment-timezone';
 import { ISAPConfirmationLog } from 'src/shared/interface/sap';
 
 @Injectable()
