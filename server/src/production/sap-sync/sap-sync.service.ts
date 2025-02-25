@@ -19,12 +19,14 @@ export class SapProductionSyncService {
     private readonly validationService: SapSyncValidationService,
   ) {}
 
-  private formatDate(date: Date): string {
-    return date.toISOString().slice(0, 10).replace(/-/g, '');
+  private formatDate(date: moment.Moment): string {
+    // ใช้ moment เพื่อให้แน่ใจว่าใช้เวลา Bangkok
+    return moment(date).tz('Asia/Bangkok').format('YYYYMMDD');
   }
 
-  private formatTime(date: Date): string {
-    return date.toTimeString().slice(0, 8).replace(/:/g, '');
+  private formatTime(date: moment.Moment): string {
+    // ใช้ moment เพื่อให้แน่ใจว่าใช้เวลา Bangkok
+    return moment(date).tz('Asia/Bangkok').format('HHmmss');
   }
 
   private async createSyncLogEntry(
@@ -34,7 +36,7 @@ export class SapProductionSyncService {
     syncType: 'EMP' | 'SNC',
     groupedData: GroupedProductionData,
   ): Promise<SAPSyncLog> {
-    const now = moment.tz('Asia/Bangkok').toDate();
+    const now = moment.tz('Asia/Bangkok');
     console.log('now', now);
 
     const validatedEmpId =
@@ -436,7 +438,7 @@ export class SapProductionSyncService {
           { _id: { $in: recordIds } },
           {
             is_synced_to_sap: true,
-            sap_sync_timestamp: new Date(),
+            sap_sync_timestamp: moment.tz('Asia/Bangkok').toDate(),
           },
         );
 
@@ -496,8 +498,7 @@ export class SapProductionSyncService {
     sharedTid: string,
     itemno: number,
   ): Promise<SAPSyncLog> {
-    const now = moment.tz('Asia/Bangkok').toDate();
-    console.log('now', now);
+    const now = moment.tz('Asia/Bangkok');
 
     const validatedEmpId =
       this.validationService.validateAndTruncateEmployeeId(employeeId);
