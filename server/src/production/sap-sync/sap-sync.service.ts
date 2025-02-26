@@ -37,7 +37,6 @@ export class SapProductionSyncService {
     groupedData: GroupedProductionData,
   ): Promise<SAPSyncLog> {
     const now = moment.tz('Asia/Bangkok');
-    console.log('now', now);
 
     const validatedEmpId =
       this.validationService.validateAndTruncateEmployeeId(employeeId);
@@ -80,7 +79,7 @@ export class SapProductionSyncService {
   private createSAPSyncQuery(syncLog: SAPSyncLog): string {
     // ค่าคงที่สำหรับ SAP
     const SAP_CONSTANTS = {
-      MANDT: '700',
+      MANDT: '900', //700 = QAS, 900 = PRD
       MEINH: 'ST',
       ISMNGEH: 'STD',
       ERNAM: 'ADMINIT',
