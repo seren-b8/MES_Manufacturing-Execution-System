@@ -79,7 +79,7 @@ export class SapProductionSyncService {
   private createSAPSyncQuery(syncLog: SAPSyncLog): string {
     // ค่าคงที่สำหรับ SAP
     const SAP_CONSTANTS = {
-      MANDT: '700', //700 = QAS, 900 = PRD
+      MANDT: '900', //!TODO 700 = QAS, 900 = PRD
       MEINH: 'ST',
       ISMNGEH: 'STD',
       ERNAM: 'ADMINIT',
@@ -130,7 +130,7 @@ export class SapProductionSyncService {
     //! [SNC-HANA] คือชื่อ Linked Server ที่เชื่อมต่อกับ SAP HANA ใช้กับ PRD
     //! [SNC-HBQ] คือชื่อ Linked Server ที่เชื่อมต่อกับ SAP HANA ใช้กับ QAS
     return `
-      INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
+      INSERT INTO OPENQUERY([SNC-HANA],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
       VALUES (
         '${SAP_CONSTANTS.MANDT}',
         '${validatedFields.TID}',
