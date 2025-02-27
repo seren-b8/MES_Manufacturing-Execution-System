@@ -32,7 +32,7 @@ export class SapProductionSyncService {
   private createSAPSyncQuery(syncLog: SAPSyncLog): string {
     // ค่าคงที่สำหรับ SAP
     const SAP_CONSTANTS = {
-      MANDT: '900', //!TODO 700 = QAS, 900 = PRD
+      MANDT: '700', //!TODO 700 = QAS, 900 = PRD
       MEINH: 'ST',
       ISMNGEH: 'STD',
       ERNAM: 'ADMINIT',
@@ -408,6 +408,7 @@ export class SapProductionSyncService {
           let isNotGood = false;
           let caseNg: string | undefined;
           let cycleTimePerUnit = 60;
+          let sncQuantity = 0;
 
           for (const record of groupRecords) {
             totalQuantity += record.quantity;
@@ -416,14 +417,27 @@ export class SapProductionSyncService {
               caseNg = record.master_not_good_id?.case_code;
             }
 
+            // ปรับปรุงการแบ่งจำนวนต่อพนักงาน
             const employeeCount = record.assign_employee_ids.length;
-            const qtyPerEmployee = record.quantity / employeeCount;
+            // คำนวณจำนวนเต็มที่แบ่งได้ต่อพนักงาน
+            const wholeQtyPerEmployee = Math.floor(
+              record.quantity / employeeCount,
+            );
+            // คำนวณเศษที่เหลือ
+            const remainder =
+              record.quantity - wholeQtyPerEmployee * employeeCount;
 
+            // แบ่งจำนวนเต็มให้แต่ละพนักงาน
             for (const assignEmp of record.assign_employee_ids) {
               const empId = assignEmp.user_id.employee_id;
               empQuantitiesObj[empId] =
-                (empQuantitiesObj[empId] || 0) + qtyPerEmployee;
+                (empQuantitiesObj[empId] || 0) + wholeQtyPerEmployee;
             }
+
+            // เพิ่มเศษทศนิยมจากปริมาณปัจจุบัน
+            sncQuantity += record.quantity % 1;
+            // เพิ่มเศษจากการแบ่งจำนวนเต็ม
+            sncQuantity += remainder;
 
             if (record.assign_order_id.machine_info?.cycle_time) {
               cycleTimePerUnit = record.assign_order_id.machine_info.cycle_time;
@@ -441,7 +455,7 @@ export class SapProductionSyncService {
             is_not_good: isNotGood,
             case_ng: caseNg,
             employee_quantities: empQuantities,
-            snc_quantity: totalQuantity % 1,
+            snc_quantity: sncQuantity,
             cycle_time_per_unit: cycleTimePerUnit,
             production_date: moment(dateStr, 'YYYYMMDD').toDate(),
           };
