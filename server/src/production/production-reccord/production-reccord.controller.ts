@@ -24,6 +24,7 @@ import axios from 'axios';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AuthGuard } from '@nestjs/passport';
 import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
+import { SapProductionSyncService } from '../sap-sync/sap-sync.service';
 
 interface PrintRequestDto {
   customerName?: string;
@@ -45,6 +46,7 @@ export class ProductionRecordController {
 
   constructor(
     private readonly productionRecordService: ProductionRecordService,
+    private readonly sapSyncService: SapProductionSyncService,
   ) {}
 
   @Post()
@@ -110,7 +112,15 @@ export class ProductionRecordController {
     @Param('id') id: string,
     @Body() updateDto: UpdateProductionRecordDto,
   ) {
-    return await this.productionRecordService.update(id, updateDto);
+    const result = await this.productionRecordService.update(id, updateDto);
+
+    // Check if confirmation_status is 'confirmed'
+    if (updateDto.confirmation_status === 'confirmed') {
+      // Call syncPendingRecords if confirmation_status is 'confirmed'
+      await this.sapSyncService.syncPendingRecords();
+    }
+
+    return result;
   }
 
   @Get('daily')
