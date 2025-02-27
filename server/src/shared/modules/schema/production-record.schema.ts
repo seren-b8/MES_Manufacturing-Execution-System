@@ -79,3 +79,38 @@ ProductionRecordSchema.index({
   serial_code: 1,
   created_at: -1,
 });
+// สำหรับการค้นหา records ที่รอการซิงค์กับ SAP
+ProductionRecordSchema.index({
+  confirmation_status: 1,
+  is_synced_to_sap: 1,
+});
+
+// สำหรับการจัดกลุ่มตามวันที่
+ProductionRecordSchema.index({
+  createdAt: 1,
+});
+
+// สำหรับการค้นหา records ตามสถานะการยืนยัน
+ProductionRecordSchema.index({
+  confirmation_status: 1,
+});
+
+// สำหรับการค้นหาและกรองตามใบสั่งงานและสถานะการยืนยัน
+ProductionRecordSchema.index({
+  assign_order_id: 1,
+  confirmation_status: 1,
+});
+
+// Compound index สำหรับการค้นหาและกรองที่ซับซ้อน
+ProductionRecordSchema.index({
+  assign_order_id: 1,
+  is_not_good: 1,
+  confirmation_status: 1,
+});
+
+// สำหรับการรายงานและสรุปผลการผลิตตามช่วงเวลา
+ProductionRecordSchema.index({
+  createdAt: 1,
+  assign_order_id: 1,
+  is_not_good: 1,
+});
