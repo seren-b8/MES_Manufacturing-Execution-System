@@ -130,7 +130,7 @@ export class SapProductionSyncService {
     //! [SNC-HANA] คือชื่อ Linked Server ที่เชื่อมต่อกับ SAP HANA ใช้กับ PRD
     //! [SNC-HBQ] คือชื่อ Linked Server ที่เชื่อมต่อกับ SAP HANA ใช้กับ QAS
     return `
-      INSERT INTO OPENQUERY([SNC-HANA],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
+      INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
       VALUES (
         '${SAP_CONSTANTS.MANDT}',
         '${validatedFields.TID}',
@@ -346,6 +346,10 @@ export class SapProductionSyncService {
         case_ng: syncLog.agrnd,
         employee_quantities: new Map(),
         snc_quantity: 0,
+        cycle_time_per_unit: syncLog.cycle_time_per_unit,
+        production_date: moment(syncLog.budat, 'YYYYMMDD')
+          .tz('Asia/Bangkok')
+          .toDate(),
       });
 
       return {
@@ -377,7 +381,12 @@ export class SapProductionSyncService {
 
       for (const record of records) {
         const order = record.assign_order_id.production_order_id;
-        const key = `${order.order_id}-${order.sequence_number || '000000'}-${order.activity || '0010'}`;
+
+        const productionDate = record.createdAt;
+
+        const dateStr = moment(productionDate).format('YYYYMMDD');
+
+        const key = `${order.order_id}-${order.sequence_number || '000000'}-${order.activity || '0010'}-${dateStr}`;
 
         if (!groupedRecords.has(key)) {
           groupedRecords.set(key, []);
@@ -387,7 +396,8 @@ export class SapProductionSyncService {
 
       // ประมวลผลแต่ละกลุ่ม
       for (const [key, groupRecords] of groupedRecords) {
-        const [orderId, sequenceNo, activity] = key.split('-');
+        // แยกข้อมูลจาก key
+        const [orderId, sequenceNo, activity, dateStr] = key.split('-');
 
         // จัดกลุ่มข้อมูลสำหรับส่ง SAP
         const recordIds = groupRecords.map((r) => r._id);
@@ -430,6 +440,7 @@ export class SapProductionSyncService {
           employee_quantities: empQuantities,
           snc_quantity: totalQuantity % 1, // เศษทศนิยมจะถูกส่งเป็น SNC
           cycle_time_per_unit: cycleTimePerUnit,
+          production_date: moment(dateStr).toDate(), // เพิ่มวันที่ผลิตเข้าไปใน groupedData
         };
 
         // ส่งข้อมูลไป SAP
@@ -500,6 +511,9 @@ export class SapProductionSyncService {
     sharedTid: string,
     itemno: number,
   ): Promise<SAPSyncLog> {
+    const productionDate = moment(groupedData.production_date).tz(
+      'Asia/Bangkok',
+    );
     const now = moment.tz('Asia/Bangkok');
 
     const validatedEmpId =
@@ -526,7 +540,7 @@ export class SapProductionSyncService {
       aufnr: groupedData.order_id.padStart(12, '0'),
       aplfl: groupedData.sequence_no.padStart(6, '0'),
       vornr: groupedData.activity.padStart(4, '0'),
-      budat: this.formatDate(now),
+      budat: this.formatDate(productionDate), // Posting date
       erdat: this.formatDate(now),
       erzet: this.formatTime(now),
 
@@ -535,6 +549,9 @@ export class SapProductionSyncService {
       agrnd: groupedData.is_not_good ? groupedData.case_ng : undefined,
 
       cycle_time_per_unit: groupedData.cycle_time_per_unit || 60,
+
+      //วันที่ผลิต
+      production_date: groupedData.production_date,
     });
   }
 }
