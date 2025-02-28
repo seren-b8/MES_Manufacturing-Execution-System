@@ -382,8 +382,7 @@ export class SapProductionSyncService {
 
       for (const record of records) {
         const order = record.assign_order_id.production_order_id;
-        const productionDate = record.production_date || record.createdAt;
-        const dateStr = moment(productionDate).format('YYYYMMDD');
+        const dateStr = moment(record.production_date).format('YYYYMMDD');
 
         // ใช้งาน object เป็น key กำหนด pattern ให้ชัดเจน
         const key = `${order.order_id}-${order.sequence_number || '000000'}-${

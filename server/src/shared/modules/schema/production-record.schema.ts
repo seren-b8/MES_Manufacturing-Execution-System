@@ -1,5 +1,6 @@
 import { Prop, SchemaFactory, Schema } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import * as moment from 'moment-timezone';
 
 @Schema({
   collection: 'production_records',
@@ -41,6 +42,14 @@ export class ProductionRecord extends Document {
     unique: true,
   })
   serial_code: string;
+
+  // Production date field (based on Thai time with 8:00 AM cutoff)
+  @Prop({
+    type: Date,
+    required: true,
+    index: true,
+  })
+  production_date: Date;
 
   // สถานะการ confirm
   @Prop({
@@ -113,4 +122,38 @@ ProductionRecordSchema.index({
   createdAt: 1,
   assign_order_id: 1,
   is_not_good: 1,
+});
+
+// Auto-calculate production_date based on createdAt and Thailand timezone
+ProductionRecordSchema.pre('save', function (next) {
+  if (this.isNew || this.isModified('createdAt')) {
+    // Use moment-timezone with Asia/Bangkok
+    const recordDate = this.createdAt
+      ? moment(this.createdAt).tz('Asia/Bangkok')
+      : moment().tz('Asia/Bangkok');
+
+    const cutoffHour = 8; // 8:00 AM
+
+    // If before 8:00 AM, use previous day
+    if (recordDate.hour() < cutoffHour) {
+      recordDate.subtract(1, 'days');
+    }
+
+    // Set to start of day (00:00:00)
+    recordDate.startOf('day');
+
+    this.production_date = recordDate.toDate();
+  }
+  next();
+});
+
+// Validation for not-good records
+ProductionRecordSchema.pre('validate', function (next) {
+  if (this.is_not_good && !this.master_not_good_id) {
+    this.invalidate(
+      'master_not_good_id',
+      'master_not_good_id is required for not-good records',
+    );
+  }
+  next();
 });

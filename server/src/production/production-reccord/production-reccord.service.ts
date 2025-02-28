@@ -283,12 +283,35 @@ export class ProductionRecordService {
     return assignEmployees.map((emp) => new Types.ObjectId(emp._id.toString()));
   }
 
+  private calculateProductionDate(date?: Date): Date {
+    // ใช้ moment.tz กับเขตเวลาประเทศไทย
+    const thaiTime = date
+      ? moment(date).tz('Asia/Bangkok')
+      : moment().tz('Asia/Bangkok');
+
+    const cutoffHour = 8; // 8:00 AM
+
+    // ตรวจสอบว่าเวลาปัจจุบันอยู่ก่อน 8:00 น. หรือไม่
+    if (thaiTime.hour() < cutoffHour) {
+      // ถ้าก่อน 8:00 น. ให้ใช้วันที่ของวันก่อนหน้า
+      thaiTime.subtract(1, 'days');
+    }
+
+    // ตั้งเวลาเป็น 00:00:00 เพื่อให้มีแค่วันที่
+    thaiTime.startOf('day');
+
+    // แปลงกลับเป็น JavaScript Date object
+    return thaiTime.toDate();
+  }
+
   private async createProductionRecord(
     createDto: CreateProductionRecordDto,
     assignOrder: any,
     assignEmployeeIds: Types.ObjectId[],
     serialCode: string,
   ) {
+    const productionDate = this.calculateProductionDate();
+
     const newRecord = new this.productionRecordModel({
       ...createDto,
       assign_order_id: new Types.ObjectId(assignOrder._id.toString()),
@@ -299,6 +322,7 @@ export class ProductionRecordService {
         ? new Types.ObjectId(createDto.master_not_good_id)
         : undefined,
       serial_code: serialCode,
+      production_date: productionDate, // เพิ่ม production_date
     });
 
     return await newRecord.save();
