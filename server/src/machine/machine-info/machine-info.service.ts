@@ -649,35 +649,6 @@ export class MachineInfoService {
     }
   }
 
-  private calculateSlotSummary(
-    statuses: any[],
-    slotStart: Date,
-    slotEnd: Date,
-  ) {
-    const statusMap = new Map<string, number>();
-    const totalDuration = slotEnd.getTime() - slotStart.getTime();
-
-    statuses.forEach((status) => {
-      const duration =
-        new Date(status.last_datetime).getTime() -
-        new Date(status.first_datetime).getTime();
-      statusMap.set(
-        status.status,
-        (statusMap.get(status.status) || 0) + duration,
-      );
-    });
-
-    const result = {};
-    statusMap.forEach((duration, status) => {
-      result[status] = {
-        percentage: Number(((duration / totalDuration) * 100).toFixed(2)),
-        duration_minutes: Number((duration / (1000 * 60)).toFixed(2)),
-      };
-    });
-
-    return result;
-  }
-
   private async getCavityAndPartData(
     materialNumber: string,
   ): Promise<CavityAndPartResult> {

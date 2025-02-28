@@ -1427,95 +1427,150 @@ export class ProductionRecordService {
     }
   }
 
-  async findDateRangeSummary(
-    startDate: string,
-    endDate: string,
-    orderId: string,
+  async findSummaryByOrderId(
+    assignOrderId: string,
+    shiftType?: 'morning' | 'night' | 'all',
   ): Promise<ResponseFormat<DailySummaryData>> {
     try {
-      const orderObjectId = new Types.ObjectId(orderId);
+      const orderObjectId = new Types.ObjectId(assignOrderId);
 
-      // Get AssignOrder data for validation
+      // Get AssignOrder data with datetime_open_order
       const assignOrder = await this.assignOrderModel.findById(orderObjectId);
       if (!assignOrder) {
         throw new Error('Order not found');
       }
 
-      // Convert input dates to moment objects in Bangkok timezone
-      const start = moment(startDate).tz('Asia/Bangkok');
-      const end = moment(endDate).tz('Asia/Bangkok');
+      // Use the order's open date as start date and current date as end date
+      const startDate = moment(assignOrder.datetime_open_order).tz(
+        'Asia/Bangkok',
+      );
+      const endDate = moment().tz('Asia/Bangkok');
 
-      // Validate date range
-      if (!start.isValid() || !end.isValid()) {
-        throw new Error('Invalid date format');
-      }
-      if (end.isBefore(start)) {
-        throw new Error('End date must be after start date');
-      }
+      // Define shift timings
+      const SHIFT_TIMINGS = {
+        morning: { startHour: 8, duration: 12 }, // 08:00 - 20:00
+        night: { startHour: 20, duration: 12 }, // 20:00 - 08:00 (next day)
+      };
 
-      // Create array of dates within range
+      // Default to all shifts if not specified
+      const selectedShift = shiftType || 'all';
+
+      // Get all dates in range
       const dates: moment.Moment[] = [];
-      let currentDate = start.clone();
-
-      while (currentDate.isSameOrBefore(end, 'day')) {
+      let currentDate = startDate.clone().startOf('day');
+      while (currentDate.isSameOrBefore(endDate, 'day')) {
         dates.push(currentDate.clone());
         currentDate.add(1, 'day');
       }
 
-      // Process each day in the range
-      const summaries: DailySummaryData[] = await Promise.all(
-        dates.map(async (date) => {
-          // Set time to 8:00 AM Bangkok time for start of production day
-          const dayStart = date.clone().startOf('day').add(8, 'hours');
-          const dayEnd = dayStart.clone().add(12, 'hours');
+      // Determine which shifts to process
+      const shiftsToProcess =
+        selectedShift === 'all' ? ['morning', 'night'] : [selectedShift];
 
-          console.log('dateRange:', dayStart.format(), ' - ', dayEnd.format());
-          // Convert to UTC for database query
-          const utcStart = dayStart.utc();
-          const utcEnd = dayEnd.utc();
+      // Process each date with MongoDB aggregation
+      const summaries = await Promise.all(
+        dates.flatMap(async (date) => {
+          // Process each shift for this date
+          return Promise.all(
+            shiftsToProcess.map(async (shift) => {
+              const { startHour, duration } = SHIFT_TIMINGS[shift];
+              const queryStartTime = date
+                .clone()
+                .startOf('day')
+                .add(startHour, 'hours');
+              let queryEndTime = queryStartTime.clone().add(duration, 'hours');
 
-          // Get production records for this day
-          const dayRecords = await this.productionRecordModel
-            .find({
-              assign_order_id: orderObjectId,
-              createdAt: {
-                $gte: utcStart.toDate(),
-                $lt: utcEnd.toDate(),
-              },
-            })
-            .lean();
+              // For the first day, adjust start time if order was opened after shift start
+              if (date.isSame(startDate, 'day')) {
+                if (startDate.isAfter(queryStartTime)) {
+                  // If order opened during this shift, use open time as start
+                  if (startDate.isBefore(queryEndTime)) {
+                    queryStartTime
+                      .hours(startDate.hours())
+                      .minutes(startDate.minutes());
+                  }
+                }
+              }
 
-          // Calculate summary for this day
-          const daySummary: DailySummaryData = {
-            date: date.format('YYYY-MM-DD'),
-            total_quantity: 0,
-            good_quantity: 0,
-            not_good_quantity: 0,
-          };
+              // Handle night shift crossing day boundary
+              if (shift === 'night') {
+                // If this is today and we're looking at night shift,
+                // truncate the query to current time if needed
+                if (date.isSame(endDate, 'day')) {
+                  queryEndTime = moment.min(queryEndTime, endDate);
+                }
+              }
 
-          dayRecords.forEach((record) => {
-            const quantity = record.quantity || 0;
-            daySummary.total_quantity += quantity;
+              // Skip dates/shifts that haven't occurred yet
+              if (queryStartTime.isAfter(endDate)) {
+                return null;
+              }
 
-            if (record.is_not_good) {
-              daySummary.not_good_quantity += quantity;
-            } else {
-              daySummary.good_quantity += quantity;
-            }
-          });
+              // Use aggregation for better performance
+              const result = await this.productionRecordModel.aggregate([
+                {
+                  $match: {
+                    assign_order_id: orderObjectId,
+                    createdAt: {
+                      $gte: queryStartTime.toDate(),
+                      $lt: queryEndTime.toDate(),
+                    },
+                  },
+                },
+                {
+                  $group: {
+                    _id: null,
+                    total_quantity: { $sum: '$quantity' },
+                    good_quantity: {
+                      $sum: {
+                        $cond: [
+                          { $eq: ['$is_not_good', false] },
+                          '$quantity',
+                          0,
+                        ],
+                      },
+                    },
+                    not_good_quantity: {
+                      $sum: {
+                        $cond: [
+                          { $eq: ['$is_not_good', true] },
+                          '$quantity',
+                          0,
+                        ],
+                      },
+                    },
+                  },
+                },
+              ]);
 
-          return daySummary;
+              // Create summary with shift information
+              return {
+                date: date.format('YYYY-MM-DD'),
+                shift,
+                shift_start: queryStartTime.format('HH:mm'),
+                shift_end: queryEndTime.format('HH:mm'),
+                total_quantity: result[0]?.total_quantity || 0,
+                good_quantity: result[0]?.good_quantity || 0,
+                not_good_quantity: result[0]?.not_good_quantity || 0,
+              };
+            }),
+          );
         }),
       );
 
-      // Remove days with no production if needed
-      const nonEmptySummaries = summaries.filter(
+      // Flatten the array and filter out null results
+      const flattenedSummaries = summaries
+        .flat()
+        .filter((summary) => summary !== null);
+
+      // Filter out records with no production
+      const nonEmptySummaries = flattenedSummaries.filter(
         (summary) => summary.total_quantity > 0,
       );
 
       return {
         status: 'success',
-        message: 'Production summaries retrieved successfully',
+        message: `Production summaries for order retrieved successfully`,
         data: nonEmptySummaries,
       };
     } catch (error) {

@@ -192,14 +192,12 @@ export class ProductionRecordController {
 
   @Get('daily-summary')
   async getDailySummary(
-    @Body('start_date') startDate: string,
-    @Body('end_date') endDate: string,
-    @Body('order_id') orderId: string,
+    @Body('assign_order_id') assignOrderId: string,
+    @Body('shift_type') shiftType: 'morning' | 'night' | 'all',
   ) {
-    return await this.productionRecordService.findDateRangeSummary(
-      startDate,
-      endDate,
-      orderId,
+    return await this.productionRecordService.findSummaryByOrderId(
+      assignOrderId,
+      shiftType,
     );
   }
 
