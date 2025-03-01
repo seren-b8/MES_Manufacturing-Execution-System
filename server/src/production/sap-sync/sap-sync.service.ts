@@ -403,66 +403,52 @@ export class SapProductionSyncService {
           // จัดเตรียมข้อมูล...
           const recordIds = groupRecords.map((r) => r._id);
           // ใช้ reduce แทน loop + map เพื่อเพิ่มประสิทธิภาพ
-          const empQuantitiesObj: { [empId: string]: number } = {};
           let totalQuantity = 0;
+          let employeeIds: string[] = [];
           let isNotGood = false;
           let caseNg: string | undefined;
           let cycleTimePerUnit = 60;
-          let sncQuantity = 0;
 
           for (const record of groupRecords) {
             totalQuantity += record.quantity;
+            // เก็บรวบรวม employee IDs จากทุก record
+            for (const assignEmp of record.assign_employee_ids) {
+              const empId = assignEmp.user_id.employee_id;
+              if (!employeeIds.includes(empId)) {
+                employeeIds.push(empId);
+              }
+            }
+
             if (record.is_not_good) {
               isNotGood = true;
               caseNg = record.master_not_good_id?.case_code;
             }
 
-            // ขั้นตอนที่ 1: คำนวณจำนวนเต็มเริ่มต้นต่อพนักงาน
-            const employeeCount = record.assign_employee_ids.length;
-            const wholeQtyPerEmployee = Math.floor(
-              record.quantity / employeeCount,
-            );
-
-            // คำนวณเศษที่เหลือ
-            let remainder =
-              record.quantity - wholeQtyPerEmployee * employeeCount;
-
-            // ขั้นตอนที่ 2: ปัดเศษทศนิยมเข้า sncQuantity
-            sncQuantity += record.quantity % 1;
-
-            // เตรียม array ของพนักงานที่จะได้รับการแจกจ่ายเพิ่ม
-            const employeesToDistribute = [...record.assign_employee_ids].map(
-              (emp) => emp.user_id.employee_id,
-            );
-
-            // ขั้นตอนที่ 3: แบ่งจำนวนเต็มให้แต่ละพนักงาน
-            for (const assignEmp of record.assign_employee_ids) {
-              const empId = assignEmp.user_id.employee_id;
-              empQuantitiesObj[empId] =
-                (empQuantitiesObj[empId] || 0) + wholeQtyPerEmployee;
-            }
-            // ใช้ lodash เพื่อเรียงลำดับพนักงานตามจำนวนที่ได้รับ (น้อยไปมาก)
-            const sortedEmployees = _.chain(empQuantitiesObj)
-              .toPairs() // แปลง object เป็น array ของ [key, value]
-              .sortBy(1) // เรียงตาม value (ตำแหน่งที่ 1)
-              .map(0) // เลือกเฉพาะ key (ตำแหน่งที่ 0)
-              .value(); // แปลงกลับเป็น array
-
-            // ขั้นตอนที่ 4: พยายามแจกจ่ายเศษให้พนักงานให้มากที่สุด
-            // แจกคนละ 1 หน่วย จนกว่าเศษจะหมดหรือแจกครบทุกคน
-            while (remainder >= 1 && sortedEmployees.length > 0) {
-              const empId = sortedEmployees.shift(); // เอาพนักงานคนแรกออกมา
-              empQuantitiesObj[empId] += 1; // เพิ่มให้ 1 หน่วย
-              remainder -= 1; // ลดเศษลง 1
-            }
-
-            // ขั้นตอนที่ 5: เศษที่เหลือจากการแจกจ่าย (ถ้ามี) เข้า SNC
-            sncQuantity += remainder;
-
             if (record.assign_order_id.machine_info?.cycle_time) {
               cycleTimePerUnit = record.assign_order_id.machine_info.cycle_time;
             }
           }
+
+          // คำนวณจำนวนต่อพนักงานที่ควรได้ (ทุกคนเท่ากัน)
+          const employeeCount = employeeIds.length;
+          const equalSharePerEmployee = Math.floor(
+            totalQuantity / employeeCount,
+          );
+
+          // คำนวณเศษที่เหลือ (ไม่สามารถแบ่งเท่ากันได้)
+          const remainder =
+            totalQuantity - equalSharePerEmployee * employeeCount;
+
+          // สร้าง map จำนวนต่อพนักงาน
+          const empQuantitiesObj: { [empId: string]: number } = {};
+
+          // แบ่งให้แต่ละพนักงานเท่าๆ กัน
+          for (const empId of employeeIds) {
+            empQuantitiesObj[empId] = equalSharePerEmployee;
+          }
+
+          // เศษทั้งหมดไปเข้า SNC
+          const sncQuantity = remainder;
 
           // แปลง obj เป็น Map
           const empQuantities = new Map(Object.entries(empQuantitiesObj));
