@@ -229,7 +229,7 @@ export class SapProductionSyncService {
             is_synced_to_sap: false,
           })
           .select(
-            'quantity is_not_good assign_employee_ids assign_order_id master_not_good_id createdAt',
+            'quantity is_not_good assign_employee_ids assign_order_id master_not_good_id createdAt production_date',
           )
           .populate([
             {
@@ -384,6 +384,7 @@ export class SapProductionSyncService {
       for (const record of records) {
         const order = record.assign_order_id.production_order_id;
         const dateStr = moment(record.production_date).format('YYYYMMDD');
+        console.log('productionDate:', record.production_date);
 
         // ใช้งาน object เป็น key กำหนด pattern ให้ชัดเจน
         const key = `${order.order_id}-${order.sequence_number || '000000'}-${
