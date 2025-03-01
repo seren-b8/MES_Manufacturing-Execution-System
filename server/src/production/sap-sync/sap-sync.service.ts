@@ -383,8 +383,9 @@ export class SapProductionSyncService {
 
       for (const record of records) {
         const order = record.assign_order_id.production_order_id;
-        const dateStr = moment(record.production_date).format('YYYYMMDD');
-        console.log('productionDate:', record.production_date);
+        const dateStr = moment(record.production_date)
+          .tz('Asia/Bangkok')
+          .format('YYYYMMDD');
 
         // ใช้งาน object เป็น key กำหนด pattern ให้ชัดเจน
         const key = `${order.order_id}-${order.sequence_number || '000000'}-${
@@ -464,7 +465,9 @@ export class SapProductionSyncService {
             employee_quantities: empQuantities,
             snc_quantity: sncQuantity,
             cycle_time_per_unit: cycleTimePerUnit,
-            production_date: moment(dateStr, 'YYYYMMDD').toDate(),
+            production_date: moment
+              .tz(dateStr, 'YYYYMMDD', 'Asia/Bangkok')
+              .toDate(),
           };
 
           // ส่งข้อมูลไป SAP
