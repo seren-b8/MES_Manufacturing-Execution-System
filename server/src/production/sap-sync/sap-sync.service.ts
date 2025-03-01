@@ -416,26 +416,40 @@ export class SapProductionSyncService {
               caseNg = record.master_not_good_id?.case_code;
             }
 
-            // ปรับปรุงการแบ่งจำนวนต่อพนักงาน
+            // ขั้นตอนที่ 1: คำนวณจำนวนเต็มเริ่มต้นต่อพนักงาน
             const employeeCount = record.assign_employee_ids.length;
-            // คำนวณจำนวนเต็มที่แบ่งได้ต่อพนักงาน
             const wholeQtyPerEmployee = Math.floor(
               record.quantity / employeeCount,
             );
+
             // คำนวณเศษที่เหลือ
-            const remainder =
+            let remainder =
               record.quantity - wholeQtyPerEmployee * employeeCount;
 
-            // แบ่งจำนวนเต็มให้แต่ละพนักงาน
+            // ขั้นตอนที่ 2: ปัดเศษทศนิยมเข้า sncQuantity
+            sncQuantity += record.quantity % 1;
+
+            // เตรียม array ของพนักงานที่จะได้รับการแจกจ่ายเพิ่ม
+            const employeesToDistribute = [...record.assign_employee_ids].map(
+              (emp) => emp.user_id.employee_id,
+            );
+
+            // ขั้นตอนที่ 3: แบ่งจำนวนเต็มให้แต่ละพนักงาน
             for (const assignEmp of record.assign_employee_ids) {
               const empId = assignEmp.user_id.employee_id;
               empQuantitiesObj[empId] =
                 (empQuantitiesObj[empId] || 0) + wholeQtyPerEmployee;
             }
 
-            // เพิ่มเศษทศนิยมจากปริมาณปัจจุบัน
-            sncQuantity += record.quantity % 1;
-            // เพิ่มเศษจากการแบ่งจำนวนเต็ม
+            // ขั้นตอนที่ 4: พยายามแจกจ่ายเศษให้พนักงานให้มากที่สุด
+            // แจกคนละ 1 หน่วย จนกว่าเศษจะหมดหรือแจกครบทุกคน
+            while (remainder >= 1 && employeesToDistribute.length > 0) {
+              const empId = employeesToDistribute.shift(); // เอาพนักงานคนแรกออกมา
+              empQuantitiesObj[empId] += 1; // เพิ่มให้ 1 หน่วย
+              remainder -= 1; // ลดเศษลง 1
+            }
+
+            // ขั้นตอนที่ 5: เศษที่เหลือจากการแจกจ่าย (ถ้ามี) เข้า SNC
             sncQuantity += remainder;
 
             if (record.assign_order_id.machine_info?.cycle_time) {
