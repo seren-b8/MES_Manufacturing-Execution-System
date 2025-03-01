@@ -7,6 +7,7 @@ import { SAPSyncLog } from 'src/shared/modules/schema/sap_sync_log.schema';
 import { GroupedProductionData } from 'src/shared/interface/sap';
 import { SapSyncValidationService } from './sap-sync-validation.service';
 import * as moment from 'moment-timezone';
+import * as _ from 'lodash';
 
 @Injectable()
 export class SapProductionSyncService {
@@ -440,11 +441,17 @@ export class SapProductionSyncService {
               empQuantitiesObj[empId] =
                 (empQuantitiesObj[empId] || 0) + wholeQtyPerEmployee;
             }
+            // ใช้ lodash เพื่อเรียงลำดับพนักงานตามจำนวนที่ได้รับ (น้อยไปมาก)
+            const sortedEmployees = _.chain(empQuantitiesObj)
+              .toPairs() // แปลง object เป็น array ของ [key, value]
+              .sortBy(1) // เรียงตาม value (ตำแหน่งที่ 1)
+              .map(0) // เลือกเฉพาะ key (ตำแหน่งที่ 0)
+              .value(); // แปลงกลับเป็น array
 
             // ขั้นตอนที่ 4: พยายามแจกจ่ายเศษให้พนักงานให้มากที่สุด
             // แจกคนละ 1 หน่วย จนกว่าเศษจะหมดหรือแจกครบทุกคน
-            while (remainder >= 1 && employeesToDistribute.length > 0) {
-              const empId = employeesToDistribute.shift(); // เอาพนักงานคนแรกออกมา
+            while (remainder >= 1 && sortedEmployees.length > 0) {
+              const empId = sortedEmployees.shift(); // เอาพนักงานคนแรกออกมา
               empQuantitiesObj[empId] += 1; // เพิ่มให้ 1 หน่วย
               remainder -= 1; // ลดเศษลง 1
             }
