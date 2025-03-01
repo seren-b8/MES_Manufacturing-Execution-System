@@ -597,31 +597,3 @@ export class SapProductionSyncService {
     });
   }
 }
-// INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG')
-//       VALUES (
-//         '700',
-//       '${tid}', //->>>  รหัสรายการ หาก order_id เดียวกัน ให้ใช้รหัสเดียวกัน
-//       1, //->>> หาก tid เดียวกัน ให้เพิ่มขึ้นทีละ 1
-//       '${syncLog.employee_id}',  //->>> รหัสพนักงาน
-//       '${groupedData.order_id.padStart(12, '0')}', //->>> รหัสใบสั่งงาน
-//       '${groupedData.sequence_no.padStart(6, '0')}', //->>> ลำดับใบสั่งงาน
-//       '${groupedData.activity.padStart(4, '0')}', //->>> กิจกรรม
-//       '',
-//       ${syncLog.quantity.toFixed(3)},  //->>> จำนวน งาน OK
-//       'ST',
-//       ${syncLog.quantity.toFixed(3)}, //->>> จำนวน งาน NG
-//       0,
-//       0,
-//       '',
-//       CONVERT(VARCHAR(50),GETDATE(),112), //->>> วันที่
-//       ${syncLog.quantity.toFixed(3)}, //->>> time job
-//       'STD',
-//       '',
-//       '',
-//       CONVERT(VARCHAR(50),GETDATE(),112),
-//       REPLACE(CONVERT(VARCHAR(8),GETDATE(),108),':',''),
-//       'ADMINIT',
-//       '1620',
-//       '${groupedData.is_not_good ? groupedData.case_ng || '' : ''}',
-//       'Team'
-//       )`;
