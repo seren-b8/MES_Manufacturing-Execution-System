@@ -114,11 +114,11 @@ export class ProductionRecordController {
   ) {
     const result = await this.productionRecordService.update(id, updateDto);
 
-    // Check if confirmation_status is 'confirmed'
-    if (updateDto.confirmation_status === 'confirmed') {
-      // Call syncPendingRecords if confirmation_status is 'confirmed'
-      await this.sapSyncService.syncPendingRecords();
-    }
+    // // Check if confirmation_status is 'confirmed'
+    // if (updateDto.confirmation_status === 'confirmed') {
+    //   // Call syncPendingRecords if confirmation_status is 'confirmed'
+    //   await this.sapSyncService.syncPendingRecords();
+    // }
 
     return result;
   }
