@@ -33,7 +33,7 @@ export class SapProductionSyncService {
   private createSAPSyncQuery(syncLog: SAPSyncLog): string {
     // ค่าคงที่สำหรับ SAP
     const SAP_CONSTANTS = {
-      MANDT: '700', //!TODO 700 = QAS, 900 = PRD
+      MANDT: '900', //!TODO 700 = QAS, 900 = PRD
       MEINH: 'ST',
       ISMNGEH: 'STD',
       ERNAM: 'ADMINIT',
@@ -84,7 +84,7 @@ export class SapProductionSyncService {
     //! [SNC-HANA] คือชื่อ Linked Server ที่เชื่อมต่อกับ SAP HANA ใช้กับ PRD
     //! [SNC-HBQ] คือชื่อ Linked Server ที่เชื่อมต่อกับ SAP HANA ใช้กับ QAS
     return `
-      INSERT INTO OPENQUERY([SNC-HBQ],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
+      INSERT INTO OPENQUERY([SNC-HANA],'SELECT MANDT,TID,ITEMNO,EMPLOYEE,AUFNR,APLFL,VORNR,UVORN,LMNGA,MEINH,XMNGA,RMNGA,RUECK,RMZHL,BUDAT,ISMNG,ISMNGEH,POSTED,MESSAGE,ERDAT,ERZET,ERNAM,WERKS,AGRND,TILE FROM ZIPHT_CONF_LOG') 
       VALUES (
         '${SAP_CONSTANTS.MANDT}',
         '${validatedFields.TID}',
@@ -131,7 +131,7 @@ export class SapProductionSyncService {
         throw new Error('Quantity must be greater than 0');
       }
 
-      if (syncLog.is_not_good && !syncLog.agrnd) {
+      if (syncLog.is_not_good && !syncLog.agrnd && syncLog.agrnd !== '') {
         throw new Error('Reason code is required for not good items');
       }
     } catch (error) {
@@ -186,6 +186,77 @@ export class SapProductionSyncService {
     }
   }
 
+  private async sendToSapInBatches(
+    syncLogEntries: SAPSyncLog[],
+    concurrentLimit = 3, // ลดจาก 5 เป็น 3
+  ): Promise<void> {
+    // แบ่งเป็นกลุ่มๆ
+    const chunks: SAPSyncLog[][] = [];
+    for (let i = 0; i < syncLogEntries.length; i += concurrentLimit) {
+      chunks.push(syncLogEntries.slice(i, i + concurrentLimit));
+    }
+
+    // ส่งข้อมูลทีละชุดพร้อมกับ delay ที่มากขึ้น
+    for (const chunk of chunks) {
+      try {
+        await Promise.all(
+          chunk.map((syncLog) =>
+            this.sendToSap(syncLog, {
+              order_id: syncLog.aufnr.trim(),
+              sequence_no: syncLog.aplfl.trim(),
+              activity: syncLog.vornr.trim(),
+              is_not_good: syncLog.is_not_good,
+              case_ng: syncLog.agrnd,
+              employee_quantities: new Map(),
+              snc_quantity: 0,
+              cycle_time_per_unit: syncLog.cycle_time_per_unit,
+              production_date: moment(syncLog.budat, 'YYYYMMDD')
+                .tz('Asia/Bangkok')
+                .toDate(),
+            }),
+          ),
+        );
+      } catch (error) {
+        // จัดการ error ที่เกิดขึ้นทั้งชุด
+        console.error(`Batch error: ${(error as Error).message}`);
+
+        // ส่งทีละรายการเมื่อเกิด error กับทั้งชุด
+        for (const syncLog of chunk) {
+          try {
+            await this.sendToSap(syncLog, {
+              order_id: syncLog.aufnr.trim(),
+              sequence_no: syncLog.aplfl.trim(),
+              activity: syncLog.vornr.trim(),
+              is_not_good: syncLog.is_not_good,
+              case_ng: syncLog.agrnd,
+              employee_quantities: new Map(),
+              snc_quantity: 0,
+              cycle_time_per_unit: syncLog.cycle_time_per_unit,
+              production_date: moment(syncLog.budat, 'YYYYMMDD')
+                .tz('Asia/Bangkok')
+                .toDate(),
+            });
+            // เพิ่ม delay ระหว่างแต่ละรายการเมื่อส่งแบบเดี่ยว
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } catch (itemError) {
+            console.error(
+              `Failed to send item: ${(itemError as Error).message}`,
+            );
+            // อัพเดทสถานะ log เป็น failed
+            await this.updateSyncLogStatus(
+              syncLog._id,
+              'failed',
+              (itemError as Error).message,
+            );
+          }
+        }
+      }
+
+      // เพิ่ม delay ระหว่างชุดให้มากขึ้น
+      await new Promise((resolve) => setTimeout(resolve, 800)); // เพิ่มจาก 200ms เป็น 800ms
+    }
+  }
+
   private async updateSyncLogStatus(
     logId: Types.ObjectId,
     status: 'completed' | 'failed' | 'pending',
@@ -198,6 +269,251 @@ export class SapProductionSyncService {
     };
 
     await this.sapSyncLogModel.findByIdAndUpdate(logId, updateData);
+  }
+
+  private async processRecords(
+    records: any[],
+    orderTidMap: Map<string, string>,
+  ) {
+    let processedCount = 0;
+
+    try {
+      // จัดกลุ่มข้อมูลตาม order_id, sequence และ activity
+      const groupedRecords: { [key: string]: any[] } = {};
+
+      for (const record of records) {
+        const order = record.assign_order_id.production_order_id;
+        const dateStr = moment(record.production_date)
+          .tz('Asia/Bangkok')
+          .format('YYYYMMDD');
+
+        const caseCode =
+          record.is_not_good && record.master_not_good_id
+            ? record.master_not_good_id.case_code || 'UNKNOWN'
+            : '';
+
+        // ใช้งาน object เป็น key กำหนด pattern ให้ชัดเจน
+        const key = `${order.order_id}-${order.sequence_number || '000000'}-${
+          order.activity || '0010'
+        }-${dateStr}-${record.is_not_good ? 'NG' : 'OK'}-${record.is_not_good ? caseCode : ''}`;
+
+        if (!groupedRecords[key]) {
+          groupedRecords[key] = [];
+        }
+        groupedRecords[key].push(record);
+      }
+
+      // เก็บข้อมูลทั้งหมดของแต่ละ order ก่อนประมวลผล
+      const orderGroups: {
+        [orderId: string]: { key: string; records: any[] }[];
+      } = {};
+
+      // จัดกลุ่มตาม orderId
+      Object.entries(groupedRecords).forEach(([key, groupRecords]) => {
+        const [orderId] = key.split('-');
+        if (!orderGroups[orderId]) {
+          orderGroups[orderId] = [];
+        }
+        orderGroups[orderId].push({ key, records: groupRecords });
+      });
+
+      const orderPromises = Object.entries(orderGroups).map(
+        async ([orderId, groups]) => {
+          // ใช้ TID ที่มีอยู่แล้วหรือสร้างใหม่
+          let sharedTid = orderTidMap.get(orderId);
+          if (!sharedTid) {
+            sharedTid = await this.validationService.createTID();
+            orderTidMap.set(orderId, sharedTid);
+          }
+          // เตรียมข้อมูลสำหรับทุกกลุ่มใน order นี้
+          let globalItemCounter = 1; // itemno เริ่มที่ 1 สำหรับแต่ละ order
+          const allSyncLogEntries: SAPSyncLog[] = [];
+
+          // ประมวลผลแต่ละกลุ่มในแต่ละ order
+          for (const { key, records } of groups) {
+            const keySplit = key.split('-');
+            const orderId = keySplit[0];
+            const sequenceNo = keySplit[1];
+            const activity = keySplit[2];
+            const dateStr = keySplit[3];
+            const recordType = keySplit[4];
+            const caseCode = keySplit[5];
+
+            const isNotGood = recordType === 'NG';
+
+            // ใช้ reduce แทน loop + map เพื่อเพิ่มประสิทธิภาพ
+            let totalQuantity = 0;
+            let employeeIds: string[] = [];
+            let cycleTimePerUnit = 60;
+
+            for (const record of records) {
+              totalQuantity += record.quantity;
+              // เก็บรวบรวม employee IDs จากทุก record
+              for (const assignEmp of record.assign_employee_ids) {
+                const empId = assignEmp.user_id.employee_id;
+                if (!employeeIds.includes(empId)) {
+                  employeeIds.push(empId);
+                }
+              }
+
+              if (record.assign_order_id.machine_info?.cycle_time) {
+                cycleTimePerUnit =
+                  record.assign_order_id.machine_info.cycle_time;
+              }
+            }
+
+            // คำนวณจำนวนต่อพนักงานที่ควรได้ (ทุกคนเท่ากัน)
+            const employeeCount = employeeIds.length;
+            const equalSharePerEmployee = Math.floor(
+              totalQuantity / employeeCount,
+            );
+
+            // คำนวณเศษที่เหลือ (ไม่สามารถแบ่งเท่ากันได้)
+            const remainder =
+              totalQuantity - equalSharePerEmployee * employeeCount;
+
+            // สร้าง map จำนวนต่อพนักงาน
+            const empQuantitiesObj: { [empId: string]: number } = {};
+
+            // แบ่งให้แต่ละพนักงานเท่าๆ กัน
+            for (const empId of employeeIds) {
+              empQuantitiesObj[empId] = equalSharePerEmployee;
+            }
+
+            // เศษทั้งหมดไปเข้า SNC
+            const sncQuantity = remainder;
+
+            // แปลง obj เป็น Map
+            const empQuantities = new Map(Object.entries(empQuantitiesObj));
+
+            // เตรียมข้อมูลสำหรับส่ง SAP
+            const groupedData: GroupedProductionData = {
+              order_id: orderId,
+              sequence_no: sequenceNo,
+              activity: activity,
+              is_not_good: isNotGood,
+              case_ng: isNotGood ? caseCode : undefined,
+              employee_quantities: empQuantities,
+              snc_quantity: sncQuantity,
+              cycle_time_per_unit: cycleTimePerUnit,
+              production_date: moment
+                .tz(dateStr, 'YYYYMMDD', 'Asia/Bangkok')
+                .toDate(),
+            };
+
+            // สร้าง sync log entries สำหรับกลุ่มนี้ และเพิ่มเข้าไปในรายการรวม
+            const recordIds = records.map((r) => r._id);
+
+            for (const [
+              employeeId,
+              quantity,
+            ] of groupedData.employee_quantities) {
+              const syncLog = await this.createSyncLogEntryWithSharedTid(
+                recordIds,
+                employeeId,
+                quantity,
+                'EMP',
+                groupedData,
+                sharedTid,
+                globalItemCounter++, // ใช้ globalItemCounter
+              );
+              allSyncLogEntries.push(syncLog);
+            }
+
+            if (groupedData.snc_quantity > 0) {
+              const sncSyncLog = await this.createSyncLogEntryWithSharedTid(
+                recordIds,
+                'SNC',
+                groupedData.snc_quantity,
+                'SNC',
+                groupedData,
+                sharedTid,
+                globalItemCounter++, // ใช้ globalItemCounter
+              );
+              allSyncLogEntries.push(sncSyncLog);
+            }
+
+            // อัพเดทสถานะ records
+            await this.productionRecordModel.updateMany(
+              { _id: { $in: recordIds } },
+              {
+                is_synced_to_sap: true,
+                sap_sync_timestamp: moment.tz('Asia/Bangkok').toDate(),
+              },
+            );
+          }
+
+          // ในฟังก์ชัน processRecords
+          // ส่งข้อมูลทั้งหมดไป SAP
+          await this.sendToSapInBatches(allSyncLogEntries);
+          return groups.reduce(
+            (total, { records }) => total + records.length,
+            0,
+          );
+        },
+      );
+
+      // รอให้ทุก order ทำงานเสร็จและรวมจำนวนที่ประมวลผล
+      const results = await Promise.all(orderPromises);
+      processedCount = results.reduce((sum, count) => sum + count, 0);
+
+      return processedCount;
+    } catch (error) {
+      throw new Error(`Failed to process records: ${(error as Error).message}`);
+    }
+  }
+
+  private async createSyncLogEntryWithSharedTid(
+    productionRecordIds: Types.ObjectId[],
+    employeeId: string,
+    quantity: number,
+    syncType: 'EMP' | 'SNC',
+    groupedData: GroupedProductionData,
+    sharedTid: string,
+    itemno: number,
+  ): Promise<SAPSyncLog> {
+    const productionDate = moment(groupedData.production_date).tz(
+      'Asia/Bangkok',
+    );
+    const now = moment.tz('Asia/Bangkok');
+
+    const validatedEmpId =
+      this.validationService.validateAndTruncateEmployeeId(employeeId);
+
+    this.validationService.validateSAPFields({
+      employeeId: validatedEmpId,
+      orderId: groupedData.order_id,
+      sequenceNo: groupedData.sequence_no,
+      activity: groupedData.activity,
+    });
+
+    return await this.sapSyncLogModel.create({
+      // ข้อมูลอ้างอิง
+      production_record_ids: productionRecordIds,
+      employee_id: employeeId,
+      quantity,
+      sync_type: syncType,
+      status: 'pending',
+
+      // ข้อมูล SAP
+      tid: sharedTid,
+      itemno: itemno, // ใช้ค่า itemno ที่ส่งมา
+      aufnr: groupedData.order_id.padStart(12, '0'),
+      aplfl: groupedData.sequence_no.padStart(6, '0'),
+      vornr: groupedData.activity.padStart(4, '0'),
+      budat: this.formatDate(productionDate), // Posting date
+      erdat: this.formatDate(now),
+      erzet: this.formatTime(now),
+
+      // ข้อมูลงานเสีย
+      is_not_good: groupedData.is_not_good,
+      agrnd: groupedData.is_not_good ? groupedData.case_ng : undefined,
+
+      cycle_time_per_unit: groupedData.cycle_time_per_unit || 60,
+
+      //วันที่ผลิต
+      production_date: groupedData.production_date,
+    });
   }
 
   async syncPendingRecords() {
@@ -220,6 +536,9 @@ export class SapProductionSyncService {
       const batchSize = 100;
       let processedCount = 0;
       let currentPage = 0;
+
+      // สร้าง Map เพื่อเก็บ TID สำหรับแต่ละ order
+      const orderTidMap = new Map<string, string>();
 
       // ประมวลผลทีละ batch
       while (processedCount < totalCount) {
@@ -252,8 +571,11 @@ export class SapProductionSyncService {
 
         if (pendingRecords.length === 0) break;
 
-        // ประมวลผล batch นี้
-        const batchProcessed = await this.processRecords(pendingRecords);
+        // ประมวลผล batch นี้ โดยส่ง orderTidMap เข้าไปด้วย
+        const batchProcessed = await this.processRecords(
+          pendingRecords,
+          orderTidMap,
+        );
         processedCount += batchProcessed;
         currentPage++;
       }
@@ -374,128 +696,6 @@ export class SapProductionSyncService {
     }
   }
 
-  private async processRecords(records: any[]) {
-    let processedCount = 0;
-
-    try {
-      // จัดกลุ่มข้อมูลตาม order_id, sequence และ activity
-      const groupedRecords: { [key: string]: any[] } = {};
-
-      for (const record of records) {
-        const order = record.assign_order_id.production_order_id;
-        const dateStr = moment(record.production_date)
-          .tz('Asia/Bangkok')
-          .format('YYYYMMDD');
-
-        // ใช้งาน object เป็น key กำหนด pattern ให้ชัดเจน
-        const key = `${order.order_id}-${order.sequence_number || '000000'}-${
-          order.activity || '0010'
-        }-${dateStr}`;
-
-        if (!groupedRecords[key]) {
-          groupedRecords[key] = [];
-        }
-        groupedRecords[key].push(record);
-      }
-      const groupPromises = Object.entries(groupedRecords).map(
-        async ([key, groupRecords]) => {
-          // ตัด key ออกเป็นส่วนๆ
-          const [orderId, sequenceNo, activity, dateStr] = key.split('-');
-
-          // จัดเตรียมข้อมูล...
-          const recordIds = groupRecords.map((r) => r._id);
-          // ใช้ reduce แทน loop + map เพื่อเพิ่มประสิทธิภาพ
-          let totalQuantity = 0;
-          let employeeIds: string[] = [];
-          let isNotGood = false;
-          let caseNg: string | undefined;
-          let cycleTimePerUnit = 60;
-
-          for (const record of groupRecords) {
-            totalQuantity += record.quantity;
-            // เก็บรวบรวม employee IDs จากทุก record
-            for (const assignEmp of record.assign_employee_ids) {
-              const empId = assignEmp.user_id.employee_id;
-              if (!employeeIds.includes(empId)) {
-                employeeIds.push(empId);
-              }
-            }
-
-            if (record.is_not_good) {
-              isNotGood = true;
-              caseNg = record.master_not_good_id?.case_code;
-            }
-
-            if (record.assign_order_id.machine_info?.cycle_time) {
-              cycleTimePerUnit = record.assign_order_id.machine_info.cycle_time;
-            }
-          }
-
-          // คำนวณจำนวนต่อพนักงานที่ควรได้ (ทุกคนเท่ากัน)
-          const employeeCount = employeeIds.length;
-          const equalSharePerEmployee = Math.floor(
-            totalQuantity / employeeCount,
-          );
-
-          // คำนวณเศษที่เหลือ (ไม่สามารถแบ่งเท่ากันได้)
-          const remainder =
-            totalQuantity - equalSharePerEmployee * employeeCount;
-
-          // สร้าง map จำนวนต่อพนักงาน
-          const empQuantitiesObj: { [empId: string]: number } = {};
-
-          // แบ่งให้แต่ละพนักงานเท่าๆ กัน
-          for (const empId of employeeIds) {
-            empQuantitiesObj[empId] = equalSharePerEmployee;
-          }
-
-          // เศษทั้งหมดไปเข้า SNC
-          const sncQuantity = remainder;
-
-          // แปลง obj เป็น Map
-          const empQuantities = new Map(Object.entries(empQuantitiesObj));
-
-          // เตรียมข้อมูลสำหรับส่ง SAP
-          const groupedData: GroupedProductionData = {
-            order_id: orderId,
-            sequence_no: sequenceNo,
-            activity: activity,
-            is_not_good: isNotGood,
-            case_ng: caseNg,
-            employee_quantities: empQuantities,
-            snc_quantity: sncQuantity,
-            cycle_time_per_unit: cycleTimePerUnit,
-            production_date: moment
-              .tz(dateStr, 'YYYYMMDD', 'Asia/Bangkok')
-              .toDate(),
-          };
-
-          // ส่งข้อมูลไป SAP
-          await this.processProductionSync(recordIds, groupedData);
-
-          // อัพเดทสถานะ records ด้วย bulk operation
-          await this.productionRecordModel.updateMany(
-            { _id: { $in: recordIds } },
-            {
-              is_synced_to_sap: true,
-              sap_sync_timestamp: moment.tz('Asia/Bangkok').toDate(),
-            },
-          );
-
-          return groupRecords.length;
-        },
-      );
-
-      // รอให้ทุกกลุ่มทำงานเสร็จและรวมจำนวนที่ประมวลผล
-      const results = await Promise.all(groupPromises);
-      processedCount = results.reduce((sum, count) => sum + count, 0);
-
-      return processedCount;
-    } catch (error) {
-      throw new Error(`Failed to process records: ${(error as Error).message}`);
-    }
-  }
-
   async processProductionSync(
     productionRecordIds: Types.ObjectId[],
     groupedData: GroupedProductionData,
@@ -534,63 +734,6 @@ export class SapProductionSyncService {
       syncLogEntries.push(sncSyncLog);
     }
 
-    // ส่งข้อมูลไป SAP แบบ parallel เพื่อเพิ่มความเร็ว (ถ้า SAP รองรับ)
-    await Promise.all(
-      syncLogEntries.map((syncLog) => this.sendToSap(syncLog, groupedData)),
-    );
-  }
-
-  // เมธอดใหม่ที่รับ TID และ itemno จากภายนอก
-  private async createSyncLogEntryWithSharedTid(
-    productionRecordIds: Types.ObjectId[],
-    employeeId: string,
-    quantity: number,
-    syncType: 'EMP' | 'SNC',
-    groupedData: GroupedProductionData,
-    sharedTid: string,
-    itemno: number,
-  ): Promise<SAPSyncLog> {
-    const productionDate = moment(groupedData.production_date).tz(
-      'Asia/Bangkok',
-    );
-    const now = moment.tz('Asia/Bangkok');
-
-    const validatedEmpId =
-      this.validationService.validateAndTruncateEmployeeId(employeeId);
-
-    this.validationService.validateSAPFields({
-      employeeId: validatedEmpId,
-      orderId: groupedData.order_id,
-      sequenceNo: groupedData.sequence_no,
-      activity: groupedData.activity,
-    });
-
-    return await this.sapSyncLogModel.create({
-      // ข้อมูลอ้างอิง
-      production_record_ids: productionRecordIds,
-      employee_id: employeeId,
-      quantity,
-      sync_type: syncType,
-      status: 'pending',
-
-      // ข้อมูล SAP
-      tid: sharedTid,
-      itemno: itemno, // ใช้ค่า itemno ที่ส่งมา
-      aufnr: groupedData.order_id.padStart(12, '0'),
-      aplfl: groupedData.sequence_no.padStart(6, '0'),
-      vornr: groupedData.activity.padStart(4, '0'),
-      budat: this.formatDate(productionDate), // Posting date
-      erdat: this.formatDate(now),
-      erzet: this.formatTime(now),
-
-      // ข้อมูลงานเสีย
-      is_not_good: groupedData.is_not_good,
-      agrnd: groupedData.is_not_good ? groupedData.case_ng : undefined,
-
-      cycle_time_per_unit: groupedData.cycle_time_per_unit || 60,
-
-      //วันที่ผลิต
-      production_date: groupedData.production_date,
-    });
+    await this.sendToSapInBatches(syncLogEntries);
   }
 }
