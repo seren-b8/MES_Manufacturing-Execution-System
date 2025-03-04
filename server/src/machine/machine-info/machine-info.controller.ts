@@ -14,11 +14,8 @@ import { MachineInfoService } from './machine-info.service';
 
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { CreateMachineInfoDto } from '../dto/machine-info.dto';
-import { promises } from 'dns';
-import { Response } from 'express';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import { ResponseFormat } from 'src/shared/interface';
-import { registerAs } from '@nestjs/config';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 
 // Controller
