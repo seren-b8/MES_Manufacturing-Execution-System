@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ collection: 'production_order' })
+@Schema({ collection: 'production_order', timestamps: true })
 export class ProductionOrder extends Document {
   @Prop({ default: null })
   plant: string;
@@ -15,11 +15,11 @@ export class ProductionOrder extends Document {
   @Prop({ default: null })
   material_description: string; // changed from MatDesc
 
-  @Prop({ default: null })
-  basic_start_date: string; // changed from BS_StartDate
+  @Prop({ type: Date, default: null }) // เปลี่ยนเป็น Date
+  basic_start_date: Date;
 
-  @Prop({ default: null })
-  basic_finish_date: string; // changed from BS_FinishDate
+  @Prop({ type: Date, default: null }) // เปลี่ยนเป็น Date
+  basic_finish_date: Date;
 
   @Prop({ default: null })
   target_quantity: number; // changed from TargetQty
@@ -93,14 +93,18 @@ export class ProductionOrder extends Document {
   @Prop({ default: null })
   show_job: number;
 
-  @Prop({ default: null })
-  log_date: string;
+  @Prop({ type: Date, default: null }) // เปลี่ยนเป็น Date
+  log_date: Date;
 
   @Prop({ default: null })
   condition_amount: number;
 
   @Prop({ default: false, type: Boolean })
   assign_stage: boolean;
+
+  createdAt?: Date; // จาก timestamps: true
+
+  updateAt?: Date; // จาก timestamps: true
 }
 
 export const ProductionOrderSchema =
