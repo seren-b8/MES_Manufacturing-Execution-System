@@ -283,27 +283,6 @@ export class ProductionRecordService {
     return assignEmployees.map((emp) => new Types.ObjectId(emp._id.toString()));
   }
 
-  private calculateProductionDate(date?: Date): Date {
-    // ใช้ moment.tz กับเขตเวลาประเทศไทย
-    const thaiTime = date
-      ? moment(date).tz('Asia/Bangkok')
-      : moment().tz('Asia/Bangkok');
-
-    const cutoffHour = 8; // 8:00 AM
-
-    // ตรวจสอบว่าเวลาปัจจุบันอยู่ก่อน 8:00 น. หรือไม่
-    if (thaiTime.hour() < cutoffHour) {
-      // ถ้าก่อน 8:00 น. ให้ใช้วันที่ของวันก่อนหน้า
-      thaiTime.subtract(1, 'days');
-    }
-
-    // ตั้งเวลาเป็น 00:00:00 เพื่อให้มีแค่วันที่
-    thaiTime.startOf('day');
-
-    // แปลงกลับเป็น JavaScript Date object
-    return thaiTime.toDate();
-  }
-
   private async createProductionRecord(
     createDto: CreateProductionRecordDto,
     assignOrder: any,
@@ -326,6 +305,73 @@ export class ProductionRecordService {
     });
 
     return await newRecord.save();
+  }
+
+  private async updateAssignOrderSummary(assignOrderId: string) {
+    try {
+      const records = await this.productionRecordModel.find({
+        assign_order_id: new Types.ObjectId(assignOrderId),
+      });
+
+      const summary = records.reduce(
+        (acc, record) => {
+          if (record.is_not_good) {
+            acc.total_not_good_quantity += record.quantity;
+          } else {
+            acc.total_good_quantity += record.quantity;
+          }
+          return acc;
+        },
+        { total_good_quantity: 0, total_not_good_quantity: 0 },
+      );
+
+      // Update assign order summary
+      await this.assignOrderModel.findByIdAndUpdate(assignOrderId, {
+        $set: {
+          current_summary: {
+            ...summary,
+            last_update: new Date(),
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Failed to update assign order summary:', error);
+    }
+  }
+
+  private calculateProductionDate(date?: Date): Date {
+    // ใช้ moment.tz กับเขตเวลาประเทศไทย
+    const thaiTime = date
+      ? moment(date).tz('Asia/Bangkok')
+      : moment().tz('Asia/Bangkok');
+
+    const cutoffHour = 8; // 8:00 AM
+
+    // ตรวจสอบว่าเวลาปัจจุบันอยู่ก่อน 8:00 น. หรือไม่
+    if (thaiTime.hour() < cutoffHour) {
+      // ถ้าก่อน 8:00 น. ให้ใช้วันที่ของวันก่อนหน้า
+      thaiTime.subtract(1, 'days');
+    }
+
+    // ตั้งเวลาเป็น 00:00:00 เพื่อให้มีแค่วันที่
+    thaiTime.startOf('day');
+
+    // แปลงกลับเป็น JavaScript Date object
+    return thaiTime.toDate();
+  }
+
+  // เพิ่มฟังก์ชันสำหรับจัดการ Error
+  private handleServiceError(error: any): never {
+    if (error instanceof HttpException) throw error;
+
+    throw new HttpException(
+      {
+        status: 'error',
+        message: (error as Error).message || 'Service operation failed',
+        data: [],
+      },
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
   }
 
   async create(
@@ -400,20 +446,6 @@ export class ProductionRecordService {
     } catch (error) {
       return this.handleServiceError(error);
     }
-  }
-
-  // เพิ่มฟังก์ชันสำหรับจัดการ Error
-  private handleServiceError(error: any): never {
-    if (error instanceof HttpException) throw error;
-
-    throw new HttpException(
-      {
-        status: 'error',
-        message: (error as Error).message || 'Service operation failed',
-        data: [],
-      },
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
   }
 
   async findAll(
@@ -712,38 +744,6 @@ export class ProductionRecordService {
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
-    }
-  }
-
-  private async updateAssignOrderSummary(assignOrderId: string) {
-    try {
-      const records = await this.productionRecordModel.find({
-        assign_order_id: new Types.ObjectId(assignOrderId),
-      });
-
-      const summary = records.reduce(
-        (acc, record) => {
-          if (record.is_not_good) {
-            acc.total_not_good_quantity += record.quantity;
-          } else {
-            acc.total_good_quantity += record.quantity;
-          }
-          return acc;
-        },
-        { total_good_quantity: 0, total_not_good_quantity: 0 },
-      );
-
-      // Update assign order summary
-      await this.assignOrderModel.findByIdAndUpdate(assignOrderId, {
-        $set: {
-          current_summary: {
-            ...summary,
-            last_update: new Date(),
-          },
-        },
-      });
-    } catch (error) {
-      console.error('Failed to update assign order summary:', error);
     }
   }
 
