@@ -1,0 +1,333 @@
+// src/printer/printer-devices.service.ts
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { PrinterDevice } from 'src/shared/modules/schema/printer-device.schema';
+import * as pingModule from 'ping'; // เปลี่ยนชื่อการ import เพื่อหลีกเลี่ยงปัญหา
+
+import {
+  CreatePrinterDeviceDto,
+  UpdatePrinterDeviceDto,
+} from '../dto/printer.dto';
+import { ResponseFormat } from 'src/shared/interface';
+
+@Injectable()
+export class PrinterDevicesService {
+  constructor(
+    @InjectModel(PrinterDevice.name)
+    private readonly printerDeviceModel: Model<PrinterDevice>,
+  ) {}
+
+  async create(
+    createPrinterDeviceDto: CreatePrinterDeviceDto,
+  ): Promise<ResponseFormat<PrinterDevice>> {
+    try {
+      const existingPrinter = await this.printerDeviceModel
+        .findOne({
+          device_name: createPrinterDeviceDto.device_name,
+        })
+        .exec();
+
+      if (existingPrinter) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Printer with name ${createPrinterDeviceDto.device_name} already exists`,
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const newPrinterDevice = new this.printerDeviceModel(
+        createPrinterDeviceDto,
+      );
+      const savedPrinterDevice = await newPrinterDevice.save();
+
+      return {
+        status: 'success',
+        message: 'Printer device created successfully',
+        data: [savedPrinterDevice],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to create printer device: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async findAll(): Promise<ResponseFormat<PrinterDevice>> {
+    try {
+      const printerDevices = await this.printerDeviceModel.find().exec();
+
+      return {
+        status: 'success',
+        message: 'Printer devices retrieved successfully',
+        data: printerDevices,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to retrieve printer devices: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async findOne(id: string): Promise<ResponseFormat<PrinterDevice>> {
+    try {
+      const printerDevice = await this.printerDeviceModel.findById(id).exec();
+
+      if (!printerDevice) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Printer device with ID ${id} not found`,
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      return {
+        status: 'success',
+        message: 'Printer device retrieved successfully',
+        data: [printerDevice],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to retrieve printer device: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async update(
+    id: string,
+    updatePrinterDeviceDto: UpdatePrinterDeviceDto,
+  ): Promise<ResponseFormat<PrinterDevice>> {
+    try {
+      const printerDevice = await this.printerDeviceModel.findById(id).exec();
+
+      if (!printerDevice) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Printer device with ID ${id} not found`,
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ตรวจสอบว่าชื่อไม่ซ้ำกับเครื่องอื่น (ถ้ามีการอัพเดตชื่อ)
+      if (
+        updatePrinterDeviceDto.device_name &&
+        updatePrinterDeviceDto.device_name !== printerDevice.device_name
+      ) {
+        const existingPrinter = await this.printerDeviceModel
+          .findOne({
+            device_name: updatePrinterDeviceDto.device_name,
+          })
+          .exec();
+
+        if (existingPrinter) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: `Printer with name ${updatePrinterDeviceDto.device_name} already exists`,
+              data: [],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+      }
+
+      const updatedPrinterDevice = await this.printerDeviceModel
+        .findByIdAndUpdate(id, updatePrinterDeviceDto, { new: true })
+        .exec();
+
+      return {
+        status: 'success',
+        message: 'Printer device updated successfully',
+        data: [updatedPrinterDevice],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to update printer device: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async remove(id: string): Promise<ResponseFormat<PrinterDevice>> {
+    try {
+      const deletedPrinterDevice = await this.printerDeviceModel
+        .findByIdAndDelete(id)
+        .exec();
+
+      if (!deletedPrinterDevice) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Printer device with ID ${id} not found`,
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      return {
+        status: 'success',
+        message: 'Printer device deleted successfully',
+        data: [deletedPrinterDevice],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to delete printer device: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async checkPrinterStatus(id: string): Promise<ResponseFormat<any>> {
+    try {
+      const printer = await this.printerDeviceModel.findById(id).exec();
+
+      if (!printer) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Printer device with ID ${id} not found`,
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      try {
+        // ส่ง ping request ไปที่เครื่องปริ้น
+        const isOnline = await this.pingPrinter(printer.ip_device);
+
+        // อัพเดทสถานะเครื่องปริ้น
+        const oldStatus = printer.status;
+        printer.status = isOnline ? 'active' : 'inactive';
+
+        // บันทึกเฉพาะเมื่อมีการเปลี่ยนแปลงสถานะ
+        if (oldStatus !== printer.status) {
+          await printer.save();
+        }
+
+        return {
+          status: 'success',
+          message: `Printer status is ${printer.status}`,
+          data: [
+            {
+              device_name: printer.device_name,
+              ip_device: printer.ip_device,
+              status: printer.status,
+              is_online: isOnline,
+            },
+          ],
+        };
+      } catch (error) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Failed to check printer status: ${(error as Error).message}`,
+            data: [],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Error checking printer status: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async findByType(type: string): Promise<ResponseFormat<PrinterDevice>> {
+    try {
+      const printers = await this.printerDeviceModel
+        .find({
+          printer_type: type,
+          status: 'active',
+        })
+        .exec();
+
+      return {
+        status: 'success',
+        message: `Found ${printers.length} ${type} printers`,
+        data: printers,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to find printers by type: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  private async pingPrinter(ip: string): Promise<boolean> {
+    try {
+      const res = await pingModule.promise.probe(ip, {
+        timeout: 2,
+        extra: ['-c', '1'],
+      });
+      return res.alive;
+    } catch (error) {
+      console.error(`Error pinging printer at ${ip}:`, error);
+      return false;
+    }
+  }
+}

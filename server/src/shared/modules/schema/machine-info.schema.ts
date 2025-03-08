@@ -27,6 +27,9 @@ export class MachineInfo extends Document {
   @Prop({ default: 0 })
   recorded_counter: number; // ค่าที่บันทึกไปแล้ว
 
+  @Prop({ type: Types.ObjectId, ref: 'PrinterDevice' })
+  printer_id: Types.ObjectId;
+
   @Prop({ default: false })
   is_counter_paused: boolean;
 

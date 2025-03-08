@@ -53,6 +53,10 @@ import {
   MachineCounterLog,
   MachineCounterLogSchema,
 } from '../schema/machine-counter-log.schema';
+import {
+  PrinterDevice,
+  PrinterDeviceSchema,
+} from '../schema/printer-device.schema';
 
 @Module({
   imports: [
@@ -66,6 +70,9 @@ import {
       // Machine Management
       { name: MachineInfo.name, schema: MachineInfoSchema },
       { name: TimelineMachine.name, schema: TimelineMachineSchema },
+
+      // Printter Management
+      { name: PrinterDevice.name, schema: PrinterDeviceSchema },
 
       // Master Data
       { name: MasterCavity.name, schema: MasterCavitySchema },

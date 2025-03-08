@@ -24,11 +24,15 @@ import { ProductionRecordService } from 'src/production/production-reccord/produ
 import * as moment from 'moment-timezone';
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 import { promises } from 'dns';
+import { PrinterDevice } from 'src/shared/modules/schema/printer-device.schema';
 
 @Injectable()
 export class MachineInfoService {
   constructor(
     @InjectModel(MachineInfo.name) private machineInfoModel: Model<MachineInfo>,
+
+    @InjectModel(PrinterDevice.name)
+    private readonly printerDeviceModel: Model<PrinterDevice>,
 
     @InjectModel(AssignOrder.name) private assignOrderModel: Model<AssignOrder>,
 
@@ -206,6 +210,267 @@ export class MachineInfoService {
         {
           status: 'error',
           message: 'Failed to create machine',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // เพิ่มหรืออัพเดทเครื่องพิมพ์ให้กับเครื่องจักร
+  async assignPrinterToMachine(
+    machineId: string,
+    printerId: string,
+  ): Promise<ResponseFormat<MachineInfo>> {
+    try {
+      // ตรวจสอบว่าเครื่องจักรมีอยู่จริง
+      const machine = await this.machineInfoModel.findById(machineId).exec();
+      if (!machine) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Machine with ID ${machineId} not found`,
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ตรวจสอบว่าเครื่องพิมพ์มีอยู่จริง
+      const printer = await this.printerDeviceModel.findById(printerId).exec();
+      if (!printer) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Printer with ID ${printerId} not found`,
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ใช้ updateOne เพื่อหลีกเลี่ยงการตรวจสอบเงื่อนไขของฟิลด์อื่นๆ
+      const result = await this.machineInfoModel.updateOne(
+        { _id: machineId },
+        {
+          printer_id: new Types.ObjectId(printerId),
+          updated_at: new Date(),
+        },
+      );
+
+      if (result.modifiedCount === 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Failed to update machine with ID ${machineId}`,
+            data: [],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      // ดึงข้อมูลที่อัปเดตแล้วมาแสดงผล
+      const updatedMachine = await this.machineInfoModel
+        .findById(machineId)
+        .exec();
+
+      return {
+        status: 'success',
+        message: 'Printer assigned to machine successfully',
+        data: [updatedMachine],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to assign printer to machine: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ลบเครื่องพิมพ์ออกจากเครื่องจักร
+  async removePrinterFromMachine(
+    machineId: string,
+  ): Promise<ResponseFormat<MachineInfo>> {
+    try {
+      // ตรวจสอบว่าเครื่องจักรมีอยู่จริง
+      const machine = await this.machineInfoModel.findById(machineId).exec();
+      if (!machine) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Machine with ID ${machineId} not found`,
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ลบเครื่องพิมพ์ออกจากเครื่องจักร
+      machine.printer_id = null;
+      machine.updated_at = new Date();
+
+      await machine.save();
+
+      return {
+        status: 'success',
+        message: 'Printer removed from machine successfully',
+        data: [machine],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to remove printer from machine: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ดึงข้อมูลเครื่องพิมพ์ของเครื่องจักร
+  async getMachinePrinter(machineId: string): Promise<ResponseFormat<any>> {
+    try {
+      // ดึงข้อมูลเครื่องจักรพร้อม populate ข้อมูลเครื่องพิมพ์
+      const machine = await this.machineInfoModel
+        .findById(machineId)
+        .populate('printer_id')
+        .exec();
+
+      if (!machine) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Machine with ID ${machineId} not found`,
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      if (!machine.printer_id) {
+        return {
+          status: 'success',
+          message: 'No printer assigned to this machine',
+          data: [],
+        };
+      }
+
+      // จัดรูปแบบข้อมูลเครื่องพิมพ์
+      const printer = machine.printer_id as unknown as PrinterDevice;
+
+      return {
+        status: 'success',
+        message: 'Machine printer retrieved successfully',
+        data: [
+          {
+            printer_id: printer._id,
+            device_name: printer.device_name,
+            ip_device: printer.ip_device,
+            status: printer.status,
+            printer_type: printer.printer_type,
+            location: printer.location,
+            description: printer.description,
+          },
+        ],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to get machine printer: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ดึงข้อมูลเครื่องจักรทั้งหมดพร้อมเครื่องพิมพ์
+  async getAllMachinesWithPrinters(): Promise<ResponseFormat<any>> {
+    try {
+      const machines = await this.machineInfoModel
+        .find()
+        .populate('printer_id')
+        .exec();
+
+      // จัดรูปแบบข้อมูล
+      const machinesWithPrinters = machines.map((machine) => {
+        const printer = machine.printer_id as unknown as PrinterDevice;
+
+        return {
+          machine_id: machine._id,
+          machine_number: machine.machine_number,
+          machine_name: machine.machine_name,
+          work_center: machine.work_center,
+          line: machine.line,
+          status: machine.status,
+          printer: printer
+            ? {
+                printer_id: printer._id,
+                device_name: printer.device_name,
+                ip_device: printer.ip_device,
+                status: printer.status,
+                printer_type: printer.printer_type,
+              }
+            : null,
+        };
+      });
+
+      return {
+        status: 'success',
+        message: 'All machines with printers retrieved successfully',
+        data: machinesWithPrinters,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to get machines with printers: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // ค้นหาเครื่องจักรตามเครื่องพิมพ์
+  async findMachinesByPrinter(
+    printerId: string,
+  ): Promise<ResponseFormat<MachineInfo>> {
+    try {
+      const machines = await this.machineInfoModel
+        .find({
+          printer_id: new Types.ObjectId(printerId),
+        })
+        .exec();
+
+      return {
+        status: 'success',
+        message: `Found ${machines.length} machines using this printer`,
+        data: machines,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to find machines by printer: ${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

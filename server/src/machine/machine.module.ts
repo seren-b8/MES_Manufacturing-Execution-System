@@ -10,7 +10,8 @@ import { MasterNotGoodController } from './master-not-good/master-not-good.contr
 import { MasterNotGoodService } from './master-not-good/master-not-good.service';
 import { MasterPartsController } from './master-parts/master-parts.controller';
 import { MasterPartsService } from './master-parts/master-parts.service';
-import { AssignModule } from 'src/assign/assign.module';
+import { PrinterDevicesController } from './printer/printer.controller';
+import { PrinterDevicesService } from './printer/printer.service';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule],
@@ -19,6 +20,7 @@ import { AssignModule } from 'src/assign/assign.module';
     MachineCavityController,
     MasterNotGoodController,
     MasterPartsController,
+    PrinterDevicesController,
   ],
   providers: [
     MachineService,
@@ -26,6 +28,7 @@ import { AssignModule } from 'src/assign/assign.module';
     MachineCavityService,
     MasterNotGoodService,
     MasterPartsService,
+    PrinterDevicesService,
   ],
   exports: [MachineInfoService],
 })

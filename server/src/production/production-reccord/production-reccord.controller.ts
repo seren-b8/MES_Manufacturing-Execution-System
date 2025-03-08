@@ -22,9 +22,9 @@ import { Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import axios from 'axios';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { AuthGuard } from '@nestjs/passport';
 import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
 import { SapProductionSyncService } from '../sap-sync/sap-sync.service';
+import { MachineInfoService } from 'src/machine/machine-info/machine-info.service';
 
 interface PrintRequestDto {
   customerName?: string;
@@ -38,6 +38,7 @@ interface PrintRequestDto {
   quantityStd?: number;
   producer?: string;
   serial_number?: string;
+  machine_id?: string; // เพิ่มฟิลด์รับค่า machine_id
 }
 
 @Controller('production-records')
@@ -47,6 +48,7 @@ export class ProductionRecordController {
   constructor(
     private readonly productionRecordService: ProductionRecordService,
     private readonly sapSyncService: SapProductionSyncService,
+    private readonly machineInfoService: MachineInfoService, // เพิ่ม service ของ machine-info
   ) {}
 
   @Post()
@@ -152,6 +154,42 @@ export class ProductionRecordController {
     @Body() data: PrintRequestDto,
   ): Promise<ResponseFormat<any>> {
     try {
+      let printerIp = '172.101.21.52'; // ค่าเริ่มต้น
+
+      // ถ้ามีการระบุ machine_id
+      if (data.machine_id) {
+        // ดึงข้อมูลเครื่องพิมพ์ของเครื่องจักร
+        const machineResponse = await this.machineInfoService.getMachinePrinter(
+          data.machine_id,
+        );
+
+        // ตรวจสอบว่ามีข้อมูลเครื่องพิมพ์หรือไม่
+        if (
+          machineResponse.status === 'success' &&
+          machineResponse.data.length > 0
+        ) {
+          const printer = machineResponse.data[0];
+
+          // ถ้าเครื่องพิมพ์มีสถานะ active ให้ใช้ IP ของเครื่องพิมพ์นั้น
+          if (printer.status === 'active') {
+            printerIp = printer.ip_device;
+          } else {
+            // ถ้าเครื่องพิมพ์ไม่มีสถานะ active ให้ใช้ค่าเริ่มต้น
+            console.warn(
+              `Printer ${printer.device_name} is not active, using default printer`,
+            );
+          }
+        } else {
+          // ถ้าไม่พบเครื่องพิมพ์สำหรับเครื่องจักรนี้
+          console.warn(
+            `No printer found for machine ${data.machine_id}, using default printer`,
+          );
+        }
+      }
+
+      // สร้าง URL สำหรับการส่งคำขอพิมพ์
+      const printServiceUrl = `http://${printerIp}:5000/printtest`;
+
       const printPayload = {
         form_data: {
           customerName: data?.customerName ?? '-',
@@ -171,12 +209,18 @@ export class ProductionRecordController {
         state: '1',
       };
 
-      const response = await axios.post(this.PRINT_SERVICE_URL, printPayload);
+      // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
+      const response = await axios.post(printServiceUrl, printPayload);
 
       return {
         status: 'success',
-        message: 'Print request sent successfully',
-        data: [response.data],
+        message: `Print request sent successfully to printer at ${printerIp}`,
+        data: [
+          {
+            ...response.data,
+            printer_ip: printerIp,
+          },
+        ],
       };
     } catch (error) {
       throw new HttpException(

@@ -1314,6 +1314,11 @@
   dependencies:
     "@types/express" "*"
 
+"@types/ping@^0.4.4":
+  version "0.4.4"
+  resolved "https://registry.npmjs.org/@types/ping/-/ping-0.4.4.tgz"
+  integrity sha512-ifvo6w2f5eJYlXm+HiVx67iJe8WZp87sfa683nlqED5Vnt9Z93onkokNoWqOG21EaE8fMxyKPobE+mkPEyxsdw==
+
 "@types/qs@*":
   version "6.9.17"
   resolved "https://registry.npmmirror.com/@types/qs/-/qs-6.9.17.tgz"
@@ -4830,6 +4835,11 @@ picomatch@4.0.1:
   version "4.0.1"
   resolved "https://registry.npmmirror.com/picomatch/-/picomatch-4.0.1.tgz"
   integrity sha512-xUXwsxNjwTQ8K3GnT4pCJm+xq3RUPQbmkYJTP5aFIfNIvbcc/4MUxgBaaRSZJ6yGJZiGSyYlM6MzwTsRk8SYCg==
+
+ping@^0.4.4:
+  version "0.4.4"
+  resolved "https://registry.npmjs.org/ping/-/ping-0.4.4.tgz"
+  integrity sha512-56ZMC0j7SCsMMLdOoUg12VZCfj/+ZO+yfOSjaNCRrmZZr6GLbN2X/Ui56T15dI8NhiHckaw5X2pvyfAomanwqQ==
 
 pirates@^4.0.4:
   version "4.0.6"
