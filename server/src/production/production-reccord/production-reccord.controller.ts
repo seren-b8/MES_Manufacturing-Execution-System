@@ -25,6 +25,9 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
 import { SapProductionSyncService } from '../sap-sync/sap-sync.service';
 import { MachineInfoService } from 'src/machine/machine-info/machine-info.service';
+import { Roles } from 'src/auth/decorator/roles.decorator';
+import { Role } from 'src/auth/enum/roles.enum';
+import { DateRangeSummaryData } from 'src/shared/interface/product';
 
 interface PrintRequestDto {
   customerName?: string;
@@ -242,6 +245,21 @@ export class ProductionRecordController {
     return await this.productionRecordService.findSummaryByOrderId(
       assignOrderId,
       shiftType,
+    );
+  }
+
+  // รายงานสรุปการผลิตทั้งโรงงาน
+  @Get('factory-summary')
+  @Roles(Role.ADMIN)
+  async getFactorySummary(
+    @Query('shift_type') shiftType: 'morning' | 'night' | 'all' = 'all',
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ): Promise<ResponseFormat<any>> {
+    return this.productionRecordService.findSummaryAllMachines(
+      shiftType,
+      startDate,
+      endDate,
     );
   }
 

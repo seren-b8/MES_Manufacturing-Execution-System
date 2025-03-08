@@ -27,6 +27,10 @@ import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import { User } from 'src/shared/modules/schema/user.schema';
 import * as moment from 'moment-timezone';
 import { AssignEmployeeService } from 'src/assign/assign-employee/assign-employee.service';
+import {
+  DailySummaryDataForProduct,
+  DateRangeSummaryData,
+} from 'src/shared/interface/product';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -1572,6 +1576,396 @@ export class ProductionRecordService {
         status: 'success',
         message: `Production summaries for order retrieved successfully`,
         data: nonEmptySummaries,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message:
+          (error as Error).message || 'Failed to retrieve production summaries',
+        data: [],
+      };
+    }
+  }
+
+  async findSummaryAllMachines(
+    shiftType?: 'morning' | 'night' | 'all',
+    startDateParam?: string, // พารามิเตอร์วันที่เริ่มต้น
+    endDateParam?: string, // พารามิเตอร์วันที่สิ้นสุด
+  ): Promise<ResponseFormat<ResponseFormat<DateRangeSummaryData[]>>> {
+    try {
+      // กำหนดวันที่เริ่มต้นและสิ้นสุด
+      const startDate = startDateParam
+        ? moment(startDateParam).tz('Asia/Bangkok').startOf('day')
+        : moment().tz('Asia/Bangkok').startOf('day');
+
+      const endDate = endDateParam
+        ? moment(endDateParam).tz('Asia/Bangkok').endOf('day')
+        : startDateParam
+          ? moment(startDateParam).tz('Asia/Bangkok').endOf('day') // ถ้ามีแต่วันเริ่มต้น ใช้วันเดียวกัน
+          : moment().tz('Asia/Bangkok').endOf('day'); // ค่าเริ่มต้นคือวันนี้
+
+      // ตรวจสอบว่าวันที่สิ้นสุดต้องไม่มาก่อนวันที่เริ่มต้น
+      if (endDate.isBefore(startDate)) {
+        throw new Error('End date must be after start date');
+      }
+
+      // Define shift timings
+      const SHIFT_TIMINGS = {
+        morning: { startHour: 8, duration: 12 }, // 08:00 - 20:00
+        night: { startHour: 20, duration: 12 }, // 20:00 - 08:00 (next day)
+      };
+
+      // Default to all shifts if not specified
+      const selectedShift = shiftType || 'all';
+
+      // ดึงข้อมูลเครื่องจักรทั้งหมด
+      const machines = await this.machineInfoModel.find().exec();
+
+      // จัดกลุ่มเครื่องจักรตามไลน์การผลิต
+      // แก้ไขโดยระบุประเภทข้อมูลที่ชัดเจนให้กับ machinesByLine
+      const machinesByLine: Record<string, MachineInfo[]> = machines.reduce(
+        (acc, machine) => {
+          const line = machine.line || 'Unknown';
+          if (!acc[line]) {
+            acc[line] = [];
+          }
+          acc[line].push(machine);
+          return acc;
+        },
+        {} as Record<string, MachineInfo[]>,
+      );
+
+      // สร้างช่วงวันที่ทั้งหมดที่ต้องการดึงข้อมูล
+      const dateRange = [];
+      let currentDate = startDate.clone();
+      while (currentDate.isSameOrBefore(endDate, 'day')) {
+        dateRange.push(currentDate.clone());
+        currentDate.add(1, 'day');
+      }
+
+      // สร้างผลลัพธ์สำหรับแต่ละไลน์และเครื่องจักร
+      const lineResults = [];
+
+      // สร้างผลลัพธ์แยกตามวันที่
+      const dailyResults = [];
+
+      // วนลูปสำหรับแต่ละวัน
+      for (const date of dateRange) {
+        const dayStart = date.clone().startOf('day');
+        const dayEnd = date.clone().endOf('day');
+
+        const dailyLineResults = [];
+
+        for (const [line, lineMachines] of Object.entries(machinesByLine)) {
+          const machineResults = [];
+
+          // ประมวลผลแต่ละเครื่องจักร
+          for (const machine of lineMachines) {
+            // ค้นหา AssignOrder ที่กำลังทำงานหรือสำเร็จแล้วของเครื่องจักรนี้
+            const activeAssignOrders = await this.assignOrderModel
+              .find({
+                machine_number: machine.machine_number,
+                status: { $in: ['active', 'completed'] },
+                // จำกัดเฉพาะ order ที่มีอยู่ในช่วงวันที่
+                $or: [
+                  {
+                    datetime_open_order: {
+                      $lte: dayEnd.toDate(),
+                    },
+                  },
+                  {
+                    datetime_close_order: {
+                      $gte: dayStart.toDate(),
+                    },
+                  },
+                ],
+              })
+              .exec();
+
+            const machineData = {
+              machine_id: machine._id,
+              machine_number: machine.machine_number,
+              machine_name: machine.machine_name || machine.machine_number,
+              status: machine.status,
+              line: machine.line || 'Unknown',
+              work_center: machine.work_center,
+              shifts: [],
+              total_good: 0,
+              total_not_good: 0,
+              overall_total: 0,
+              active_orders: activeAssignOrders.length,
+            };
+
+            // Determine which shifts to process
+            const shiftsToProcess =
+              selectedShift === 'all' ? ['morning', 'night'] : [selectedShift];
+
+            // ประมวลผลแต่ละกะทำงาน
+            for (const shift of shiftsToProcess) {
+              const { startHour, duration } = SHIFT_TIMINGS[shift];
+              const queryStartTime = dayStart.clone().add(startHour, 'hours');
+              let queryEndTime = queryStartTime.clone().add(duration, 'hours');
+
+              // สำหรับกะกลางคืนที่ข้ามวัน
+              if (shift === 'night') {
+                queryEndTime = queryEndTime.add(1, 'days');
+              }
+
+              // ถ้ากะยังไม่จบ ใช้เวลาปัจจุบันเป็นเวลาสิ้นสุด
+              const now = moment().tz('Asia/Bangkok');
+              if (queryEndTime.isAfter(now)) {
+                queryEndTime = now;
+              }
+
+              let totalQuantity = 0;
+              let goodQuantity = 0;
+              let notGoodQuantity = 0;
+
+              // ประมวลผลสำหรับทุก AssignOrder ที่เกี่ยวข้องกับเครื่องจักรนี้
+              for (const assignOrder of activeAssignOrders) {
+                // ใช้ aggregation สำหรับประสิทธิภาพที่ดีขึ้น
+                const result = await this.productionRecordModel.aggregate([
+                  {
+                    $match: {
+                      assign_order_id: assignOrder._id,
+                      createdAt: {
+                        $gte: queryStartTime.toDate(),
+                        $lt: queryEndTime.toDate(),
+                      },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      total_quantity: { $sum: '$quantity' },
+                      good_quantity: {
+                        $sum: {
+                          $cond: [
+                            { $eq: ['$is_not_good', false] },
+                            '$quantity',
+                            0,
+                          ],
+                        },
+                      },
+                      not_good_quantity: {
+                        $sum: {
+                          $cond: [
+                            { $eq: ['$is_not_good', true] },
+                            '$quantity',
+                            0,
+                          ],
+                        },
+                      },
+                    },
+                  },
+                ]);
+
+                if (result.length > 0) {
+                  totalQuantity += result[0].total_quantity || 0;
+                  goodQuantity += result[0].good_quantity || 0;
+                  notGoodQuantity += result[0].not_good_quantity || 0;
+                }
+              }
+
+              // เพิ่มข้อมูลกะลงในผลลัพธ์ของเครื่องจักรเฉพาะเมื่อมีการผลิตในกะนั้น
+              if (totalQuantity > 0) {
+                machineData.shifts.push({
+                  shift,
+                  shift_start: queryStartTime.format('HH:mm'),
+                  shift_end: queryEndTime.format('HH:mm'),
+                  total_quantity: totalQuantity,
+                  good_quantity: goodQuantity,
+                  not_good_quantity: notGoodQuantity,
+                });
+
+                // อัพเดทยอดรวมของเครื่องจักร
+                machineData.total_good += goodQuantity;
+                machineData.total_not_good += notGoodQuantity;
+                machineData.overall_total += totalQuantity;
+              }
+            }
+
+            // เพิ่มข้อมูลเครื่องจักรลงในผลลัพธ์ถ้ามีการผลิต
+            if (machineData.overall_total > 0) {
+              machineResults.push(machineData);
+            }
+          }
+
+          // เพิ่มข้อมูลไลน์ลงในผลลัพธ์ถ้ามีเครื่องจักรที่มีการผลิต
+          if (machineResults.length > 0) {
+            // คำนวณยอดรวมของไลน์
+            const lineTotal = machineResults.reduce(
+              (sum, machine) => sum + machine.overall_total,
+              0,
+            );
+            const lineGoodTotal = machineResults.reduce(
+              (sum, machine) => sum + machine.total_good,
+              0,
+            );
+            const lineNotGoodTotal = machineResults.reduce(
+              (sum, machine) => sum + machine.total_not_good,
+              0,
+            );
+
+            dailyLineResults.push({
+              line,
+              machines: machineResults,
+              line_total: lineTotal,
+              line_good_total: lineGoodTotal,
+              line_not_good_total: lineNotGoodTotal,
+              machine_count: machineResults.length,
+            });
+          }
+        }
+
+        // คำนวณยอดรวมของวันนี้
+        if (dailyLineResults.length > 0) {
+          const dailyTotal = dailyLineResults.reduce(
+            (sum, line) => sum + line.line_total,
+            0,
+          );
+          const dailyGoodTotal = dailyLineResults.reduce(
+            (sum, line) => sum + line.line_good_total,
+            0,
+          );
+          const dailyNotGoodTotal = dailyLineResults.reduce(
+            (sum, line) => sum + line.line_not_good_total,
+            0,
+          );
+
+          dailyResults.push({
+            date: date.format('YYYY-MM-DD'),
+            lines: dailyLineResults,
+            daily_total: dailyTotal,
+            daily_good_total: dailyGoodTotal,
+            daily_not_good_total: dailyNotGoodTotal,
+            line_count: dailyLineResults.length,
+            active_machine_count: dailyLineResults.reduce(
+              (sum, line) => sum + line.machine_count,
+              0,
+            ),
+          });
+
+          // รวบรวมข้อมูลไลน์จากทุกวันสำหรับสรุปรวม
+          for (const lineResult of dailyLineResults) {
+            const existingLineResult = lineResults.find(
+              (l) => l.line === lineResult.line,
+            );
+            if (existingLineResult) {
+              // รวมข้อมูลเครื่องจักร
+              for (const machine of lineResult.machines) {
+                const existingMachine = existingLineResult.machines.find(
+                  (m) => m.machine_number === machine.machine_number,
+                );
+
+                if (existingMachine) {
+                  // รวมข้อมูลของเครื่องจักรที่มีอยู่แล้ว
+                  existingMachine.total_good += machine.total_good;
+                  existingMachine.total_not_good += machine.total_not_good;
+                  existingMachine.overall_total += machine.overall_total;
+
+                  // รวมข้อมูลกะ
+                  for (const shift of machine.shifts) {
+                    const existingShift = existingMachine.shifts.find(
+                      (s) => s.shift === shift.shift,
+                    );
+
+                    if (existingShift) {
+                      existingShift.total_quantity += shift.total_quantity;
+                      existingShift.good_quantity += shift.good_quantity;
+                      existingShift.not_good_quantity +=
+                        shift.not_good_quantity;
+                    } else {
+                      // เพิ่มกะใหม่
+                      existingMachine.shifts.push({
+                        ...shift,
+                        shift_start: `${date.format('YYYY-MM-DD')} ${shift.shift_start}`,
+                        shift_end: `${date.format('YYYY-MM-DD')} ${shift.shift_end}`,
+                      });
+                    }
+                  }
+                } else {
+                  // เพิ่มเครื่องจักรใหม่
+                  const newMachine = { ...machine };
+                  newMachine.shifts = machine.shifts.map((shift) => ({
+                    ...shift,
+                    shift_start: `${date.format('YYYY-MM-DD')} ${shift.shift_start}`,
+                    shift_end: `${date.format('YYYY-MM-DD')} ${shift.shift_end}`,
+                  }));
+                  existingLineResult.machines.push(newMachine);
+                }
+              }
+
+              // อัพเดทยอดรวมของไลน์
+              existingLineResult.line_total += lineResult.line_total;
+              existingLineResult.line_good_total += lineResult.line_good_total;
+              existingLineResult.line_not_good_total +=
+                lineResult.line_not_good_total;
+
+              // อัพเดทจำนวนเครื่องจักร (ใช้ค่ามากที่สุด)
+              existingLineResult.machine_count = Math.max(
+                existingLineResult.machine_count,
+                lineResult.machine_count,
+              );
+            } else {
+              // เพิ่มไลน์ใหม่
+              const newLineResult = { ...lineResult };
+              // ปรับรูปแบบข้อมูลกะให้มีวันที่
+              newLineResult.machines = lineResult.machines.map((machine) => {
+                const newMachine = { ...machine };
+                newMachine.shifts = machine.shifts.map((shift) => ({
+                  ...shift,
+                  shift_start: `${date.format('YYYY-MM-DD')} ${shift.shift_start}`,
+                  shift_end: `${date.format('YYYY-MM-DD')} ${shift.shift_end}`,
+                }));
+                return newMachine;
+              });
+              lineResults.push(newLineResult);
+            }
+          }
+        }
+      }
+
+      // คำนวณยอดรวมทั้งหมด
+      const factoryTotal = lineResults.reduce(
+        (sum, line) => sum + line.line_total,
+        0,
+      );
+      const factoryGoodTotal = lineResults.reduce(
+        (sum, line) => sum + line.line_good_total,
+        0,
+      );
+      const factoryNotGoodTotal = lineResults.reduce(
+        (sum, line) => sum + line.line_not_good_total,
+        0,
+      );
+
+      // สร้างผลลัพธ์สุดท้าย
+      const summary: DateRangeSummaryData = {
+        date_range: {
+          start_date: startDate.format('YYYY-MM-DD'),
+          end_date: endDate.format('YYYY-MM-DD'),
+          days: dateRange.length,
+        },
+        shift_type: selectedShift,
+        daily_summaries: dailyResults,
+        lines: lineResults,
+        total_summary: {
+          factory_total: factoryTotal,
+          factory_good_total: factoryGoodTotal,
+          factory_not_good_total: factoryNotGoodTotal,
+          line_count: lineResults.length,
+          active_machine_count: lineResults.reduce(
+            (sum, line) => sum + line.machine_count,
+            0,
+          ),
+        },
+      };
+
+      return {
+        status: 'success',
+        message: `Production summaries for all machines from ${startDate.format('YYYY-MM-DD')} to ${endDate.format('YYYY-MM-DD')} retrieved successfully`,
+        data: [summary as any],
       };
     } catch (error) {
       return {
