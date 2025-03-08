@@ -738,17 +738,14 @@ export class MachineInfoService {
     }
   }
 
-  private formatDateToString(date: Date): string {
-    const month = (date.getMonth() + 1).toString(); // ไม่ต้อง pad
-    const day = date.getDate().toString(); // ไม่ต้อง pad
-    const year = date.getFullYear();
-    const hours = date.getHours().toString(); // ไม่ต้อง pad
-    const minutes = date.getMinutes().toString(); // ไม่ต้อง pad
-    const seconds = date.getSeconds().toString(); // ไม่ต้อง pad
-
-    return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
-  }
-
+  /**
+   * รับข้อมูลสถานะเครื่องจักรตามช่วงเวลาที่กำหนด - เวอร์ชั่นที่แก้ไขการคำนวณระยะเวลา
+   * @param startDate วันที่เริ่มต้น
+   * @param endDate วันที่สิ้นสุด
+   * @param intervalMinutes ช่วงเวลาที่ต้องการแบ่ง (หน่วยเป็นนาที)
+   * @param machineNumbers รายการเครื่องจักรที่ต้องการดูข้อมูล (ถ้าไม่ระบุจะดูทั้งหมด)
+   * @returns ข้อมูลการวิเคราะห์สถานะเครื่องจักรตามช่วงเวลา
+   */
   async getMachineStatusByPeriod(
     startDate: Date,
     endDate: Date,
@@ -756,162 +753,238 @@ export class MachineInfoService {
     machineNumbers?: string[],
   ): Promise<ResponseFormat<any>> {
     try {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const startString = this.formatDateToString(start);
-      const endString = this.formatDateToString(end);
+      // 1. แปลงวันที่เป็นเขตเวลาประเทศไทย
+      const start = moment(startDate).tz('Asia/Bangkok').toDate();
+      const end = moment(endDate).tz('Asia/Bangkok').toDate();
 
-      const timelineAggregation = await this.timelineMachineModel.aggregate([
-        {
-          $match: {
-            machine_number: machineNumbers?.length
-              ? { $in: machineNumbers }
-              : { $exists: true },
-            datetime: {
-              $gte: startString,
-              $lte: endString,
-            },
-          },
-        },
-        {
-          // Calculate interval start time for each record
-          $addFields: {
-            interval_start: {
-              $dateFromParts: {
-                year: { $year: { $toDate: '$datetime' } },
-                month: { $month: { $toDate: '$datetime' } },
-                day: { $dayOfMonth: { $toDate: '$datetime' } },
-                hour: { $hour: { $toDate: '$datetime' } },
-                minute: {
-                  $multiply: [
-                    {
-                      $floor: {
-                        $divide: [
-                          { $minute: { $toDate: '$datetime' } },
-                          intervalMinutes,
-                        ],
-                      },
-                    },
-                    intervalMinutes,
-                  ],
-                },
-              },
-            },
-          },
-        },
-        {
-          $group: {
-            _id: {
-              machine_number: '$machine_number',
-              status: '$status',
-              interval_start: '$interval_start',
-            },
-            duration: {
-              $sum: {
-                $min: [
-                  {
-                    $dateDiff: {
-                      startDate: { $toDate: '$datetime' },
-                      endDate: {
-                        $min: [
-                          {
-                            $toDate: { $ifNull: ['$next_datetime', endString] },
-                          },
-                          {
-                            $dateAdd: {
-                              startDate: '$interval_start',
-                              unit: 'minute',
-                              amount: intervalMinutes,
-                            },
-                          },
-                        ],
-                      },
-                      unit: 'minute',
-                    },
-                  },
-                  intervalMinutes,
-                ],
-              },
-            },
-          },
-        },
-        {
-          $group: {
-            _id: {
-              machine_number: '$_id.machine_number',
-              interval_start: '$_id.interval_start',
-            },
-            status_durations: {
-              $push: {
-                status: '$_id.status',
-                duration: '$duration',
-              },
-            },
-          },
-        },
-        {
-          $sort: {
-            '_id.machine_number': 1,
-            '_id.interval_start': 1,
-          },
-        },
-        {
-          $group: {
-            _id: '$_id.machine_number',
-            intervals: {
-              $push: {
-                start_time: '$_id.interval_start',
-                status_durations: '$status_durations',
-              },
-            },
-          },
-        },
-      ]);
+      console.log(`Analyzing machine status from ${start} to ${end}`);
 
-      const machineAnalysis = timelineAggregation.map((machineData) => {
-        const intervals = machineData.intervals.map((interval) => {
-          const timeline = {
-            start_time: interval.start_time,
-          };
+      // 2. สร้างเงื่อนไขสำหรับการค้นหา
+      const findCondition: any = {
+        createdAt: { $gte: start, $lte: end },
+      };
 
-          // Initialize all statuses to 0
-          const allStatuses = new Set<string>(
-            interval.status_durations.map((sd) => sd.status),
-          );
-          allStatuses.forEach((status: string) => {
-            timeline[status as keyof typeof timeline] = 0;
-          });
+      if (machineNumbers?.length) {
+        findCondition.machine_number = { $in: machineNumbers };
+      }
 
-          // Add duration for each status
-          interval.status_durations.forEach((statusData) => {
-            timeline[statusData.status] = statusData.duration;
-          });
+      // 3. ดึงข้อมูล timeline โดยตรงจาก MongoDB
+      const timelineData = await this.timelineMachineModel
+        .find(findCondition)
+        .select('machine_number status createdAt')
+        .sort({ machine_number: 1, createdAt: 1 })
+        .lean()
+        .exec();
 
-          return timeline;
-        });
+      console.log(`Found ${timelineData.length} timeline records`);
 
+      // 4. ถ้าไม่มีข้อมูล ส่งกลับ array ว่าง
+      if (!timelineData.length) {
         return {
-          machine_number: machineData._id,
-          intervals,
+          status: 'success',
+          message: 'No machine timeline data found in the specified date range',
+          data: [],
         };
+      }
+
+      // 5. หา machine statuses ทั้งหมดที่มีในระบบ
+      const allStatuses = new Set<string>();
+      timelineData.forEach((record) => {
+        if (record.status) {
+          allStatuses.add(record.status);
+        }
       });
 
+      const statusArray = Array.from(allStatuses);
+      console.log(`Found statuses: ${statusArray.join(', ')}`);
+
+      // 6. จัดกลุ่มข้อมูลตามเครื่องจักร
+      const machineGroups = this.groupByMachine(timelineData);
+
+      // 7. วิเคราะห์ข้อมูลตามช่วงเวลาที่กำหนด
+      const analysisResult = this.analyzeMachineData(
+        machineGroups,
+        start,
+        end,
+        intervalMinutes,
+        statusArray,
+      );
+
+      // 8. ส่งผลลัพธ์กลับตาม ResponseFormat
       return {
         status: 'success',
-        message: 'Retrieved machine status analysis successfully',
-        data: machineAnalysis,
+        message: `Retrieved machine status analysis successfully for ${analysisResult.length} machines`,
+        data: analysisResult,
       };
     } catch (error) {
       console.error('Error in getMachineStatusByPeriod:', error);
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to analyze machine status',
+          message:
+            'Failed to analyze machine status: ' + (error as Error).message,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  /**
+   * จัดกลุ่มข้อมูลตามเครื่องจักร
+   * @param timelineData ข้อมูล timeline ทั้งหมด
+   * @returns ข้อมูลที่จัดกลุ่มตามเครื่องจักร
+   */
+  private groupByMachine(timelineData: any[]) {
+    const machineGroups = new Map();
+
+    for (const record of timelineData) {
+      const machineNumber = record.machine_number;
+
+      if (!machineGroups.has(machineNumber)) {
+        machineGroups.set(machineNumber, []);
+      }
+
+      machineGroups.get(machineNumber).push({
+        status: record.status,
+        datetime:
+          record.createdAt instanceof Date
+            ? record.createdAt
+            : new Date(record.createdAt),
+      });
+    }
+
+    console.log(`Grouped data for ${machineGroups.size} machines`);
+    return machineGroups;
+  }
+
+  /**
+   * วิเคราะห์ข้อมูลตามช่วงเวลาที่กำหนด - ปรับปรุงการคำนวณระยะเวลาและแสดงสถานะทั้งหมด
+   * @param machineGroups ข้อมูลที่จัดกลุ่มตามเครื่องจักร
+   * @param startDate วันที่เริ่มต้น
+   * @param endDate วันที่สิ้นสุด
+   * @param intervalMinutes ช่วงเวลาที่ต้องการแบ่ง (หน่วยเป็นนาที)
+   * @param allStatuses รายการสถานะทั้งหมดที่มีในระบบ
+   * @returns ผลการวิเคราะห์
+   */
+  private analyzeMachineData(
+    machineGroups: Map<string, any[]>,
+    startDate: Date,
+    endDate: Date,
+    intervalMinutes: number,
+    allStatuses: string[],
+  ) {
+    const result = [];
+
+    // แปลงเวลาเป็น timestamp เพื่อความเร็วในการคำนวณ
+    const startTime = startDate.getTime();
+    const endTime = endDate.getTime();
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    // สร้างช่วงเวลา
+    const intervalStarts = [];
+    for (let time = startTime; time < endTime; time += intervalMs) {
+      intervalStarts.push(time);
+    }
+
+    // วิเคราะห์ข้อมูลสำหรับแต่ละเครื่องจักร
+    for (const [machineNumber, records] of machineGroups.entries()) {
+      const intervals = [];
+
+      if (records.length === 0) continue;
+
+      // เพิ่ม next_datetime ให้กับแต่ละ record เพื่อคำนวณระยะเวลา
+      for (let i = 0; i < records.length - 1; i++) {
+        records[i].next_datetime = records[i + 1].datetime;
+      }
+
+      // record สุดท้ายใช้เวลาสิ้นสุดของช่วงเวลาที่ต้องการวิเคราะห์
+      records[records.length - 1].next_datetime = endDate;
+
+      // วิเคราะห์แต่ละช่วงเวลา
+      for (const intervalStart of intervalStarts) {
+        const intervalEnd = intervalStart + intervalMs;
+
+        // ตำแหน่งเริ่มต้นและสิ้นสุดของช่วงเวลานี้
+        const intervalStartMoment = moment(new Date(intervalStart)).tz(
+          'Asia/Bangkok',
+        );
+        const intervalEndMoment = moment(new Date(intervalEnd)).tz(
+          'Asia/Bangkok',
+        );
+
+        // ตรวจสอบว่าช่วงเวลานี้มีข้อมูลหรือไม่
+        let hasDataInInterval = false;
+        const statusDurations = {};
+
+        // เริ่มต้นให้ทุกสถานะมีค่าเป็น 0
+        allStatuses.forEach((status) => {
+          statusDurations[status] = 0;
+        });
+
+        // หาสถานะในช่วงเวลานี้
+        let totalDurationInInterval = 0;
+
+        for (const record of records) {
+          const recordTime = record.datetime.getTime();
+          const nextRecordTime = record.next_datetime.getTime();
+
+          // ตรวจสอบว่า record อยู่ในช่วงเวลาที่กำลังวิเคราะห์หรือไม่
+          if (recordTime < intervalEnd && nextRecordTime > intervalStart) {
+            // คำนวณจุดเริ่มต้นและสิ้นสุดที่อยู่ในช่วงเวลานี้
+            const overlapStart = Math.max(recordTime, intervalStart);
+            const overlapEnd = Math.min(nextRecordTime, intervalEnd);
+
+            // คำนวณระยะเวลาเป็นนาที
+            const durationMs = overlapEnd - overlapStart;
+
+            // ป้องกันระยะเวลาติดลบ
+            if (durationMs <= 0) continue;
+
+            const durationMinutes = Math.min(
+              durationMs / (60 * 1000),
+              intervalMinutes,
+            ); // จำกัดให้ไม่เกินขนาดช่วงเวลา
+
+            // บันทึกระยะเวลาของสถานะนี้
+            statusDurations[record.status] += durationMinutes;
+            totalDurationInInterval += durationMinutes;
+          }
+        }
+
+        // ตรวจสอบว่าผลรวมของระยะเวลาทั้งหมดไม่เกินขนาดช่วงเวลา
+        if (
+          Math.abs(totalDurationInInterval - intervalMinutes) > 0.01 &&
+          totalDurationInInterval > 0
+        ) {
+          // ปรับสัดส่วนระยะเวลาให้รวมเท่ากับขนาดช่วงเวลา
+          const scaleFactor = intervalMinutes / totalDurationInInterval;
+          for (const status of allStatuses) {
+            statusDurations[status] *= scaleFactor;
+          }
+        }
+        // แปลงทศนิยมให้แสดงแค่ 2 ตำแหน่ง
+        for (const status of allStatuses) {
+          statusDurations[status] = parseFloat(
+            statusDurations[status].toFixed(2),
+          );
+        }
+
+        // เพิ่มข้อมูลช่วงเวลานี้ (แม้ไม่มีข้อมูล ก็จะแสดง 0 สำหรับทุกสถานะ)
+        intervals.push({
+          start_time: intervalStartMoment.format('YYYY-MM-DD HH:mm:ss'),
+          ...statusDurations,
+        });
+      }
+
+      // เพิ่มข้อมูลเครื่องจักรนี้เข้าในผลลัพธ์
+      result.push({
+        machine_number: machineNumber,
+        intervals,
+      });
+    }
+
+    return result;
   }
 
   private async getCavityAndPartData(

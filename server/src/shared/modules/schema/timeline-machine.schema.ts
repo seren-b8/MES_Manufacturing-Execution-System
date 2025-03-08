@@ -10,7 +10,7 @@ export class TimelineMachine extends Document {
   status: string;
 
   @Prop({ type: Date, default: null })
-  datetime: Date; // changed from DATETIME
+  createdAt: Date; // changed from DATETIME
 }
 
 export const TimelineMachineSchema =

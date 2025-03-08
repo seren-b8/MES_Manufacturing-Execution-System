@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   Get,
   Param,
@@ -20,6 +21,7 @@ import { ResponseFormat } from 'src/shared/interface';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { Roles } from 'src/auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
+import * as moment from 'moment-timezone';
 
 // Controller
 @Controller('machine-info')
@@ -52,29 +54,50 @@ export class MachineInfoController {
   }
 
   @Get('analysis')
-  async getMachineStatusAnalysis(
-    @Query('start_date') startDate: string,
-    @Query('end_date') endDate: string,
-    @Query('machine_numbers') machineNumbers?: string,
-    @Query('interval_minutes', new ParseIntPipe({ optional: true }))
-    intervalMinutes: number = 10,
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  async getMachineAnalysis(
+    @Query('start_date') start_date: string,
+    @Query('end_date') end_date: string,
+    @Query('interval_minutes', new DefaultValuePipe(10), ParseIntPipe)
+    interval_minutes: number,
+    @Query('machine_numbers') machine_numbers?: string,
   ) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      throw new BadRequestException('Invalid date format');
+    // ตรวจสอบว่า start_date และ end_date ถูกต้อง
+    if (!start_date || !end_date) {
+      return {
+        status: 'error',
+        message: 'Both start_date and end_date are required',
+        data: [],
+      };
     }
 
-    // แปลง machine_numbers string เป็น array
-    const machines = machineNumbers?.split(',').filter(Boolean);
+    try {
+      // แปลงวันที่เป็น Date object ในเขตเวลาไทย
+      const startDate = moment(start_date).tz('Asia/Bangkok').toDate();
+      const endDate = moment(end_date).tz('Asia/Bangkok').toDate();
 
-    return await this.machineInfoService.getMachineStatusByPeriod(
-      start,
-      end,
-      intervalMinutes,
-      machines,
-    );
+      // แปลง machine_numbers เป็น array (ถ้ามี)
+      const machineArray = machine_numbers
+        ? machine_numbers.split(',')
+        : undefined;
+
+      // ตรวจสอบว่า intervalMinutes มีค่าที่เหมาะสม
+      const intervalMinutes = Math.max(1, Math.min(interval_minutes, 60));
+
+      // เรียกใช้ service
+      return this.machineInfoService.getMachineStatusByPeriod(
+        startDate,
+        endDate,
+        intervalMinutes,
+        machineArray,
+      );
+    } catch (error) {
+      return {
+        status: 'error',
+        message: `Invalid date format: ${(error as Error).message}`,
+        data: [],
+      };
+    }
   }
 
   @Post('reset-counter')
