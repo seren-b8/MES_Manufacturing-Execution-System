@@ -757,8 +757,6 @@ export class MachineInfoService {
       const start = moment(startDate).tz('Asia/Bangkok').toDate();
       const end = moment(endDate).tz('Asia/Bangkok').toDate();
 
-      console.log(`Analyzing machine status from ${start} to ${end}`);
-
       // 2. สร้างเงื่อนไขสำหรับการค้นหา
       const findCondition: any = {
         createdAt: { $gte: start, $lte: end },
@@ -775,8 +773,6 @@ export class MachineInfoService {
         .sort({ machine_number: 1, createdAt: 1 })
         .lean()
         .exec();
-
-      console.log(`Found ${timelineData.length} timeline records`);
 
       // 4. ถ้าไม่มีข้อมูล ส่งกลับ array ว่าง
       if (!timelineData.length) {
@@ -796,7 +792,6 @@ export class MachineInfoService {
       });
 
       const statusArray = Array.from(allStatuses);
-      console.log(`Found statuses: ${statusArray.join(', ')}`);
 
       // 6. จัดกลุ่มข้อมูลตามเครื่องจักร
       const machineGroups = this.groupByMachine(timelineData);
@@ -854,7 +849,6 @@ export class MachineInfoService {
       });
     }
 
-    console.log(`Grouped data for ${machineGroups.size} machines`);
     return machineGroups;
   }
 
@@ -1009,32 +1003,26 @@ export class MachineInfoService {
       // Debug logs
 
       if (!cavity) {
-        console.log('No cavity found:', materialNumber);
         return { cavityData: null, partData: null };
       }
 
       if (!cavity.parts || cavity.parts.length === 0) {
-        // console.log('Cavity found but no matching parts');
-        // console.log('Cavity ID:', cavity._id);
         return { cavityData: null, partData: null };
       }
 
       // 2. ถ้าไม่พบข้อมูล ลองค้นหาโดยตรงจาก MasterPart
       if (!cavity.parts.length) {
-        console.log('Trying direct part query');
         const part = await this.masterPartModel
           .findOne({ material_number: materialNumber })
           .lean();
 
         if (part) {
-          console.log('Found part directly:', part);
           // ค้นหา cavity ที่มี part นี้
           const cavityWithPart = await this.masterCavityModel
             .findOne({ parts: part._id })
             .lean();
 
           if (cavityWithPart) {
-            console.log('Found cavity through part:', cavityWithPart);
             return {
               cavityData: {
                 cavity: cavityWithPart.cavity,
