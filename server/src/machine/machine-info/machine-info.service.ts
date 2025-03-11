@@ -20,10 +20,8 @@ import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
 import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
 import * as _ from 'lodash';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
-import { ProductionRecordService } from 'src/production/production-reccord/production-reccord.service';
 import * as moment from 'moment-timezone';
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
-import { promises } from 'dns';
 import { PrinterDevice } from 'src/shared/modules/schema/printer-device.schema';
 
 @Injectable()
@@ -300,6 +298,18 @@ export class MachineInfoService {
     machineId: string,
   ): Promise<ResponseFormat<MachineInfo>> {
     try {
+      // ตรวจสอบความถูกต้องของ ID
+      if (!machineId || !Types.ObjectId.isValid(machineId)) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Invalid machine ID format',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       // ตรวจสอบว่าเครื่องจักรมีอยู่จริง
       const machine = await this.machineInfoModel.findById(machineId).exec();
       if (!machine) {
@@ -313,16 +323,50 @@ export class MachineInfoService {
         );
       }
 
-      // ลบเครื่องพิมพ์ออกจากเครื่องจักร
-      machine.printer_id = null;
-      machine.updated_at = new Date();
+      // ตรวจสอบว่ามีเครื่องพิมพ์เชื่อมต่ออยู่หรือไม่
+      if (!machine.printer_id) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'No printer is currently connected to this machine',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
 
-      await machine.save();
+      // ใช้วิธีการอัพเดทโดยตรงผ่าน MongoDB เพื่อหลีกเลี่ยงปัญหา validation
+      const updateResult = await this.machineInfoModel.updateOne(
+        { _id: machineId },
+        {
+          $set: {
+            printer_id: null,
+            updated_at: new Date(),
+          },
+        },
+      );
+
+      // ตรวจสอบว่ามีการอัพเดทเกิดขึ้นหรือไม่
+      if (updateResult.modifiedCount === 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Failed to update machine. No changes were made.',
+            data: [],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      // ดึงข้อมูลเครื่องจักรที่อัพเดทแล้ว
+      const updatedMachine = await this.machineInfoModel
+        .findById(machineId)
+        .exec();
 
       return {
         status: 'success',
         message: 'Printer removed from machine successfully',
-        data: [machine],
+        data: [updatedMachine],
       };
     } catch (error) {
       if (error instanceof HttpException) {
