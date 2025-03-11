@@ -389,7 +389,7 @@ export class MachineInfoService {
     try {
       // ดึงข้อมูลเครื่องจักรพร้อม populate ข้อมูลเครื่องพิมพ์
       const machine = await this.machineInfoModel
-        .findById(machineNumber)
+        .findOne({ machine_number: machineNumber })
         .populate('printer_id')
         .exec();
 
