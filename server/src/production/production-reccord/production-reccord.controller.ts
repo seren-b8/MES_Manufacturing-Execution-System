@@ -41,7 +41,7 @@ interface PrintRequestDto {
   quantityStd?: number;
   producer?: string;
   serial_number?: string;
-  machine_id?: string; // เพิ่มฟิลด์รับค่า machine_id
+  machine_number?: string; // เพิ่มฟิลด์รับค่า machine_id
 }
 
 @Controller('production-records')
@@ -160,10 +160,10 @@ export class ProductionRecordController {
       let printerIp = '172.101.21.52'; // ค่าเริ่มต้น
 
       // ถ้ามีการระบุ machine_id
-      if (data.machine_id) {
+      if (data.machine_number) {
         // ดึงข้อมูลเครื่องพิมพ์ของเครื่องจักร
         const machineResponse = await this.machineInfoService.getMachinePrinter(
-          data.machine_id,
+          data.machine_number,
         );
 
         // ตรวจสอบว่ามีข้อมูลเครื่องพิมพ์หรือไม่
@@ -185,7 +185,7 @@ export class ProductionRecordController {
         } else {
           // ถ้าไม่พบเครื่องพิมพ์สำหรับเครื่องจักรนี้
           console.warn(
-            `No printer found for machine ${data.machine_id}, using default printer`,
+            `No printer found for machine ${data.machine_number}, using default printer`,
           );
         }
       }

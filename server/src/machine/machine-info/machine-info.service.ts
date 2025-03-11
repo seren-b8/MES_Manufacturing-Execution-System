@@ -385,11 +385,11 @@ export class MachineInfoService {
   }
 
   // ดึงข้อมูลเครื่องพิมพ์ของเครื่องจักร
-  async getMachinePrinter(machineId: string): Promise<ResponseFormat<any>> {
+  async getMachinePrinter(machineNumber: string): Promise<ResponseFormat<any>> {
     try {
       // ดึงข้อมูลเครื่องจักรพร้อม populate ข้อมูลเครื่องพิมพ์
       const machine = await this.machineInfoModel
-        .findById(machineId)
+        .findById(machineNumber)
         .populate('printer_id')
         .exec();
 
@@ -397,7 +397,7 @@ export class MachineInfoService {
         throw new HttpException(
           {
             status: 'error',
-            message: `Machine with ID ${machineId} not found`,
+            message: `Machine with ID ${machineNumber} not found`,
             data: [],
           },
           HttpStatus.NOT_FOUND,
