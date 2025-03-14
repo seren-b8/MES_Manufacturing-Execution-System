@@ -83,12 +83,12 @@ export class AssignOrderService {
           HttpStatus.BAD_REQUEST,
         );
       }
-      const assignOrder = await this.assignOrderModel.findOne({
+      const activeOrdersCount = await this.assignOrderModel.countDocuments({
         machine_number: createDto.machine_number,
         status: 'active',
       });
 
-      if (assignOrder) {
+      if (activeOrdersCount >= 2) {
         throw new HttpException(
           {
             status: 'error',
@@ -99,14 +99,17 @@ export class AssignOrderService {
         );
       }
 
-      await this.machineInfoModel.findOneAndUpdate(
-        { machine_number: createDto.machine_number },
-        {
-          recorded_counter: 0,
-          is_counter_paused: true,
-          pause_start_counter: 0,
-        },
-      );
+      // If this is the first order for the machine, reset the counter
+      if (activeOrdersCount === 0) {
+        await this.machineInfoModel.findOneAndUpdate(
+          { machine_number: createDto.machine_number },
+          {
+            recorded_counter: 0,
+            is_counter_paused: true,
+            pause_start_counter: 0,
+          },
+        );
+      }
 
       const newAssignOrder = new this.assignOrderModel({
         ...createDto,

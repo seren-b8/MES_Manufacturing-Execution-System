@@ -24,6 +24,7 @@ export interface IEmployeeDetail {
   id: string;
   employee_id: string;
   name: string;
+  assigned_order_id?: string; // เพิ่มคุณสมบัตินี้และทำให้เป็น optional ด้วย ?
 }
 
 export interface PopulatedCavityData {
