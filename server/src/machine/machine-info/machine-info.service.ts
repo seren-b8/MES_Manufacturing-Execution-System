@@ -111,8 +111,8 @@ export class MachineInfoService {
               : { cavityData: null, partData: null };
 
             // ดึงข้อมูลพนักงานจากทุก active order
-            const activeEmployees =
-              await this.getActiveEmployeesFromOrders(activeOrders);
+            // const activeEmployees =
+            //   await this.getActiveEmployeesFromOrders(activeOrders);
 
             return {
               machine_info: {
@@ -158,11 +158,11 @@ export class MachineInfoService {
                 waiting_assign_orders: allProductionOrder.length,
               },
               active_orders: activeOrders, // เปลี่ยนจาก active_order เป็น active_orders
-              active_order: primaryActiveOrder, // ยังคงเก็บตัวแรกไว้เพื่อความเข้ากันได้กับโค้ดเดิม
-              active_employees: {
-                count: activeEmployees.length,
-                details: activeEmployees,
-              },
+              // active_order: primaryActiveOrder, // ยังคงเก็บตัวแรกไว้เพื่อความเข้ากันได้กับโค้ดเดิม
+              // active_employees: {
+              //   count: activeEmployees.length,
+              //   details: activeEmployees,
+              // },
               latest_production: primaryActiveOrder
                 ? {
                     start_time: primaryActiveOrder.datetime_open_order,
@@ -1039,13 +1039,17 @@ export class MachineInfoService {
   private async getActiveEmployeesFromOrders(
     activeOrders: any[],
   ): Promise<IEmployeeDetail[]> {
-    if (!activeOrders?.length) return [];
+    if (!activeOrders?.length) {
+      console.log('No active orders found, returning empty employee list');
+      return [];
+    }
 
     try {
       // รวบรวม order IDs จากทุก active order
-      const orderIds = activeOrders.map((order) => order.order_id);
+      const orderIds = activeOrders.map((order) => order.order_id.toString());
+      console.log('Order IDs for employee lookup:', orderIds);
 
-      // ดึงข้อมูลการมอบหมายงานของพนักงานที่เกี่ยวข้องกับ orders เหล่านี้
+      // แก้ไขบัค: ไม่ควรใช้ toString() กับอาร์เรย์ แต่ควรส่ง orderIds โดยตรง
       const assignEmployees = await this.assignEmployeeModel
         .find({
           assign_order_id: { $in: orderIds },
@@ -1054,35 +1058,57 @@ export class MachineInfoService {
         .populate<{ user_id: IUser }>('user_id')
         .lean();
 
+      console.log('Found assign employees:', assignEmployees.length);
+
+      if (assignEmployees.length === 0) {
+        console.log('No active employee assignments found for these orders');
+        return [];
+      }
+
       // ดึงรายการ employee IDs ที่ unique
       const employeeIds = Array.from(
         new Set(
           assignEmployees
-            .map((assign) => assign.user_id?.employee_id)
+            .map((assign) => {
+              console.log('User_id data:', assign.user_id);
+              return assign.user_id?.employee_id;
+            })
             .filter((id): id is string => !!id),
         ),
       );
+
+      console.log('Employee IDs for lookup:', employeeIds);
 
       // ดึงข้อมูลพนักงาน
       const employees = await this.employeeModel
         .find<IEmployee>({ employee_id: { $in: employeeIds } })
         .lean();
 
+      console.log('Found employees:', employees.length);
+
       // สร้างรายละเอียดพนักงาน
-      return assignEmployees.map((assign): IEmployeeDetail => {
+      const result = assignEmployees.map((assign): IEmployeeDetail => {
         const userData = assign.user_id || ({} as IUser);
         const employeeData =
           employees.find((emp) => emp.employee_id === userData.employee_id) ||
           ({} as IEmployee);
 
+        console.log('Mapping employee:', {
+          userId: userData._id?.toString(),
+          employeeId: userData.employee_id,
+          firstName: employeeData.first_name,
+          lastName: employeeData.last_name,
+        });
+
         return {
           id: userData._id?.toString() || '',
           employee_id: userData.employee_id || '',
           name: `${employeeData.first_name || ''} ${employeeData.last_name || ''}`.trim(),
-          // เพิ่มข้อมูลว่ากำลังทำงานกับ order ไหน
-          assigned_order_id: assign.assign_order_id?.toString() || '',
         };
       });
+
+      console.log('Final employee details:', result.length);
+      return result; // เพิ่ม return statement ที่ขาดหายไป
     } catch (error) {
       console.error('Error fetching active employees from orders:', error);
       return [];
@@ -1167,9 +1193,9 @@ export class MachineInfoService {
   // 2. แยกฟังก์ชันดึงข้อมูล active order
   private async getActiveOrdersData(machine: any) {
     try {
+      // ดึงข้อมูล active orders
       const activeOrders = await this.assignOrderModel
         .find({
-          // เปลี่ยนจาก findOne เป็น find
           machine_number: machine.machine_number,
           status: 'active',
         })
@@ -1180,7 +1206,11 @@ export class MachineInfoService {
 
       if (!activeOrders?.length) return [];
 
-      const ordersWithDetails = await Promise.all(
+      // เตรียมข้อมูลเบื้องต้น
+      const orderIds = activeOrders.map((order) => order._id);
+
+      // สร้าง orders พร้อมรายละเอียด
+      const ordersWithBasicDetails = await Promise.all(
         activeOrders.map(async (activeOrder) => {
           if (!activeOrder?.production_order_id) return null;
 
@@ -1218,7 +1248,29 @@ export class MachineInfoService {
         }),
       );
 
-      return ordersWithDetails.filter(Boolean); // กรองค่า null ออก
+      // กรอง orders ที่เป็น null ออก
+      const filteredOrders = ordersWithBasicDetails.filter(Boolean);
+
+      // ดึงข้อมูลพนักงานสำหรับแต่ละ order ผ่านฟังก์ชัน getActiveEmployeesFromOrders
+      // โดยสร้าง structure แบบเดียวกับที่ getActiveEmployeesFromOrders ต้องการ
+      const orderWithEmployeeInfos = await Promise.all(
+        filteredOrders.map(async (order) => {
+          // เรียกใช้ getActiveEmployeesFromOrders สำหรับ order เดียว
+          const employees = await this.getActiveEmployeesFromOrders([
+            {
+              order_id: order.order_id,
+            },
+          ]);
+
+          // เพิ่มข้อมูลพนักงานเข้าไปใน order object
+          return {
+            ...order,
+            employees: employees || [],
+          };
+        }),
+      );
+
+      return orderWithEmployeeInfos;
     } catch (error) {
       console.error('Error getting active orders data:', error);
       return [];
