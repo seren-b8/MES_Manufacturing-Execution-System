@@ -163,27 +163,27 @@ export class MachineInfoService {
               //   count: activeEmployees.length,
               //   details: activeEmployees,
               // },
-              latest_production: primaryActiveOrder
-                ? {
-                    start_time: primaryActiveOrder.datetime_open_order,
-                    running_time: this.calculateRunningTime(
-                      primaryActiveOrder.datetime_open_order,
-                    ),
-                    efficiency: this.calculateEfficiency(
-                      primaryActiveOrder.production_summary
-                        .total_good_quantity || 0,
-                      new Date(
-                        primaryActiveOrder.datetime_open_order,
-                      ).getTime(),
-                      Number(machine.cycletime) || 0,
-                      machine.is_counter_paused,
-                    ),
-                    daily_total_quantity: consolidatedSummary.total_quantity,
-                    daily_good_quantity: consolidatedSummary.good_quantity,
-                    daily_not_good_quantity:
-                      consolidatedSummary.not_good_quantity,
-                  }
-                : null,
+              // latest_production: primaryActiveOrder
+              //   ? {
+              //       start_time: primaryActiveOrder.datetime_open_order,
+              //       running_time: this.calculateRunningTime(
+              //         primaryActiveOrder.datetime_open_order,
+              //       ),
+              //       efficiency: this.calculateEfficiency(
+              //         primaryActiveOrder.production_summary
+              //           .total_good_quantity || 0,
+              //         new Date(
+              //           primaryActiveOrder.datetime_open_order,
+              //         ).getTime(),
+              //         Number(machine.cycletime) || 0,
+              //         machine.is_counter_paused,
+              //       ),
+              //       daily_total_quantity: consolidatedSummary.total_quantity,
+              //       daily_good_quantity: consolidatedSummary.good_quantity,
+              //       daily_not_good_quantity:
+              //         consolidatedSummary.not_good_quantity,
+              //     }
+              //   : null,
             };
           } catch (error) {
             console.error(
@@ -1259,10 +1259,16 @@ export class MachineInfoService {
             order.order_id.toString(),
           );
 
+          const summaryData = dailySummary?.data?.[0];
+
           // เพิ่มข้อมูลสรุปรายวันเข้าไปใน order object
           return {
             ...order,
-            daily_summary: dailySummary || {}, // ป้องกันกรณีที่ dailySummary เป็น null
+            daily_summary: {
+              total_quantity: summaryData.total_quantity ?? 0,
+              good_quantity: summaryData.good_quantity ?? 0,
+              not_good_quantity: summaryData.not_good_quantity ?? 0,
+            },
           };
         }),
       );
