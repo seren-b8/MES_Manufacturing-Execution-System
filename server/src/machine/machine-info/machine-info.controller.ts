@@ -24,6 +24,7 @@ import { Role } from 'src/auth/enum/roles.enum';
 import * as moment from 'moment-timezone';
 import { MachineAnalysisCacheInterceptor } from '../interceptors/machine-analysis-cache.interceptor';
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
+import { SimpleCacheInterceptor } from '../interceptors/simple-cache.interceptor';
 
 // Controller
 @Controller('machine-info')
@@ -57,10 +58,7 @@ export class MachineInfoController {
 
   @Get('analysis')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  @UseInterceptors(
-    MachineAnalysisCacheInterceptor,
-    new TimeoutInterceptor(120000),
-  ) // ใช้ custom interceptor เป็นคลาส reference ไม่ใช่อินสแตนซ์
+  @UseInterceptors(SimpleCacheInterceptor, new TimeoutInterceptor(20000)) // ใช้ custom interceptor เป็นคลาส reference ไม่ใช่อินสแตนซ์
   async getMachineAnalysis(
     @Query('start_date') start_date: string,
     @Query('end_date') end_date: string,

@@ -13,10 +13,9 @@ import * as redisStore from 'cache-manager-redis-store';
         store: redisStore,
         host: configService.get('REDIS_HOST', 'localhost'),
         port: configService.get('REDIS_PORT', 6379),
-        ttl: configService.get('CACHE_TTL', 60), // เวลาหมดอายุใน seconds
-        max: configService.get('CACHE_MAX_ITEMS', 100), // จำนวน items สูงสุดใน cache (สำหรับ memory cache)
+        ttl: configService.get('CACHE_TTL', 300),
+        isGlobal: true,
       }),
-      isGlobal: true,
     }),
   ],
   exports: [CacheModule],

@@ -1,3 +1,4 @@
+// ปรับ MachineAnalysisCacheInterceptor
 import {
   Injectable,
   NestInterceptor,
@@ -8,18 +9,13 @@ import {
 import { Observable, of } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Cache } from 'cache-manager';
-import { CustomCacheKeyGenerator } from '../../shared/utils/custom-cache-key.generator';
-import { Request } from 'express';
+import { CustomCacheKeyGenerator } from 'src/shared/utils/custom-cache-key.generator';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
-/**
- * Interceptor พิเศษสำหรับแคชชิ่งผลลัพธ์ของ machine analysis endpoint
- * ช่วยลดการทำงานของ server สำหรับการคำนวณที่ใช้ทรัพยากรสูง
- */
 @Injectable()
 export class MachineAnalysisCacheInterceptor implements NestInterceptor {
   constructor(
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
     private readonly cacheKeyGenerator: CustomCacheKeyGenerator,
   ) {}
 
@@ -27,40 +23,43 @@ export class MachineAnalysisCacheInterceptor implements NestInterceptor {
     context: ExecutionContext,
     next: CallHandler,
   ): Promise<Observable<any>> {
-    // ทำงานเฉพาะกับ HTTP requests เท่านั้น
-    if (context.getType() !== 'http') {
+    const request = context.switchToHttp().getRequest();
+    const cacheKey = this.generateCacheKey(request);
+
+    try {
+      const cachedData = await this.cacheManager.get(cacheKey);
+
+      if (cachedData) {
+        console.log(`[Cache] Hit for: ${cacheKey}`);
+        return of(cachedData);
+      }
+
+      console.log(`[Cache] Miss for: ${cacheKey}`);
+
+      return next.handle().pipe(
+        tap(async (data) => {
+          try {
+            await this.cacheManager.set(cacheKey, data, 300);
+            console.log(`[Cache] Stored result for: ${cacheKey}`);
+          } catch (error) {
+            console.error(`[Cache] Error storing: ${(error as Error).message}`);
+          }
+        }),
+      );
+    } catch (error) {
+      console.error(`[Cache] Error: ${(error as Error).message}`);
       return next.handle();
     }
+  }
 
-    const request = context.switchToHttp().getRequest<Request>();
-
-    // ตรวจสอบว่าเป็น endpoint analysis หรือไม่
-    if (!request.url.includes('/machine-info/analysis')) {
-      return next.handle();
-    }
-
-    // สร้าง cache key จากพารามิเตอร์ของ request
-    const cacheKey =
-      this.cacheKeyGenerator.generateCacheKeyForAnalysis(request);
-
-    // พยายามดึงข้อมูลจาก cache
-    const cachedData = await this.cacheManager.get(cacheKey);
-
-    if (cachedData) {
-      console.log(`[Cache] Hit for: ${cacheKey}`);
-      // ถ้ามีข้อมูลใน cache, ส่งกลับทันที
-      return of(cachedData);
-    }
-
-    console.log(`[Cache] Miss for: ${cacheKey}`);
-
-    // ถ้าไม่มีข้อมูลใน cache, ดำเนินการต่อและบันทึกผลลงใน cache
-    return next.handle().pipe(
-      tap(async (data) => {
-        // เก็บผลลัพธ์ลง cache (TTL 5 นาที หรือ 300 วินาที)
-        await this.cacheManager.set(cacheKey, data, 300);
-        console.log(`[Cache] Stored result for: ${cacheKey}`);
-      }),
-    );
+  private generateCacheKey(request: any): string {
+    const { start_date, end_date, interval_minutes, machine_numbers } =
+      request.query;
+    const keyString = `${start_date}|${end_date}|${interval_minutes}|${machine_numbers || ''}`;
+    const hash = require('crypto')
+      .createHash('md5')
+      .update(keyString)
+      .digest('hex');
+    return `machine-analysis:${hash}`;
   }
 }
