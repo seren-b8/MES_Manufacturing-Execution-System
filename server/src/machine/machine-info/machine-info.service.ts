@@ -158,32 +158,9 @@ export class MachineInfoService {
                 waiting_assign_orders: allProductionOrder.length,
               },
               active_orders: activeOrders, // เปลี่ยนจาก active_order เป็น active_orders
-              // active_order: primaryActiveOrder, // ยังคงเก็บตัวแรกไว้เพื่อความเข้ากันได้กับโค้ดเดิม
-              // active_employees: {
-              //   count: activeEmployees.length,
-              //   details: activeEmployees,
-              // },
-              // latest_production: primaryActiveOrder
-              //   ? {
-              //       start_time: primaryActiveOrder.datetime_open_order,
-              //       running_time: this.calculateRunningTime(
-              //         primaryActiveOrder.datetime_open_order,
-              //       ),
-              //       efficiency: this.calculateEfficiency(
-              //         primaryActiveOrder.production_summary
-              //           .total_good_quantity || 0,
-              //         new Date(
-              //           primaryActiveOrder.datetime_open_order,
-              //         ).getTime(),
-              //         Number(machine.cycletime) || 0,
-              //         machine.is_counter_paused,
-              //       ),
-              //       daily_total_quantity: consolidatedSummary.total_quantity,
-              //       daily_good_quantity: consolidatedSummary.good_quantity,
-              //       daily_not_good_quantity:
-              //         consolidatedSummary.not_good_quantity,
-              //     }
-              //   : null,
+              // daily_total_quantity: consolidatedSummary.total_quantity,
+              // daily_good_quantity: consolidatedSummary.good_quantity,
+              // daily_not_good_quantity: consolidatedSummary.not_good_quantity,
             };
           } catch (error) {
             console.error(
