@@ -1270,7 +1270,7 @@ export class MachineInfoService {
       // ดึงข้อมูลพนักงานสำหรับแต่ละ order ผ่านฟังก์ชัน getActiveEmployeesFromOrders
       // โดยสร้าง structure แบบเดียวกับที่ getActiveEmployeesFromOrders ต้องการ
       const orderWithEmployeeInfos = await Promise.all(
-        filteredOrders.map(async (order) => {
+        ordersWithDailySummary.map(async (order) => {
           // เรียกใช้ getActiveEmployeesFromOrders สำหรับ order เดียว
           const employees = await this.getActiveEmployeesFromOrders([
             {
