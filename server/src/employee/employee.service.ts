@@ -15,6 +15,7 @@ import { formatDate } from 'src/shared/utils/date.utils';
 import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
 import { User } from 'src/shared/modules/schema/user.schema';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';
+import moment from 'moment';
 
 @Injectable()
 export class EmployeeService {
@@ -39,7 +40,7 @@ export class EmployeeService {
       company_code: sqlEmployee.Company_Code || null,
       resign_status: sqlEmployee.ResignStatus || null,
       job_start: formatDate(sqlEmployee.JobStart) || null,
-      updated_at: moment().toDate()
+      updated_at: moment().toDate(),
       is_temporary: 'false',
     };
   }
