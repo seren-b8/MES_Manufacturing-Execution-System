@@ -1251,6 +1251,22 @@ export class MachineInfoService {
       // กรอง orders ที่เป็น null ออก
       const filteredOrders = ordersWithBasicDetails.filter(Boolean);
 
+      // ดึงข้อมูลสรุปรายวันสำหรับแต่ละ order
+      const ordersWithDailySummary = await Promise.all(
+        filteredOrders.map(async (order) => {
+          // เรียกใช้ getDailySummary เพื่อดึงข้อมูลสรุปรายวัน
+          const dailySummary = await this.getDailySummary(
+            order.order_id.toString(),
+          );
+
+          // เพิ่มข้อมูลสรุปรายวันเข้าไปใน order object
+          return {
+            ...order,
+            daily_summary: dailySummary || {}, // ป้องกันกรณีที่ dailySummary เป็น null
+          };
+        }),
+      );
+
       // ดึงข้อมูลพนักงานสำหรับแต่ละ order ผ่านฟังก์ชัน getActiveEmployeesFromOrders
       // โดยสร้าง structure แบบเดียวกับที่ getActiveEmployeesFromOrders ต้องการ
       const orderWithEmployeeInfos = await Promise.all(
