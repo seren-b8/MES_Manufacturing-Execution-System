@@ -91,6 +91,46 @@ export class AssignEmployeeService {
       const typedAssignment =
         savedAssignment.toObject() as IAssignEmployeeDocument;
 
+      // NEW CODE: Find other active orders on the same machine and create assignments for them
+      try {
+        // Get the machine number from the current assign order
+        const machineNumber = assignOrder.machine_number;
+
+        // Find other active orders for the same machine
+        const otherActiveOrders = await this.assignOrderModel.find({
+          machine_number: machineNumber,
+          status: 'active',
+          _id: { $ne: createDto.assign_order_id }, // Exclude current order
+        });
+
+        // For each active order, create an assignment if one doesn't exist
+        for (const order of otherActiveOrders) {
+          // Check if the user is already assigned to this order
+          const existingOtherAssignment =
+            await this.assignEmployeeModel.findOne({
+              user_id: createDto.user_id,
+              status: 'active',
+              assign_order_id: order._id,
+            });
+
+          // If no existing assignment, create one
+          if (!existingOtherAssignment) {
+            await this.assignEmployeeModel.create({
+              user_id: createDto.user_id,
+              assign_order_id: order._id,
+              status: 'active',
+              log_date: moment().toDate(),
+            });
+          }
+        }
+      } catch (autoAssignError) {
+        // Log error but don't fail the primary assignment
+        console.error(
+          'Error creating auto-assignments for other orders:',
+          autoAssignError,
+        );
+      }
+
       return {
         status: 'success',
         message: 'Employee assigned successfully',
@@ -141,21 +181,21 @@ export class AssignEmployeeService {
     userId: string,
   ): Promise<ResponseFormat<AssignEmployee>> {
     try {
-      const assignment = await this.assignEmployeeModel.findOne({
+      const assignments = await this.assignEmployeeModel.find({
         user_id: userId,
         status: 'active',
       });
 
       return {
         status: 'success',
-        message: 'Active assignment retrieved successfully',
-        data: assignment ? [assignment] : [],
+        message: 'Active assignments retrieved successfully',
+        data: assignments,
       };
     } catch (error) {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to retrieve active assignment',
+          message: 'Failed to retrieve active assignments',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -215,7 +255,7 @@ export class AssignEmployeeService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to update assignmen t ',
+          message: 'Failed to update assignment',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

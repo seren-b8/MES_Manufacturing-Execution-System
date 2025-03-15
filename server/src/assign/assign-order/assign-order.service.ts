@@ -147,7 +147,7 @@ export class AssignOrderService {
         // For each active order, find active employee assignments
         for (const activeOrder of activeOrders) {
           const activeAssignments = await this.assignEmployeeModel.find({
-            assign_order_id: activeOrder._id,
+            assign_order_id: activeOrder._id.toString(),
             status: 'active',
           });
 
