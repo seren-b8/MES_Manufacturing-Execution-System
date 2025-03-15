@@ -19,6 +19,7 @@ import { User } from 'src/shared/modules/schema/user.schema';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import e from 'express';
 import { IAssignEmployeeDocument } from 'src/shared/interface/assign.emp';
+import moment from 'moment';
 
 @Injectable()
 export class AssignEmployeeService {
@@ -83,7 +84,7 @@ export class AssignEmployeeService {
       const newAssignment = new this.assignEmployeeModel({
         ...createDto,
         status: 'active',
-        log_date: new Date(),
+        log_date: moment().toDate(),
       });
 
       const savedAssignment = await newAssignment.save();
@@ -318,7 +319,7 @@ export class AssignEmployeeService {
             {
               $set: {
                 status: 'completed',
-                updated_at: new Date(),
+                updated_at: moment().toDate(),
               },
             },
             { new: true, runValidators: true },

@@ -10,6 +10,9 @@ import { ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 import { AssignEmployeeService } from '../assign-employee/assign-employee.service';
+import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
+import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
+import moment from 'moment';
 
 type OrderStatus = 'active' | 'completed' | 'suspended';
 
@@ -23,11 +26,13 @@ export class AssignOrderService {
   };
 
   constructor(
-    @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
-    @InjectModel('ProductionOrder')
+    @InjectModel(AssignOrder.name) private assignOrderModel: Model<AssignOrder>,
+    @InjectModel(ProductionOrder.name)
     private productionOrderModel: Model<ProductionOrder>,
-    @InjectModel('MachineInfo') private machineInfoModel: Model<any>,
+    @InjectModel(MachineInfo.name) private machineInfoModel: Model<MachineInfo>,
     private assignEmployeeService: AssignEmployeeService,
+    @InjectModel(AssignEmployee.name)
+    private assignEmployeeModel: Model<AssignEmployee>,
   ) {}
 
   async create(
@@ -113,12 +118,12 @@ export class AssignOrderService {
 
       const newAssignOrder = new this.assignOrderModel({
         ...createDto,
-        datetime_open_order: new Date(),
+        datetime_open_order: moment().toDate(),
         status: 'active',
         current_summary: {
           total_good_quantity: 0,
           total_not_good_quantity: 0,
-          last_update: new Date(),
+          last_update: moment().toDate(),
         },
       });
 
@@ -128,6 +133,35 @@ export class AssignOrderService {
         createDto.production_order_id,
         { assign_stage: true },
       );
+
+      // NEW CODE: Check for active employee assignments on the same machine
+      // and create matching assignments for the new order
+      if (activeOrdersCount > 0) {
+        // Find active assign orders for this machine
+        const activeOrders = await this.assignOrderModel.find({
+          machine_number: createDto.machine_number,
+          status: 'active',
+          _id: { $ne: savedOrder._id }, // Exclude the newly created order
+        });
+
+        // For each active order, find active employee assignments
+        for (const activeOrder of activeOrders) {
+          const activeAssignments = await this.assignEmployeeModel.find({
+            assign_order_id: activeOrder._id,
+            status: 'active',
+          });
+
+          // For each active employee, create a new assignment for the new order
+          for (const assignment of activeAssignments) {
+            await this.assignEmployeeModel.create({
+              user_id: assignment.user_id,
+              assign_order_id: savedOrder._id,
+              status: 'active',
+              log_date: moment().toDate(),
+            });
+          }
+        }
+      }
 
       return {
         status: 'success',

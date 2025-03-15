@@ -12,9 +12,13 @@ import { MasterPartsController } from './master-parts/master-parts.controller';
 import { MasterPartsService } from './master-parts/master-parts.service';
 import { PrinterDevicesController } from './printer/printer.controller';
 import { PrinterDevicesService } from './printer/printer.service';
+import { ConfigModule } from '@nestjs/config';
+import { CustomCacheKeyGenerator } from 'src/shared/utils/custom-cache-key.generator';
+import { MachineAnalysisCacheInterceptor } from './interceptors/machine-analysis-cache.interceptor';
+import { MesCacheModule } from 'src/shared/modules/cache/cache.module';
 
 @Module({
-  imports: [MongooseSchemaModule, DatabaseModule],
+  imports: [MongooseSchemaModule, DatabaseModule, MesCacheModule, ConfigModule],
   controllers: [
     MachineInfoController,
     MachineCavityController,
@@ -29,6 +33,8 @@ import { PrinterDevicesService } from './printer/printer.service';
     MasterNotGoodService,
     MasterPartsService,
     PrinterDevicesService,
+    CustomCacheKeyGenerator,
+    MachineAnalysisCacheInterceptor,
   ],
   exports: [MachineInfoService],
 })

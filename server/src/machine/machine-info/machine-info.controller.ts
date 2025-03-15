@@ -18,10 +18,12 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { CreateMachineInfoDto } from '../dto/machine-info.dto';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import { ResponseFormat } from 'src/shared/interface';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { Roles } from 'src/auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
 import * as moment from 'moment-timezone';
+import { MachineAnalysisCacheInterceptor } from '../interceptors/machine-analysis-cache.interceptor';
+import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 
 // Controller
 @Controller('machine-info')
@@ -55,6 +57,10 @@ export class MachineInfoController {
 
   @Get('analysis')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  @UseInterceptors(
+    MachineAnalysisCacheInterceptor,
+    new TimeoutInterceptor(120000),
+  ) // ใช้ custom interceptor เป็นคลาส reference ไม่ใช่อินสแตนซ์
   async getMachineAnalysis(
     @Query('start_date') start_date: string,
     @Query('end_date') end_date: string,

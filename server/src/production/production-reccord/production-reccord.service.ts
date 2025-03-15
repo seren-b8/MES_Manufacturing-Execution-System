@@ -334,7 +334,7 @@ export class ProductionRecordService {
         $set: {
           current_summary: {
             ...summary,
-            last_update: new Date(),
+            last_update: moment().toDate(),
           },
         },
       });
@@ -579,7 +579,7 @@ export class ProductionRecordService {
         updateDto = {
           ...updateDto,
           confirmed_by: new Types.ObjectId(updateDto.confirmed_by).toString(),
-          confirmed_at: new Date(),
+          confirmed_at: moment().toDate(),
         };
       }
 
@@ -641,7 +641,7 @@ export class ProductionRecordService {
           const updateDto = {
             confirmation_status: 'confirmed',
             confirmed_by: process.env.SYSTEM_USER_ID, // ต้องกำหนด SYSTEM_USER_ID ใน environment
-            confirmed_at: new Date(),
+            confirmed_at: moment().toDate(),
             remark: record.remark
               ? `${record.remark} [Auto confirmed by system]`
               : '[Auto confirmed by system]',
@@ -1396,7 +1396,7 @@ export class ProductionRecordService {
             $set: {
               confirmation_status: 'confirmed',
               confirmed_by: user._id,
-              confirmed_at: new Date(),
+              confirmed_at: moment().toDate(),
             },
           },
           { new: true },
@@ -1407,7 +1407,7 @@ export class ProductionRecordService {
       const dataReturn = [
         {
           quantity: record.quantity,
-          production_date: record.createdAt || new Date(),
+          production_date: record.createdAt || moment().toDate(),
           material_number: productionOrder.material_number,
           serial_code: serialCode,
         },

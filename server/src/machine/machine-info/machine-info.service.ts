@@ -254,7 +254,7 @@ export class MachineInfoService {
         { _id: machineId },
         {
           printer_id: new Types.ObjectId(printerId),
-          updated_at: new Date(),
+          updated_at: moment().toDate(),
         },
       );
 
@@ -343,7 +343,7 @@ export class MachineInfoService {
         {
           $set: {
             printer_id: null,
-            updated_at: new Date(),
+            updated_at: moment().toDate(),
           },
         },
       );

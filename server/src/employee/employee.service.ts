@@ -39,7 +39,7 @@ export class EmployeeService {
       company_code: sqlEmployee.Company_Code || null,
       resign_status: sqlEmployee.ResignStatus || null,
       job_start: formatDate(sqlEmployee.JobStart) || null,
-      updated_at: new Date(),
+      updated_at: moment().toDate()
       is_temporary: 'false',
     };
   }
