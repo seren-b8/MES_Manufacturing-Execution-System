@@ -12,7 +12,7 @@ import { ProductionOrder } from 'src/shared/modules/schema/production-order.sche
 import { AssignEmployeeService } from '../assign-employee/assign-employee.service';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
-import moment from 'moment';
+import * as moment from 'moment-timezone';
 
 type OrderStatus = 'active' | 'completed' | 'suspended';
 

@@ -15,7 +15,8 @@ import { formatDate } from 'src/shared/utils/date.utils';
 import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
 import { User } from 'src/shared/modules/schema/user.schema';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';
-import moment from 'moment';
+import moment import * as moment from 'moment-timezone';
+ 'moment';
 
 @Injectable()
 export class EmployeeService {

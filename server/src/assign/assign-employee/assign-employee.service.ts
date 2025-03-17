@@ -19,7 +19,7 @@ import { User } from 'src/shared/modules/schema/user.schema';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import e from 'express';
 import { IAssignEmployeeDocument } from 'src/shared/interface/assign.emp';
-import moment from 'moment';
+import * as moment from 'moment-timezone';
 
 @Injectable()
 export class AssignEmployeeService {
