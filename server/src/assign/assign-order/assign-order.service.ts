@@ -326,14 +326,23 @@ export class AssignOrderService {
         updateDto.status === 'suspended'
       ) {
         // Reset recorded_counter เมื่อปิดหรือระงับงาน
-        await this.machineInfoModel.findOneAndUpdate(
-          { machine_number: order.machine_number },
-          {
-            recorded_counter: 0,
-            is_counter_paused: false,
-            pause_start_counter: null,
-          },
-        );
+        const otherActiveOrders = await this.assignOrderModel.countDocuments({
+          machine_number: order.machine_number,
+          status: 'active',
+          _id: { $ne: order._id }, // ไม่นับ order ปัจจุบัน
+        });
+
+        // ถ้าไม่มี order อื่นที่ active (นี่คือ order สุดท้าย) จึงค่อยรีเซ็ต counter
+        if (otherActiveOrders === 0) {
+          await this.machineInfoModel.findOneAndUpdate(
+            { machine_number: order.machine_number },
+            {
+              recorded_counter: 0,
+              is_counter_paused: false,
+              pause_start_counter: null,
+            },
+          );
+        }
       }
 
       if (updateDto.status === 'active' && currentStatus === 'suspended') {
