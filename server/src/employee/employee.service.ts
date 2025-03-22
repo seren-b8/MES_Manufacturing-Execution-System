@@ -45,6 +45,23 @@ export class EmployeeService {
     };
   }
 
+  private handleBulkWriteError(error: any, batch: any[], errors: any[]) {
+    if (error.writeErrors) {
+      error.writeErrors.forEach((writeError) => {
+        const failedEmployee = batch[writeError.index];
+        errors.push({
+          employee_id: failedEmployee.EMP_Code,
+          error: writeError.errmsg,
+        });
+      });
+    } else {
+      errors.push({
+        employee_id: 'BATCH_ERROR',
+        error: error.message,
+      });
+    }
+  }
+
   private async fetchSQLEmployees(): Promise<any[]> {
     const query = `
       SELECT 
@@ -165,23 +182,6 @@ export class EmployeeService {
         },
         500,
       );
-    }
-  }
-
-  private handleBulkWriteError(error: any, batch: any[], errors: any[]) {
-    if (error.writeErrors) {
-      error.writeErrors.forEach((writeError) => {
-        const failedEmployee = batch[writeError.index];
-        errors.push({
-          employee_id: failedEmployee.EMP_Code,
-          error: writeError.errmsg,
-        });
-      });
-    } else {
-      errors.push({
-        employee_id: 'BATCH_ERROR',
-        error: error.message,
-      });
     }
   }
 

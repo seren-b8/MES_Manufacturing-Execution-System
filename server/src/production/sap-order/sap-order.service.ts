@@ -13,6 +13,32 @@ export class SapOrderService {
     private readonly sqlService: SqlService,
   ) {}
 
+  // Helper function สำหรับแปลงวันที่ให้เป็นรูปแบบมาตรฐาน ISO
+  private parseAndFormatDate(dateString: string): Date | null {
+    if (!dateString) return null;
+
+    try {
+      // แปลงวันที่จากหลายรูปแบบที่เป็นไปได้
+      const parsedDate = moment(dateString);
+
+      // ตรวจสอบว่าวันที่ถูกต้องหรือไม่
+      if (!parsedDate.isValid()) return null;
+
+      // แปลงเป็น Date object (MongoDB จะจัดเก็บเป็น ISODate โดยอัตโนมัติ)
+      return parsedDate.toDate();
+    } catch (error) {
+      console.error(`Error parsing date: ${dateString}`, error);
+      return null;
+    }
+  }
+
+  // Helper function สำหรับแปลงค่าเป็นตัวเลข
+  private convertToNumber(value: any): number | null {
+    if (value === undefined || value === null || value === '') return null;
+    const num = Number(value);
+    return isNaN(num) ? null : num;
+  }
+
   async syncProductionOrders() {
     try {
       // 1. ดึงข้อมูลจาก SQL Server
@@ -206,31 +232,5 @@ export class SapOrderService {
         data: [],
       };
     }
-  }
-
-  // Helper function สำหรับแปลงวันที่ให้เป็นรูปแบบมาตรฐาน ISO
-  private parseAndFormatDate(dateString: string): Date | null {
-    if (!dateString) return null;
-
-    try {
-      // แปลงวันที่จากหลายรูปแบบที่เป็นไปได้
-      const parsedDate = moment(dateString);
-
-      // ตรวจสอบว่าวันที่ถูกต้องหรือไม่
-      if (!parsedDate.isValid()) return null;
-
-      // แปลงเป็น Date object (MongoDB จะจัดเก็บเป็น ISODate โดยอัตโนมัติ)
-      return parsedDate.toDate();
-    } catch (error) {
-      console.error(`Error parsing date: ${dateString}`, error);
-      return null;
-    }
-  }
-
-  // Helper function สำหรับแปลงค่าเป็นตัวเลข
-  private convertToNumber(value: any): number | null {
-    if (value === undefined || value === null || value === '') return null;
-    const num = Number(value);
-    return isNaN(num) ? null : num;
   }
 }

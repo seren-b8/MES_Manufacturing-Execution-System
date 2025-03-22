@@ -55,6 +55,488 @@ export class MachineInfoService {
     private productionRecordModel: Model<ProductionRecord>,
   ) {}
 
+  private calculateAchievementRate(
+    totalGood: number,
+    targetQuantity: number,
+  ): number {
+    if (!targetQuantity) return 0;
+    return Math.round((totalGood / targetQuantity) * 10000) / 100; // Round to 2 decimal places
+  }
+
+  private calculateRunningTime(startTime: Date): number {
+    return Math.floor(
+      (new Date().getTime() - new Date(startTime).getTime()) / (1000 * 60),
+    );
+  }
+
+  private calculateEfficiency(
+    totalGood: number,
+    startTime: number,
+    cycleTime: number,
+    isPaused: boolean,
+  ): number {
+    if (!cycleTime || isPaused) return 0;
+    const runningTimeInSeconds =
+      (new Date().getTime() - new Date(startTime).getTime()) / 1000;
+    const theoreticalOutput = runningTimeInSeconds / cycleTime;
+    if (!theoreticalOutput) return 0;
+    const efficiency = (totalGood / theoreticalOutput) * 100;
+    return Math.round(efficiency * 100) / 100; // Round to 2 decimal places
+  }
+
+  private analyzeMachineData(
+    machineGroups: Map<string, any[]>,
+    startDate: Date,
+    endDate: Date,
+    intervalMinutes: number,
+    allStatuses: string[],
+  ) {
+    const result = [];
+
+    // แปลงเวลาเป็น timestamp เพื่อความเร็วในการคำนวณ
+    const startTime = startDate.getTime();
+    const endTime = endDate.getTime();
+    const intervalMs = intervalMinutes * 60 * 1000;
+
+    // สร้างช่วงเวลา
+    const intervalStarts = [];
+    for (let time = startTime; time < endTime; time += intervalMs) {
+      intervalStarts.push(time);
+    }
+
+    // วิเคราะห์ข้อมูลสำหรับแต่ละเครื่องจักร
+    for (const [machineNumber, records] of machineGroups.entries()) {
+      const intervals = [];
+
+      if (records.length === 0) continue;
+
+      // เพิ่ม next_datetime ให้กับแต่ละ record เพื่อคำนวณระยะเวลา
+      for (let i = 0; i < records.length - 1; i++) {
+        records[i].next_datetime = records[i + 1].datetime;
+      }
+
+      // record สุดท้ายใช้เวลาสิ้นสุดของช่วงเวลาที่ต้องการวิเคราะห์
+      records[records.length - 1].next_datetime = endDate;
+
+      // วิเคราะห์แต่ละช่วงเวลา
+      for (const intervalStart of intervalStarts) {
+        const intervalEnd = intervalStart + intervalMs;
+
+        // ตำแหน่งเริ่มต้นและสิ้นสุดของช่วงเวลานี้
+        const intervalStartMoment = moment(new Date(intervalStart)).tz(
+          'Asia/Bangkok',
+        );
+        const intervalEndMoment = moment(new Date(intervalEnd)).tz(
+          'Asia/Bangkok',
+        );
+
+        // ตรวจสอบว่าช่วงเวลานี้มีข้อมูลหรือไม่
+        let hasDataInInterval = false;
+        const statusDurations = {};
+
+        // เริ่มต้นให้ทุกสถานะมีค่าเป็น 0
+        allStatuses.forEach((status) => {
+          statusDurations[status] = 0;
+        });
+
+        // หาสถานะในช่วงเวลานี้
+        let totalDurationInInterval = 0;
+
+        for (const record of records) {
+          const recordTime = record.datetime.getTime();
+          const nextRecordTime = record.next_datetime.getTime();
+
+          // ตรวจสอบว่า record อยู่ในช่วงเวลาที่กำลังวิเคราะห์หรือไม่
+          if (recordTime < intervalEnd && nextRecordTime > intervalStart) {
+            // คำนวณจุดเริ่มต้นและสิ้นสุดที่อยู่ในช่วงเวลานี้
+            const overlapStart = Math.max(recordTime, intervalStart);
+            const overlapEnd = Math.min(nextRecordTime, intervalEnd);
+
+            // คำนวณระยะเวลาเป็นนาที
+            const durationMs = overlapEnd - overlapStart;
+
+            // ป้องกันระยะเวลาติดลบ
+            if (durationMs <= 0) continue;
+
+            const durationMinutes = Math.min(
+              durationMs / (60 * 1000),
+              intervalMinutes,
+            ); // จำกัดให้ไม่เกินขนาดช่วงเวลา
+
+            // บันทึกระยะเวลาของสถานะนี้
+            statusDurations[record.status] += durationMinutes;
+            totalDurationInInterval += durationMinutes;
+          }
+        }
+
+        // ตรวจสอบว่าผลรวมของระยะเวลาทั้งหมดไม่เกินขนาดช่วงเวลา
+        if (
+          Math.abs(totalDurationInInterval - intervalMinutes) > 0.01 &&
+          totalDurationInInterval > 0
+        ) {
+          // ปรับสัดส่วนระยะเวลาให้รวมเท่ากับขนาดช่วงเวลา
+          const scaleFactor = intervalMinutes / totalDurationInInterval;
+          for (const status of allStatuses) {
+            statusDurations[status] *= scaleFactor;
+          }
+        }
+        // แปลงทศนิยมให้แสดงแค่ 2 ตำแหน่ง
+        for (const status of allStatuses) {
+          statusDurations[status] = parseFloat(
+            statusDurations[status].toFixed(2),
+          );
+        }
+
+        // เพิ่มข้อมูลช่วงเวลานี้ (แม้ไม่มีข้อมูล ก็จะแสดง 0 สำหรับทุกสถานะ)
+        intervals.push({
+          start_time: intervalStartMoment.format('YYYY-MM-DD HH:mm:ss'),
+          ...statusDurations,
+        });
+      }
+
+      // เพิ่มข้อมูลเครื่องจักรนี้เข้าในผลลัพธ์
+      result.push({
+        machine_number: machineNumber,
+        intervals,
+      });
+    }
+
+    return result;
+  }
+
+  private groupByMachine(timelineData: any[]) {
+    const machineGroups = new Map();
+
+    for (const record of timelineData) {
+      const machineNumber = record.machine_number;
+
+      if (!machineGroups.has(machineNumber)) {
+        machineGroups.set(machineNumber, []);
+      }
+
+      machineGroups.get(machineNumber).push({
+        status: record.status,
+        datetime:
+          record.createdAt instanceof Date
+            ? record.createdAt
+            : new Date(record.createdAt),
+      });
+    }
+
+    return machineGroups;
+  }
+
+  private getErrorMachineData(machine: any) {
+    return {
+      machine_info: {
+        work_center: machine.work_center || '',
+        machine_number: machine.machine_number || '',
+        line: machine.line || '',
+        status: 'error',
+        counter: 0,
+        cycle_time: 0,
+        cavity_info: null,
+      },
+      orders_summary: {
+        total_orders: 0,
+        completed_orders: 0,
+        pending_orders: 0,
+        waiting_assign_orders: 0,
+      },
+      active_order: null,
+      active_employees: { count: 0, details: [] },
+      latest_production: null,
+    };
+  }
+
+  private handleServiceError(error: any): never {
+    console.error('Service error:', {
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (error instanceof HttpException) throw error;
+
+    throw new HttpException(
+      {
+        status: 'error',
+        message: 'Failed to retrieve machines details',
+        data: [
+          {
+            message: (error as Error).message || 'Unknown error',
+            code: (error as any).code,
+            name: (error as Error).name,
+          },
+        ],
+      },
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+  }
+
+  private async getActiveEmployeesFromOrders(
+    activeOrders: any[],
+  ): Promise<IEmployeeDetail[]> {
+    if (!activeOrders?.length) {
+      console.log('No active orders found, returning empty employee list');
+      return [];
+    }
+
+    try {
+      // รวบรวม order IDs จากทุก active order
+      const orderIds = activeOrders.map((order) => order.order_id.toString());
+      console.log('Order IDs for employee lookup:', orderIds);
+
+      // แก้ไขบัค: ไม่ควรใช้ toString() กับอาร์เรย์ แต่ควรส่ง orderIds โดยตรง
+      const assignEmployees = await this.assignEmployeeModel
+        .find({
+          assign_order_id: { $in: orderIds },
+          status: 'active',
+        })
+        .populate<{ user_id: IUser }>('user_id')
+        .lean();
+
+      console.log('Found assign employees:', assignEmployees.length);
+
+      if (assignEmployees.length === 0) {
+        console.log('No active employee assignments found for these orders');
+        return [];
+      }
+
+      // ดึงรายการ employee IDs ที่ unique
+      const employeeIds = Array.from(
+        new Set(
+          assignEmployees
+            .map((assign) => {
+              console.log('User_id data:', assign.user_id);
+              return assign.user_id?.employee_id;
+            })
+            .filter((id): id is string => !!id),
+        ),
+      );
+
+      console.log('Employee IDs for lookup:', employeeIds);
+
+      // ดึงข้อมูลพนักงาน
+      const employees = await this.employeeModel
+        .find<IEmployee>({ employee_id: { $in: employeeIds } })
+        .lean();
+
+      console.log('Found employees:', employees.length);
+
+      // สร้างรายละเอียดพนักงาน
+      const result = assignEmployees.map((assign): IEmployeeDetail => {
+        const userData = assign.user_id || ({} as IUser);
+        const employeeData =
+          employees.find((emp) => emp.employee_id === userData.employee_id) ||
+          ({} as IEmployee);
+
+        console.log('Mapping employee:', {
+          userId: userData._id?.toString(),
+          employeeId: userData.employee_id,
+          firstName: employeeData.first_name,
+          lastName: employeeData.last_name,
+        });
+
+        return {
+          id: userData._id?.toString() || '',
+          employee_id: userData.employee_id || '',
+          name: `${employeeData.first_name || ''} ${employeeData.last_name || ''}`.trim(),
+        };
+      });
+
+      console.log('Final employee details:', result.length);
+      return result; // เพิ่ม return statement ที่ขาดหายไป
+    } catch (error) {
+      console.error('Error fetching active employees from orders:', error);
+      return [];
+    }
+  }
+
+  private async getCavityAndPartData(
+    materialNumber: string,
+  ): Promise<CavityAndPartResult> {
+    if (!materialNumber) {
+      return { cavityData: null, partData: null };
+    }
+
+    try {
+      // 1. ค้นหาแบบแยก query เพื่อง่ายต่อการ debug
+      const cavity = await this.masterCavityModel
+        .findOne()
+        .populate({
+          path: 'parts',
+          model: 'MasterPart',
+          match: { material_number: materialNumber },
+          select: 'material_number part_number part_name weight',
+        })
+        .lean();
+
+      // Debug logs
+
+      if (!cavity) {
+        return { cavityData: null, partData: null };
+      }
+
+      if (!cavity.parts || cavity.parts.length === 0) {
+        return { cavityData: null, partData: null };
+      }
+
+      // 2. ถ้าไม่พบข้อมูล ลองค้นหาโดยตรงจาก MasterPart
+      if (!cavity.parts.length) {
+        const part = await this.masterPartModel
+          .findOne({ material_number: materialNumber })
+          .lean();
+
+        if (part) {
+          // ค้นหา cavity ที่มี part นี้
+          const cavityWithPart = await this.masterCavityModel
+            .findOne({ parts: part._id })
+            .lean();
+
+          if (cavityWithPart) {
+            return {
+              cavityData: {
+                cavity: cavityWithPart.cavity,
+                runner: cavityWithPart.runner,
+                tonnage: cavityWithPart.tonnage,
+              },
+              partData: part,
+            };
+          }
+        }
+      }
+
+      // 3. ถ้าพบข้อมูลปกติ
+      return {
+        cavityData: {
+          cavity: cavity.cavity,
+          runner: cavity.runner,
+          tonnage: cavity.tonnage,
+        },
+        partData: cavity.parts[0],
+      };
+    } catch (error) {
+      console.error('Error getting cavity and part data:', error);
+      // Log detailed error information
+      console.error('Error details:', {
+        materialNumber,
+        errorMessage: (error as Error).message,
+        errorStack: (error as Error).stack,
+      });
+      return { cavityData: null, partData: null };
+    }
+  }
+
+  // 2. แยกฟังก์ชันดึงข้อมูล active order
+  private async getActiveOrdersData(machine: any) {
+    try {
+      // ดึงข้อมูล active orders
+      const activeOrders = await this.assignOrderModel
+        .find({
+          machine_number: machine.machine_number,
+          status: 'active',
+        })
+        .populate<{ production_order_id: ProductionOrder }>(
+          'production_order_id',
+        )
+        .lean();
+
+      if (!activeOrders?.length) return [];
+
+      // เตรียมข้อมูลเบื้องต้น
+      const orderIds = activeOrders.map((order) => order._id);
+
+      // สร้าง orders พร้อมรายละเอียด
+      const ordersWithBasicDetails = await Promise.all(
+        activeOrders.map(async (activeOrder) => {
+          if (!activeOrder?.production_order_id) return null;
+
+          const { cavityData, partData } = await this.getCavityAndPartData(
+            activeOrder.production_order_id.material_number,
+          );
+
+          return {
+            order_id: activeOrder._id,
+            production_order: {
+              id: activeOrder.production_order_id._id,
+              order_number: activeOrder.production_order_id.order_id,
+              material_number: activeOrder.production_order_id.material_number,
+              material_description:
+                activeOrder.production_order_id.material_description,
+              target_quantity: activeOrder.production_order_id.target_quantity,
+              target_daily: activeOrder.production_order_id.plan_target_day,
+              plan_cycle_time: activeOrder.production_order_id.plan_cycle_time,
+              part_info: partData
+                ? {
+                    weight: (partData as any).weight,
+                    weight_runner: cavityData?.runner || 0,
+                  }
+                : null,
+            },
+            production_summary: {
+              ...(activeOrder.current_summary || {}),
+              achievement_rate: this.calculateAchievementRate(
+                activeOrder.current_summary?.total_good_quantity || 0,
+                activeOrder.production_order_id.target_quantity || 0,
+              ),
+            },
+            datetime_open_order: activeOrder.datetime_open_order,
+          };
+        }),
+      );
+
+      // กรอง orders ที่เป็น null ออก
+      const filteredOrders = ordersWithBasicDetails.filter(Boolean);
+
+      // ดึงข้อมูลสรุปรายวันสำหรับแต่ละ order
+      const ordersWithDailySummary = await Promise.all(
+        filteredOrders.map(async (order) => {
+          // เรียกใช้ getDailySummary เพื่อดึงข้อมูลสรุปรายวัน
+          const dailySummary = await this.getDailySummary(
+            order.order_id.toString(),
+          );
+
+          const summaryData = dailySummary?.data?.[0];
+
+          // เพิ่มข้อมูลสรุปรายวันเข้าไปใน order object
+          return {
+            ...order,
+            daily_summary: {
+              total_quantity: summaryData.total_quantity ?? 0,
+              good_quantity: summaryData.good_quantity ?? 0,
+              not_good_quantity: summaryData.not_good_quantity ?? 0,
+            },
+          };
+        }),
+      );
+
+      // ดึงข้อมูลพนักงานสำหรับแต่ละ order ผ่านฟังก์ชัน getActiveEmployeesFromOrders
+      // โดยสร้าง structure แบบเดียวกับที่ getActiveEmployeesFromOrders ต้องการ
+      const orderWithEmployeeInfos = await Promise.all(
+        ordersWithDailySummary.map(async (order) => {
+          // เรียกใช้ getActiveEmployeesFromOrders สำหรับ order เดียว
+          const employees = await this.getActiveEmployeesFromOrders([
+            {
+              order_id: order.order_id,
+            },
+          ]);
+
+          // เพิ่มข้อมูลพนักงานเข้าไปใน order object
+          return {
+            ...order,
+            employees: employees || [],
+          };
+        }),
+      );
+
+      return orderWithEmployeeInfos;
+    } catch (error) {
+      console.error('Error getting active orders data:', error);
+      return [];
+    }
+  }
+
   async getAllMachinesDetails(): Promise<ResponseFormat<any>> {
     try {
       const machines = await this.machineInfoModel.find().lean();
@@ -791,488 +1273,6 @@ export class MachineInfoService {
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
-    }
-  }
-
-  private calculateAchievementRate(
-    totalGood: number,
-    targetQuantity: number,
-  ): number {
-    if (!targetQuantity) return 0;
-    return Math.round((totalGood / targetQuantity) * 10000) / 100; // Round to 2 decimal places
-  }
-
-  private calculateRunningTime(startTime: Date): number {
-    return Math.floor(
-      (new Date().getTime() - new Date(startTime).getTime()) / (1000 * 60),
-    );
-  }
-
-  private calculateEfficiency(
-    totalGood: number,
-    startTime: number,
-    cycleTime: number,
-    isPaused: boolean,
-  ): number {
-    if (!cycleTime || isPaused) return 0;
-    const runningTimeInSeconds =
-      (new Date().getTime() - new Date(startTime).getTime()) / 1000;
-    const theoreticalOutput = runningTimeInSeconds / cycleTime;
-    if (!theoreticalOutput) return 0;
-    const efficiency = (totalGood / theoreticalOutput) * 100;
-    return Math.round(efficiency * 100) / 100; // Round to 2 decimal places
-  }
-
-  private analyzeMachineData(
-    machineGroups: Map<string, any[]>,
-    startDate: Date,
-    endDate: Date,
-    intervalMinutes: number,
-    allStatuses: string[],
-  ) {
-    const result = [];
-
-    // แปลงเวลาเป็น timestamp เพื่อความเร็วในการคำนวณ
-    const startTime = startDate.getTime();
-    const endTime = endDate.getTime();
-    const intervalMs = intervalMinutes * 60 * 1000;
-
-    // สร้างช่วงเวลา
-    const intervalStarts = [];
-    for (let time = startTime; time < endTime; time += intervalMs) {
-      intervalStarts.push(time);
-    }
-
-    // วิเคราะห์ข้อมูลสำหรับแต่ละเครื่องจักร
-    for (const [machineNumber, records] of machineGroups.entries()) {
-      const intervals = [];
-
-      if (records.length === 0) continue;
-
-      // เพิ่ม next_datetime ให้กับแต่ละ record เพื่อคำนวณระยะเวลา
-      for (let i = 0; i < records.length - 1; i++) {
-        records[i].next_datetime = records[i + 1].datetime;
-      }
-
-      // record สุดท้ายใช้เวลาสิ้นสุดของช่วงเวลาที่ต้องการวิเคราะห์
-      records[records.length - 1].next_datetime = endDate;
-
-      // วิเคราะห์แต่ละช่วงเวลา
-      for (const intervalStart of intervalStarts) {
-        const intervalEnd = intervalStart + intervalMs;
-
-        // ตำแหน่งเริ่มต้นและสิ้นสุดของช่วงเวลานี้
-        const intervalStartMoment = moment(new Date(intervalStart)).tz(
-          'Asia/Bangkok',
-        );
-        const intervalEndMoment = moment(new Date(intervalEnd)).tz(
-          'Asia/Bangkok',
-        );
-
-        // ตรวจสอบว่าช่วงเวลานี้มีข้อมูลหรือไม่
-        let hasDataInInterval = false;
-        const statusDurations = {};
-
-        // เริ่มต้นให้ทุกสถานะมีค่าเป็น 0
-        allStatuses.forEach((status) => {
-          statusDurations[status] = 0;
-        });
-
-        // หาสถานะในช่วงเวลานี้
-        let totalDurationInInterval = 0;
-
-        for (const record of records) {
-          const recordTime = record.datetime.getTime();
-          const nextRecordTime = record.next_datetime.getTime();
-
-          // ตรวจสอบว่า record อยู่ในช่วงเวลาที่กำลังวิเคราะห์หรือไม่
-          if (recordTime < intervalEnd && nextRecordTime > intervalStart) {
-            // คำนวณจุดเริ่มต้นและสิ้นสุดที่อยู่ในช่วงเวลานี้
-            const overlapStart = Math.max(recordTime, intervalStart);
-            const overlapEnd = Math.min(nextRecordTime, intervalEnd);
-
-            // คำนวณระยะเวลาเป็นนาที
-            const durationMs = overlapEnd - overlapStart;
-
-            // ป้องกันระยะเวลาติดลบ
-            if (durationMs <= 0) continue;
-
-            const durationMinutes = Math.min(
-              durationMs / (60 * 1000),
-              intervalMinutes,
-            ); // จำกัดให้ไม่เกินขนาดช่วงเวลา
-
-            // บันทึกระยะเวลาของสถานะนี้
-            statusDurations[record.status] += durationMinutes;
-            totalDurationInInterval += durationMinutes;
-          }
-        }
-
-        // ตรวจสอบว่าผลรวมของระยะเวลาทั้งหมดไม่เกินขนาดช่วงเวลา
-        if (
-          Math.abs(totalDurationInInterval - intervalMinutes) > 0.01 &&
-          totalDurationInInterval > 0
-        ) {
-          // ปรับสัดส่วนระยะเวลาให้รวมเท่ากับขนาดช่วงเวลา
-          const scaleFactor = intervalMinutes / totalDurationInInterval;
-          for (const status of allStatuses) {
-            statusDurations[status] *= scaleFactor;
-          }
-        }
-        // แปลงทศนิยมให้แสดงแค่ 2 ตำแหน่ง
-        for (const status of allStatuses) {
-          statusDurations[status] = parseFloat(
-            statusDurations[status].toFixed(2),
-          );
-        }
-
-        // เพิ่มข้อมูลช่วงเวลานี้ (แม้ไม่มีข้อมูล ก็จะแสดง 0 สำหรับทุกสถานะ)
-        intervals.push({
-          start_time: intervalStartMoment.format('YYYY-MM-DD HH:mm:ss'),
-          ...statusDurations,
-        });
-      }
-
-      // เพิ่มข้อมูลเครื่องจักรนี้เข้าในผลลัพธ์
-      result.push({
-        machine_number: machineNumber,
-        intervals,
-      });
-    }
-
-    return result;
-  }
-
-  private groupByMachine(timelineData: any[]) {
-    const machineGroups = new Map();
-
-    for (const record of timelineData) {
-      const machineNumber = record.machine_number;
-
-      if (!machineGroups.has(machineNumber)) {
-        machineGroups.set(machineNumber, []);
-      }
-
-      machineGroups.get(machineNumber).push({
-        status: record.status,
-        datetime:
-          record.createdAt instanceof Date
-            ? record.createdAt
-            : new Date(record.createdAt),
-      });
-    }
-
-    return machineGroups;
-  }
-
-  private getErrorMachineData(machine: any) {
-    return {
-      machine_info: {
-        work_center: machine.work_center || '',
-        machine_number: machine.machine_number || '',
-        line: machine.line || '',
-        status: 'error',
-        counter: 0,
-        cycle_time: 0,
-        cavity_info: null,
-      },
-      orders_summary: {
-        total_orders: 0,
-        completed_orders: 0,
-        pending_orders: 0,
-        waiting_assign_orders: 0,
-      },
-      active_order: null,
-      active_employees: { count: 0, details: [] },
-      latest_production: null,
-    };
-  }
-
-  private handleServiceError(error: any): never {
-    console.error('Service error:', {
-      error: (error as Error).message,
-      stack: (error as Error).stack,
-      timestamp: new Date().toISOString(),
-    });
-
-    if (error instanceof HttpException) throw error;
-
-    throw new HttpException(
-      {
-        status: 'error',
-        message: 'Failed to retrieve machines details',
-        data: [
-          {
-            message: (error as Error).message || 'Unknown error',
-            code: (error as any).code,
-            name: (error as Error).name,
-          },
-        ],
-      },
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
-  }
-
-  private async getActiveEmployeesFromOrders(
-    activeOrders: any[],
-  ): Promise<IEmployeeDetail[]> {
-    if (!activeOrders?.length) {
-      console.log('No active orders found, returning empty employee list');
-      return [];
-    }
-
-    try {
-      // รวบรวม order IDs จากทุก active order
-      const orderIds = activeOrders.map((order) => order.order_id.toString());
-      console.log('Order IDs for employee lookup:', orderIds);
-
-      // แก้ไขบัค: ไม่ควรใช้ toString() กับอาร์เรย์ แต่ควรส่ง orderIds โดยตรง
-      const assignEmployees = await this.assignEmployeeModel
-        .find({
-          assign_order_id: { $in: orderIds },
-          status: 'active',
-        })
-        .populate<{ user_id: IUser }>('user_id')
-        .lean();
-
-      console.log('Found assign employees:', assignEmployees.length);
-
-      if (assignEmployees.length === 0) {
-        console.log('No active employee assignments found for these orders');
-        return [];
-      }
-
-      // ดึงรายการ employee IDs ที่ unique
-      const employeeIds = Array.from(
-        new Set(
-          assignEmployees
-            .map((assign) => {
-              console.log('User_id data:', assign.user_id);
-              return assign.user_id?.employee_id;
-            })
-            .filter((id): id is string => !!id),
-        ),
-      );
-
-      console.log('Employee IDs for lookup:', employeeIds);
-
-      // ดึงข้อมูลพนักงาน
-      const employees = await this.employeeModel
-        .find<IEmployee>({ employee_id: { $in: employeeIds } })
-        .lean();
-
-      console.log('Found employees:', employees.length);
-
-      // สร้างรายละเอียดพนักงาน
-      const result = assignEmployees.map((assign): IEmployeeDetail => {
-        const userData = assign.user_id || ({} as IUser);
-        const employeeData =
-          employees.find((emp) => emp.employee_id === userData.employee_id) ||
-          ({} as IEmployee);
-
-        console.log('Mapping employee:', {
-          userId: userData._id?.toString(),
-          employeeId: userData.employee_id,
-          firstName: employeeData.first_name,
-          lastName: employeeData.last_name,
-        });
-
-        return {
-          id: userData._id?.toString() || '',
-          employee_id: userData.employee_id || '',
-          name: `${employeeData.first_name || ''} ${employeeData.last_name || ''}`.trim(),
-        };
-      });
-
-      console.log('Final employee details:', result.length);
-      return result; // เพิ่ม return statement ที่ขาดหายไป
-    } catch (error) {
-      console.error('Error fetching active employees from orders:', error);
-      return [];
-    }
-  }
-
-  private async getCavityAndPartData(
-    materialNumber: string,
-  ): Promise<CavityAndPartResult> {
-    if (!materialNumber) {
-      return { cavityData: null, partData: null };
-    }
-
-    try {
-      // 1. ค้นหาแบบแยก query เพื่อง่ายต่อการ debug
-      const cavity = await this.masterCavityModel
-        .findOne()
-        .populate({
-          path: 'parts',
-          model: 'MasterPart',
-          match: { material_number: materialNumber },
-          select: 'material_number part_number part_name weight',
-        })
-        .lean();
-
-      // Debug logs
-
-      if (!cavity) {
-        return { cavityData: null, partData: null };
-      }
-
-      if (!cavity.parts || cavity.parts.length === 0) {
-        return { cavityData: null, partData: null };
-      }
-
-      // 2. ถ้าไม่พบข้อมูล ลองค้นหาโดยตรงจาก MasterPart
-      if (!cavity.parts.length) {
-        const part = await this.masterPartModel
-          .findOne({ material_number: materialNumber })
-          .lean();
-
-        if (part) {
-          // ค้นหา cavity ที่มี part นี้
-          const cavityWithPart = await this.masterCavityModel
-            .findOne({ parts: part._id })
-            .lean();
-
-          if (cavityWithPart) {
-            return {
-              cavityData: {
-                cavity: cavityWithPart.cavity,
-                runner: cavityWithPart.runner,
-                tonnage: cavityWithPart.tonnage,
-              },
-              partData: part,
-            };
-          }
-        }
-      }
-
-      // 3. ถ้าพบข้อมูลปกติ
-      return {
-        cavityData: {
-          cavity: cavity.cavity,
-          runner: cavity.runner,
-          tonnage: cavity.tonnage,
-        },
-        partData: cavity.parts[0],
-      };
-    } catch (error) {
-      console.error('Error getting cavity and part data:', error);
-      // Log detailed error information
-      console.error('Error details:', {
-        materialNumber,
-        errorMessage: (error as Error).message,
-        errorStack: (error as Error).stack,
-      });
-      return { cavityData: null, partData: null };
-    }
-  }
-
-  // 2. แยกฟังก์ชันดึงข้อมูล active order
-  private async getActiveOrdersData(machine: any) {
-    try {
-      // ดึงข้อมูล active orders
-      const activeOrders = await this.assignOrderModel
-        .find({
-          machine_number: machine.machine_number,
-          status: 'active',
-        })
-        .populate<{ production_order_id: ProductionOrder }>(
-          'production_order_id',
-        )
-        .lean();
-
-      if (!activeOrders?.length) return [];
-
-      // เตรียมข้อมูลเบื้องต้น
-      const orderIds = activeOrders.map((order) => order._id);
-
-      // สร้าง orders พร้อมรายละเอียด
-      const ordersWithBasicDetails = await Promise.all(
-        activeOrders.map(async (activeOrder) => {
-          if (!activeOrder?.production_order_id) return null;
-
-          const { cavityData, partData } = await this.getCavityAndPartData(
-            activeOrder.production_order_id.material_number,
-          );
-
-          return {
-            order_id: activeOrder._id,
-            production_order: {
-              id: activeOrder.production_order_id._id,
-              order_number: activeOrder.production_order_id.order_id,
-              material_number: activeOrder.production_order_id.material_number,
-              material_description:
-                activeOrder.production_order_id.material_description,
-              target_quantity: activeOrder.production_order_id.target_quantity,
-              target_daily: activeOrder.production_order_id.plan_target_day,
-              plan_cycle_time: activeOrder.production_order_id.plan_cycle_time,
-              part_info: partData
-                ? {
-                    weight: (partData as any).weight,
-                    weight_runner: cavityData?.runner || 0,
-                  }
-                : null,
-            },
-            production_summary: {
-              ...(activeOrder.current_summary || {}),
-              achievement_rate: this.calculateAchievementRate(
-                activeOrder.current_summary?.total_good_quantity || 0,
-                activeOrder.production_order_id.target_quantity || 0,
-              ),
-            },
-            datetime_open_order: activeOrder.datetime_open_order,
-          };
-        }),
-      );
-
-      // กรอง orders ที่เป็น null ออก
-      const filteredOrders = ordersWithBasicDetails.filter(Boolean);
-
-      // ดึงข้อมูลสรุปรายวันสำหรับแต่ละ order
-      const ordersWithDailySummary = await Promise.all(
-        filteredOrders.map(async (order) => {
-          // เรียกใช้ getDailySummary เพื่อดึงข้อมูลสรุปรายวัน
-          const dailySummary = await this.getDailySummary(
-            order.order_id.toString(),
-          );
-
-          const summaryData = dailySummary?.data?.[0];
-
-          // เพิ่มข้อมูลสรุปรายวันเข้าไปใน order object
-          return {
-            ...order,
-            daily_summary: {
-              total_quantity: summaryData.total_quantity ?? 0,
-              good_quantity: summaryData.good_quantity ?? 0,
-              not_good_quantity: summaryData.not_good_quantity ?? 0,
-            },
-          };
-        }),
-      );
-
-      // ดึงข้อมูลพนักงานสำหรับแต่ละ order ผ่านฟังก์ชัน getActiveEmployeesFromOrders
-      // โดยสร้าง structure แบบเดียวกับที่ getActiveEmployeesFromOrders ต้องการ
-      const orderWithEmployeeInfos = await Promise.all(
-        ordersWithDailySummary.map(async (order) => {
-          // เรียกใช้ getActiveEmployeesFromOrders สำหรับ order เดียว
-          const employees = await this.getActiveEmployeesFromOrders([
-            {
-              order_id: order.order_id,
-            },
-          ]);
-
-          // เพิ่มข้อมูลพนักงานเข้าไปใน order object
-          return {
-            ...order,
-            employees: employees || [],
-          };
-        }),
-      );
-
-      return orderWithEmployeeInfos;
-    } catch (error) {
-      console.error('Error getting active orders data:', error);
-      return [];
     }
   }
 }

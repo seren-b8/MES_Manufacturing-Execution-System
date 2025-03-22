@@ -18,6 +18,19 @@ export class PrinterDevicesService {
     private readonly printerDeviceModel: Model<PrinterDevice>,
   ) {}
 
+  private async pingPrinter(ip: string): Promise<boolean> {
+    try {
+      const res = await pingModule.promise.probe(ip, {
+        timeout: 2,
+        extra: ['-c', '1'],
+      });
+      return res.alive;
+    } catch (error) {
+      console.error(`Error pinging printer at ${ip}:`, error);
+      return false;
+    }
+  }
+
   async create(
     createPrinterDeviceDto: CreatePrinterDeviceDto,
   ): Promise<ResponseFormat<PrinterDevice>> {
@@ -315,19 +328,6 @@ export class PrinterDevicesService {
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
-    }
-  }
-
-  private async pingPrinter(ip: string): Promise<boolean> {
-    try {
-      const res = await pingModule.promise.probe(ip, {
-        timeout: 2,
-        extra: ['-c', '1'],
-      });
-      return res.alive;
-    } catch (error) {
-      console.error(`Error pinging printer at ${ip}:`, error);
-      return false;
     }
   }
 }

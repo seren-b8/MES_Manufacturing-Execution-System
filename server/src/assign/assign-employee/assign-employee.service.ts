@@ -1,11 +1,5 @@
 // assign-employee.service.ts
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  HttpStatus,
-  HttpException,
-} from '@nestjs/common';
+import { Injectable, HttpStatus, HttpException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
@@ -17,9 +11,9 @@ import {
 } from '../dto/assign-employee.dto';
 import { User } from 'src/shared/modules/schema/user.schema';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
-import e from 'express';
 import { IAssignEmployeeDocument } from 'src/shared/interface/assign.emp';
 import * as moment from 'moment-timezone';
+import { error } from 'console';
 
 @Injectable()
 export class AssignEmployeeService {
@@ -30,113 +24,204 @@ export class AssignEmployeeService {
     @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
   ) {}
 
+  private isValidStatusTransition(
+    currentStatus: string,
+    newStatus: string,
+  ): boolean {
+    const validTransitions = {
+      active: ['completed', 'suspended'],
+      suspended: ['active', 'completed'],
+      completed: [],
+    };
+
+    return validTransitions[currentStatus]?.includes(newStatus);
+  }
+
   async create(
     createDto: CreateAssignEmployeeDto,
   ): Promise<ResponseFormat<IAssignEmployeeDocument>> {
     try {
-      // Check if user exists and is active
       const user = await this.userModel.findById(createDto.user_id);
+
       if (!user) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'User not found',
+            message: 'not found user',
             data: [],
           },
           HttpStatus.NOT_FOUND,
         );
       }
 
-      // Check if assign order exists and is active
-      const assignOrder = await this.assignOrderModel.findById(
-        createDto.assign_order_id,
-      );
-      if (!assignOrder || assignOrder.status !== 'active') {
+      const assignOrder = await this.assignOrderModel.findOne({
+        _id: createDto.assign_order_id,
+        status: 'active',
+      });
+
+      if (!assignOrder) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'Assign order not found or not active',
+            message: 'assign order not found or not active',
             data: [],
           },
-          HttpStatus.BAD_REQUEST,
+          HttpStatus.NOT_FOUND,
         );
       }
 
-      // Check if user is already assigned to an active order
-      const existingAssignment = await this.assignEmployeeModel.findOne({
+      const activeOrders = await this.assignOrderModel.find({
+        machine_number: assignOrder.machine_number,
+        status: 'active',
+      });
+
+      // สร้าง array เพื่อเก็บ assignments ที่สร้างสำเร็จ
+      const createdAssignments = [];
+      let skippedCount = 0;
+      let deletedCount = 0;
+      let failedCount = 0;
+
+      // ตรวจสอบก่อนว่า main assignment มีอยู่แล้วหรือไม่
+      const mainExistingAssignment = await this.assignEmployeeModel.findOne({
         user_id: createDto.user_id,
-        status: 'active',
         assign_order_id: createDto.assign_order_id,
-      });
-
-      if (existingAssignment) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'User is already in the assign order',
-            data: [],
-          },
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      // Create new assignment
-      const newAssignment = new this.assignEmployeeModel({
-        ...createDto,
         status: 'active',
-        log_date: moment().toDate(),
       });
 
-      const savedAssignment = await newAssignment.save();
-      const typedAssignment =
-        savedAssignment.toObject() as IAssignEmployeeDocument;
+      // ถ้ามี main assignment อยู่แล้ว ให้ใช้อันนั้นเลย
+      if (mainExistingAssignment) {
+        // Loop ข้อมูลจาก activeOrders และสร้าง assignment เฉพาะอันที่ยังไม่มี
+        for (const order of activeOrders) {
+          try {
+            // ข้ามถ้าเป็น main order เพราะมีอยู่แล้ว
+            if (order._id.toString() === createDto.assign_order_id.toString()) {
+              skippedCount++;
+              continue;
+            }
 
-      // NEW CODE: Find other active orders on the same machine and create assignments for them
-      try {
-        // Get the machine number from the current assign order
-        const machineNumber = assignOrder.machine_number;
-
-        // Find other active orders for the same machine
-        const otherActiveOrders = await this.assignOrderModel.find({
-          machine_number: machineNumber,
-          status: 'active',
-          _id: { $ne: createDto.assign_order_id }, // Exclude current order
-        });
-
-        // For each active order, create an assignment if one doesn't exist
-        for (const order of otherActiveOrders) {
-          // Check if the user is already assigned to this order
-          const existingOtherAssignment =
-            await this.assignEmployeeModel.findOne({
-              user_id: createDto.user_id,
-              status: 'active',
-              assign_order_id: order._id,
-            });
-
-          // If no existing assignment, create one
-          if (!existingOtherAssignment) {
-            await this.assignEmployeeModel.create({
+            // ตรวจสอบว่ามี assignment อยู่แล้วหรือไม่
+            const existingAssignment = await this.assignEmployeeModel.findOne({
               user_id: createDto.user_id,
               assign_order_id: order._id,
               status: 'active',
-              log_date: moment().toDate(),
             });
+
+            if (existingAssignment) {
+              skippedCount++;
+              continue; // ข้ามไปทำ order ถัดไป
+            }
+
+            // ลบ assignment เก่าที่ไม่ active (ถ้ามี)
+            const deleteResult = await this.assignEmployeeModel.deleteMany({
+              user_id: createDto.user_id,
+              assign_order_id: order._id,
+              status: { $ne: 'active' },
+            });
+
+            if (deleteResult.deletedCount > 0) {
+              deletedCount += deleteResult.deletedCount;
+            }
+
+            // สร้าง assignment ใหม่
+            const newAssignment = new this.assignEmployeeModel({
+              user_id: createDto.user_id,
+              assign_order_id: order._id.toString(),
+              status: 'active',
+              log_date: new Date(),
+            });
+
+            const savedAssignment = await newAssignment.save();
+
+            // เก็บ assignment ที่สร้างสำเร็จ
+            createdAssignments.push(savedAssignment);
+          } catch (error) {
+            // ถ้าเป็น error อื่น ให้บันทึกและทำต่อ
+            console.error(`Error processing order ${order._id}:`, error);
+            failedCount++;
           }
         }
-      } catch (autoAssignError) {
-        // Log error but don't fail the primary assignment
-        console.error(
-          'Error creating auto-assignments for other orders:',
-          autoAssignError,
-        );
-      }
 
-      return {
-        status: 'success',
-        message: 'Employee assigned successfully',
-        data: [typedAssignment],
-      };
+        // ส่งคืน main assignment ที่มีอยู่แล้ว
+        return {
+          status: 'success',
+          message: `Employee already assigned. Created ${createdAssignments.length} additional assignments, skipped ${skippedCount}, failed ${failedCount}.`,
+          data: [mainExistingAssignment.toObject() as IAssignEmployeeDocument],
+        };
+      }
+      // กรณีไม่มี main assignment
+      else {
+        // Loop ข้อมูลจาก activeOrders และสร้าง assignment ทีละอัน
+        for (const order of activeOrders) {
+          try {
+            // ตรวจสอบว่ามี assignment อยู่แล้วหรือไม่
+            const existingAssignment = await this.assignEmployeeModel.findOne({
+              user_id: createDto.user_id,
+              assign_order_id: order._id,
+              status: 'active',
+            });
+
+            if (existingAssignment) {
+              skippedCount++;
+              continue; // ข้ามไปทำ order ถัดไป
+            }
+
+            // ลบ assignment เก่าที่ไม่ active (ถ้ามี)
+            const deleteResult = await this.assignEmployeeModel.deleteMany({
+              user_id: createDto.user_id,
+              assign_order_id: order._id,
+              status: { $ne: 'active' },
+            });
+
+            if (deleteResult.deletedCount > 0) {
+              deletedCount += deleteResult.deletedCount;
+            }
+
+            // สร้าง assignment ใหม่
+            const newAssignment = new this.assignEmployeeModel({
+              user_id: createDto.user_id,
+              assign_order_id: order._id.toString(),
+              status: 'active',
+              log_date: new Date(),
+            });
+
+            const savedAssignment = await newAssignment.save();
+
+            // เก็บ assignment ที่สร้างสำเร็จ
+            createdAssignments.push(savedAssignment);
+          } catch (error) {
+            // ถ้าเป็น error อื่น ให้บันทึกและทำต่อ
+            console.error(`Error processing order ${order._id}:`, error);
+            failedCount++;
+          }
+        }
+
+        // หา assignment ของ order หลักที่ถูกสร้าง
+        const mainAssignment = createdAssignments.find(
+          (assignment) =>
+            assignment.assign_order_id.toString() ===
+            createDto.assign_order_id.toString(),
+        );
+
+        if (!mainAssignment) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'Failed to create main assignment',
+              data: [],
+            },
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
+        }
+
+        return {
+          status: 'success',
+          message: `Employee assigned successfully. Created ${createdAssignments.length} assignments, skipped ${skippedCount}, failed ${failedCount}.`,
+          data: [mainAssignment.toObject() as IAssignEmployeeDocument],
+        };
+      }
     } catch (error) {
+      console.error('Error in create:', error);
+
       if (error instanceof HttpException) {
         throw error;
       }
@@ -263,19 +348,6 @@ export class AssignEmployeeService {
     }
   }
 
-  private isValidStatusTransition(
-    currentStatus: string,
-    newStatus: string,
-  ): boolean {
-    const validTransitions = {
-      active: ['completed', 'suspended'],
-      suspended: ['active', 'completed'],
-      completed: [],
-    };
-
-    return validTransitions[currentStatus]?.includes(newStatus);
-  }
-
   async closeByAssignOrder(
     assignOrderId: string,
   ): Promise<ResponseFormat<AssignEmployee>> {
@@ -314,11 +386,9 @@ export class AssignEmployeeService {
 
   async closeByUser(
     closeByUserDto: CloseByUserDto,
-  ): Promise<ResponseFormat<AssignEmployee>> {
+  ): Promise<ResponseFormat<IAssignEmployeeDocument>> {
     try {
-      console.log('Closing assignments for:', closeByUserDto);
-
-      // Validate ObjectIds
+      // ตรวจสอบความถูกต้องของ ID
       if (!isValidObjectId(closeByUserDto.assign_order_id)) {
         throw new HttpException(
           {
@@ -330,68 +400,213 @@ export class AssignEmployeeService {
         );
       }
 
-      // Find active assignments
-      const activeAssignments = await this.assignEmployeeModel.find({
-        user_id: closeByUserDto.user_id,
-        status: 'active',
-        assign_order_id: closeByUserDto.assign_order_id,
-      });
-
-      // console.log('Found active assignments:', activeAssignments);
-
-      if (!activeAssignments || activeAssignments.length === 0) {
+      // ตรวจสอบว่ามีผู้ใช้นี้หรือไม่
+      const user = await this.userModel.findById(closeByUserDto.user_id);
+      if (!user) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'No active assignments found for this user and order',
+            message: 'User not found',
             data: [],
           },
           HttpStatus.NOT_FOUND,
         );
       }
 
-      // Update each assignment
-      const updatedAssignments = [];
-      for (const assignment of activeAssignments) {
-        try {
-          const updated = await this.assignEmployeeModel.findByIdAndUpdate(
-            assignment._id,
-            {
-              $set: {
-                status: 'completed',
-                updated_at: moment().toDate(),
-              },
-            },
-            { new: true, runValidators: true },
-          );
-
-          if (updated) {
-            updatedAssignments.push(updated);
-          }
-        } catch (updateError) {
-          console.error(
-            'Error updating assignment:',
-            assignment._id,
-            updateError,
-          );
-        }
-      }
-
-      if (updatedAssignments.length === 0) {
+      // ค้นหา assign order ที่ระบุ
+      const mainAssignOrder = await this.assignOrderModel.findById(
+        closeByUserDto.assign_order_id,
+      );
+      if (!mainAssignOrder) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'Failed to update any assignments',
+            message: 'Assign order not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ค้นหา assignment หลักที่จะปิด
+      const mainAssignment = await this.assignEmployeeModel.findOne({
+        user_id: closeByUserDto.user_id,
+        assign_order_id: closeByUserDto.assign_order_id,
+        status: 'active',
+      });
+
+      if (!mainAssignment) {
+        // แทนที่จะแจ้ง error ทันที ให้ลองตรวจสอบว่ามี inactive assignments ไหม
+        const inactiveMainAssignment = await this.assignEmployeeModel.findOne({
+          user_id: closeByUserDto.user_id,
+          assign_order_id: closeByUserDto.assign_order_id,
+        });
+
+        if (inactiveMainAssignment) {
+          // ถ้ามี assignment แต่ไม่ active แล้ว ให้ส่งคืนข้อมูลนั้น
+          if (inactiveMainAssignment.status === 'completed') {
+            return {
+              status: 'success',
+              message: 'Assignment already completed',
+              data: [
+                inactiveMainAssignment.toObject() as IAssignEmployeeDocument,
+              ],
+            };
+          }
+        }
+
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'No active assignment found for this user and order',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ค้นหา assign orders ทั้งหมดที่ใช้เครื่องจักรเดียวกัน
+      const relatedOrders = await this.assignOrderModel.find({
+        machine_number: mainAssignOrder.machine_number,
+        status: 'active',
+      });
+
+      // สร้าง array เพื่อเก็บ assignments ที่ปิดสำเร็จ
+      const closedAssignments = [];
+      let notFoundCount = 0;
+      let failedCount = 0;
+
+      // วนลูปปิด assignments ทุกอันที่เกี่ยวข้องกับเครื่องจักรนี้
+      for (const order of relatedOrders) {
+        try {
+          // ใช้ ObjectId แทน string ใน query
+          const orderIdStr = order._id.toString();
+
+          // ทดลองค้นหาด้วยเงื่อนไขที่ยืดหยุ่นกว่า (ไม่ระบุ status เพื่อดูว่ามี assignment อยู่ไหม)
+          const anyAssignment = await this.assignEmployeeModel.findOne({
+            user_id: closeByUserDto.user_id,
+            assign_order_id: orderIdStr,
+          });
+
+          // ค้นหา active assignment สำหรับ order นี้
+          let assignment = await this.assignEmployeeModel.findOne({
+            user_id: closeByUserDto.user_id,
+            assign_order_id: orderIdStr,
+            status: 'active',
+          });
+
+          // ลอง query อีกวิธีหนึ่งถ้าไม่พบผลลัพธ์
+          if (
+            !assignment &&
+            mainAssignment &&
+            orderIdStr === closeByUserDto.assign_order_id
+          ) {
+            assignment = mainAssignment;
+          }
+
+          // ถ้าไม่พบ assignment ที่ active ให้ข้ามไป
+          if (!assignment) {
+            notFoundCount++;
+            continue;
+          }
+
+          // อัพเดท assignment เป็น completed
+          const updatedAssignment =
+            await this.assignEmployeeModel.findByIdAndUpdate(
+              assignment._id,
+              {
+                $set: {
+                  status: 'completed',
+                  updated_at: moment().toDate(),
+                },
+              },
+              { new: true, runValidators: true },
+            );
+
+          if (updatedAssignment) {
+            closedAssignments.push(updatedAssignment);
+          } else {
+            console.error(`Failed to update assignment ${assignment._id}`);
+            failedCount++;
+          }
+        } catch (error) {
+          // ถ้าเกิด error กับ assignment ใดๆ ให้บันทึกและทำต่อ
+          console.error(`Error processing order ${order._id}:`, error);
+          failedCount++;
+        }
+      }
+
+      // แม้ไม่มี assignment ใดถูกปิด ให้อัพเดท mainAssignment โดยตรง
+      if (closedAssignments.length === 0) {
+        try {
+          // ลองอัพเดท mainAssignment โดยตรงอีกครั้ง
+          const updatedMainAssignment =
+            await this.assignEmployeeModel.findByIdAndUpdate(
+              mainAssignment._id,
+              {
+                $set: {
+                  status: 'completed',
+                  updated_at: moment().toDate(),
+                },
+              },
+              { new: true, runValidators: true },
+            );
+
+          if (updatedMainAssignment) {
+            closedAssignments.push(updatedMainAssignment);
+          }
+        } catch (directUpdateError) {
+          console.error(
+            'Error during direct update of main assignment:',
+            directUpdateError,
+          );
+        }
+
+        // ถ้ายังไม่สำเร็จ ให้ก้มกลับมาเช็คว่ามันถูกอัพเดทไปแล้วหรือไม่
+        if (closedAssignments.length === 0) {
+          const refreshedMainAssignment =
+            await this.assignEmployeeModel.findById(mainAssignment._id);
+          if (
+            refreshedMainAssignment &&
+            refreshedMainAssignment.status === 'completed'
+          ) {
+            closedAssignments.push(refreshedMainAssignment);
+          }
+        }
+      }
+
+      // ถ้าไม่มี assignment ใดถูกปิด ให้แจ้ง error
+      if (closedAssignments.length === 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Failed to close any assignments',
             data: [],
           },
           HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
 
+      // หา assignment ของ order หลักที่ถูกปิด
+      const closedMainAssignment = closedAssignments.find(
+        (assignment) =>
+          assignment.assign_order_id.toString() ===
+          closeByUserDto.assign_order_id.toString(),
+      );
+
+      // ถ้าไม่มี main assignment ที่ถูกปิด ใช้ assignment แรกที่ปิดได้แทน
+      if (!closedMainAssignment) {
+        return {
+          status: 'success',
+          message: `Successfully closed ${closedAssignments.length} assignment(s), but main assignment was not one of them`,
+          data: [closedAssignments[0].toObject() as IAssignEmployeeDocument],
+        };
+      }
+
       return {
         status: 'success',
-        message: `Successfully closed ${updatedAssignments.length} assignment(s)`,
-        data: updatedAssignments,
+        message: `Successfully closed ${closedAssignments.length} assignment(s)`,
+        data: [closedMainAssignment.toObject() as IAssignEmployeeDocument],
       };
     } catch (error) {
       console.error('Error in closeByUser:', error);
@@ -403,7 +618,7 @@ export class AssignEmployeeService {
       throw new HttpException(
         {
           status: 'error',
-          message: `Failed to close assignments`,
+          message: 'Failed to close assignments',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

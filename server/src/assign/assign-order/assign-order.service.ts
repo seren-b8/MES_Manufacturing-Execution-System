@@ -35,6 +35,63 @@ export class AssignOrderService {
     private assignEmployeeModel: Model<AssignEmployee>,
   ) {}
 
+  /**
+   * รีเซ็ต counter ของเครื่องจักรตามสถานะที่กำหนด
+   * @param machineNumber หมายเลขเครื่องจักร
+   * @param isActive สถานะว่ามี active order หรือไม่
+   */
+  private async resetMachineCounter(
+    machineNumber: string,
+    isActive: boolean,
+  ): Promise<void> {
+    try {
+      const machine = await this.machineInfoModel.findOne({
+        machine_number: machineNumber,
+      });
+
+      if (!machine) {
+        throw new Error(`Machine ${machineNumber} not found`);
+      }
+
+      const updateData: any = {};
+
+      if (isActive) {
+        // กรณีมี active order - ใช้สำหรับเปิด order หรือกลับมาทำงานต่อ
+        const currentCounter = machine.counter || 0;
+        updateData.recorded_counter = 0;
+        updateData.is_counter_paused = true;
+        updateData.pause_start_counter = currentCounter;
+      } else {
+        // กรณีไม่มี active order - ใช้สำหรับปิด order หรือระงับงาน
+        updateData.recorded_counter = 0;
+        updateData.is_counter_paused = false;
+        updateData.pause_start_counter = null;
+      }
+
+      await this.machineInfoModel.findOneAndUpdate(
+        { machine_number: machineNumber },
+        updateData,
+      );
+    } catch (error) {
+      console.error(
+        `Failed to reset counter for machine ${machineNumber}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  private isValidStatusTransition(
+    currentStatus: OrderStatus,
+    newStatus: OrderStatus,
+  ): boolean {
+    const allowedTransitions = this.statusTransitions[currentStatus];
+    if (!allowedTransitions) {
+      return false;
+    }
+    return allowedTransitions.includes(newStatus);
+  }
+
   async create(
     createDto: CreateAssignOrderDto,
   ): Promise<ResponseFormat<AssignOrder>> {
@@ -106,14 +163,7 @@ export class AssignOrderService {
 
       // If this is the first order for the machine, reset the counter
       if (activeOrdersCount === 0) {
-        await this.machineInfoModel.findOneAndUpdate(
-          { machine_number: createDto.machine_number },
-          {
-            recorded_counter: 0,
-            is_counter_paused: true,
-            pause_start_counter: 0,
-          },
-        );
+        this.resetMachineCounter(createDto.machine_number, true);
       }
 
       const newAssignOrder = new this.assignOrderModel({
@@ -244,17 +294,6 @@ export class AssignOrderService {
     }
   }
 
-  private isValidStatusTransition(
-    currentStatus: OrderStatus,
-    newStatus: OrderStatus,
-  ): boolean {
-    const allowedTransitions = this.statusTransitions[currentStatus];
-    if (!allowedTransitions) {
-      return false;
-    }
-    return allowedTransitions.includes(newStatus);
-  }
-
   async update(
     id: string,
     updateDto: UpdateAssignOrderDto,
@@ -334,26 +373,20 @@ export class AssignOrderService {
 
         // ถ้าไม่มี order อื่นที่ active (นี่คือ order สุดท้าย) จึงค่อยรีเซ็ต counter
         if (otherActiveOrders === 0) {
-          await this.machineInfoModel.findOneAndUpdate(
-            { machine_number: order.machine_number },
-            {
-              recorded_counter: 0,
-              is_counter_paused: false,
-              pause_start_counter: null,
-            },
-          );
+          this.resetMachineCounter(order.machine_number, false);
         }
       }
 
       if (updateDto.status === 'active' && currentStatus === 'suspended') {
-        await this.machineInfoModel.findOneAndUpdate(
-          { machine_number: order.machine_number },
-          {
-            recorded_counter: 0,
-            is_counter_paused: true,
-            pause_start_counter: 0,
-          },
-        );
+        // ตรวจสอบจำนวน active orders ก่อนหน้า (ไม่รวม order ปัจจุบันที่กำลังจะถูกเปลี่ยนเป็น active)
+        const activeOrdersCount = await this.assignOrderModel.countDocuments({
+          machine_number: order.machine_number,
+          status: 'active',
+        });
+
+        if (activeOrdersCount === 0) {
+          this.resetMachineCounter(order.machine_number, true);
+        }
       }
 
       const updatedOrder = await this.assignOrderModel.findByIdAndUpdate(

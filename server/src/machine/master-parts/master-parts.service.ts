@@ -16,6 +16,25 @@ export class MasterPartsService {
     private readonly masterPartModel: Model<MasterPart>,
   ) {}
 
+  private splitPartNumberAndName(description: string): {
+    partNumber: string;
+    partName: string;
+  } {
+    const firstSpaceIndex = description.indexOf(' ');
+
+    if (firstSpaceIndex === -1) {
+      return {
+        partNumber: description,
+        partName: '',
+      };
+    }
+
+    const partNumber = description.substring(0, firstSpaceIndex);
+    const partName = description.substring(firstSpaceIndex + 1).trim();
+
+    return { partNumber, partName };
+  }
+
   async findAll(query: any = {}): Promise<ResponseFormat<MasterPart>> {
     try {
       const parts = await this.masterPartModel.find(query).lean();
@@ -234,25 +253,6 @@ export class MasterPartsService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
-  }
-
-  private splitPartNumberAndName(description: string): {
-    partNumber: string;
-    partName: string;
-  } {
-    const firstSpaceIndex = description.indexOf(' ');
-
-    if (firstSpaceIndex === -1) {
-      return {
-        partNumber: description,
-        partName: '',
-      };
-    }
-
-    const partNumber = description.substring(0, firstSpaceIndex);
-    const partName = description.substring(firstSpaceIndex + 1).trim();
-
-    return { partNumber, partName };
   }
 
   async updateAllPartNumberAndName(): Promise<{
