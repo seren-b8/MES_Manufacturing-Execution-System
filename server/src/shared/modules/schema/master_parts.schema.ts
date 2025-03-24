@@ -3,6 +3,9 @@ import { Document } from 'mongoose';
 
 @Schema({ collection: 'master_parts' })
 export class MasterPart extends Document {
+  @Prop()
+  _id: string;
+
   @Prop({ required: true, unique: true })
   material_number: string;
 

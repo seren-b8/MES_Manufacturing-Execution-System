@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Put,
   Query,
   UseGuards,
   UseInterceptors,
@@ -15,7 +16,7 @@ import {
 import { MachineInfoService } from './machine-info.service';
 
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
-import { CreateMachineInfoDto } from '../dto/machine-info.dto';
+import { CreateMachineInfoDto, SetCounterDto } from '../dto/machine-info.dto';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import { ResponseFormat } from 'src/shared/interface';
 import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
@@ -145,5 +146,17 @@ export class MachineInfoController {
   @Roles(Role.ADMIN, Role.MANAGER)
   findMachinesByPrinter(@Param('printerId') printerId: string) {
     return this.machineInfoService.findMachinesByPrinter(printerId);
+  }
+
+  @Put('counter/:machineNumber')
+  @Roles(Role.ADMIN)
+  setMachineCounter(
+    @Param('machineNumber') machineNumber: string,
+    @Body() setCounterDto: SetCounterDto,
+  ) {
+    return this.machineInfoService.setMachineCounter(
+      machineNumber,
+      setCounterDto.counter,
+    );
   }
 }

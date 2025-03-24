@@ -1,4 +1,10 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+} from 'class-validator';
 
 export class CreateMachineInfoDto {
   @IsString()
@@ -20,4 +26,10 @@ export class CreateMachineInfoDto {
   @IsString()
   @IsNotEmpty({ message: 'Line is required' })
   line: string;
+}
+
+export class SetCounterDto {
+  @IsNumber()
+  @IsPositive()
+  counter: number;
 }

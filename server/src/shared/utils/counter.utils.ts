@@ -24,3 +24,18 @@ export function calculateAvailableCounter(
   // ป้องกันไม่ให้ผลลัพธ์เป็นค่าลบ
   return Math.max(0, totalCounter - recordedCounter);
 }
+
+export function setMachineCounter(
+  totalPieces: number,
+  cavityValue: number,
+): { counter: number; recorded_counter: number } {
+  totalPieces = Math.max(0, totalPieces || 0);
+  cavityValue = Math.max(1, cavityValue || 1);
+  const cycles = Math.floor(totalPieces / cavityValue);
+  const remainder = totalPieces % cavityValue;
+
+  return {
+    counter: cycles,
+    recorded_counter: remainder,
+  };
+}

@@ -58,7 +58,7 @@ export class AssignOrderService {
       if (isActive) {
         // กรณีมี active order - ใช้สำหรับเปิด order หรือกลับมาทำงานต่อ
         const currentCounter = machine.counter || 0;
-        updateData.recorded_counter = 0;
+        updateData.recorded_counter = currentCounter;
         updateData.is_counter_paused = true;
         updateData.pause_start_counter = currentCounter;
       } else {

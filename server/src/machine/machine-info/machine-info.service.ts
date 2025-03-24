@@ -16,13 +16,17 @@ import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { CreateMachineInfoDto } from '../dto/machine-info.dto';
-import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
+import {
+  calculateAvailableCounter,
+  setMachineCounter,
+} from 'src/shared/utils/counter.utils';
 import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
 import * as _ from 'lodash';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import * as moment from 'moment-timezone';
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 import { PrinterDevice } from 'src/shared/modules/schema/printer-device.schema';
+import { count, error } from 'console';
 
 @Injectable()
 export class MachineInfoService {
@@ -1269,6 +1273,142 @@ export class MachineInfoService {
           status: 'error',
           message:
             'Failed to analyze machine status: ' + (error as Error).message,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async setMachineCounter(
+    machineNumber: string,
+    counter: number,
+  ): Promise<ResponseFormat<any>> {
+    try {
+      // ตรวจสอบค่า counter
+      if (counter <= 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'counter cannot be under 0',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // ค้นหาข้อมูลเครื่องจักร
+      const machine = await this.machineInfoModel
+        .findOne({
+          machine_number: machineNumber,
+        })
+        .lean();
+
+      if (!machine) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'invalid machine',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ค้นหา active assignment
+      const assignOrder = await this.assignOrderModel.findOne({
+        machine_number: machine.machine_number,
+        status: 'active',
+      });
+
+      if (!assignOrder) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'no active assignment found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ค้นหา production order
+      const productionOrder = await this.productionOrderModel.findById(
+        assignOrder.production_order_id,
+      );
+
+      if (!productionOrder) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'production order not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ค้นหาข้อมูลสินค้า
+      const product = await this.masterPartModel.findOne({
+        material_number: productionOrder.material_number,
+      });
+
+      if (!product) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'product not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // ค้นหาข้อมูล cavity
+      const cavity = await this.masterCavityModel.findOne({
+        parts: { $in: [product._id] },
+      });
+
+      // กำหนดค่า cavity (ถ้าไม่มีให้ใช้ค่า default คือ 1)
+      const cavityValue = cavity?.cavity || 1;
+
+      // คำนวณค่า counter
+
+      const { counter: cycleCount, recorded_counter: remainderCount } =
+        setMachineCounter(counter, cavityValue);
+
+      // กำหนดข้อมูลที่จะอัปเดต
+      const updateData = machine.is_counter_paused
+        ? {
+            counter: cycleCount,
+            recorded_counter: remainderCount,
+            pause_start_counter: cycleCount,
+          }
+        : {
+            counter: cycleCount,
+            recorded_counter: remainderCount,
+          };
+
+      // อัปเดตข้อมูลเครื่องจักร
+      const updatedMachine = await this.machineInfoModel.findOneAndUpdate(
+        { machine_number: machineNumber },
+        updateData,
+        { new: true },
+      );
+
+      // ส่งผลลัพธ์กลับ
+      return {
+        status: 'success',
+        message: 'Machine counter updated successfully',
+        data: [updatedMachine],
+      };
+    } catch (error) {
+      console.error('[ERROR] Error in setMachineCounter:', error);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to set machine counter: ' + (error as Error).message,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
