@@ -157,7 +157,8 @@ export class ProductionRecordController {
     @Body() data: PrintRequestDto,
   ): Promise<ResponseFormat<any>> {
     try {
-      let printerIp = '172.101.21.52'; // ค่าเริ่มต้น
+      // let printerIp = '172.101.21.52'; // ค่าเริ่มต้น
+      let printerIp = '';
 
       // ถ้ามีการระบุ machine_id
       if (data.machine_number) {

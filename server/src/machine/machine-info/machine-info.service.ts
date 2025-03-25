@@ -67,27 +67,6 @@ export class MachineInfoService {
     return Math.round((totalGood / targetQuantity) * 10000) / 100; // Round to 2 decimal places
   }
 
-  private calculateRunningTime(startTime: Date): number {
-    return Math.floor(
-      (new Date().getTime() - new Date(startTime).getTime()) / (1000 * 60),
-    );
-  }
-
-  private calculateEfficiency(
-    totalGood: number,
-    startTime: number,
-    cycleTime: number,
-    isPaused: boolean,
-  ): number {
-    if (!cycleTime || isPaused) return 0;
-    const runningTimeInSeconds =
-      (new Date().getTime() - new Date(startTime).getTime()) / 1000;
-    const theoreticalOutput = runningTimeInSeconds / cycleTime;
-    if (!theoreticalOutput) return 0;
-    const efficiency = (totalGood / theoreticalOutput) * 100;
-    return Math.round(efficiency * 100) / 100; // Round to 2 decimal places
-  }
-
   private analyzeMachineData(
     machineGroups: Map<string, any[]>,
     startDate: Date,
@@ -282,14 +261,12 @@ export class MachineInfoService {
     activeOrders: any[],
   ): Promise<IEmployeeDetail[]> {
     if (!activeOrders?.length) {
-      console.log('No active orders found, returning empty employee list');
       return [];
     }
 
     try {
       // รวบรวม order IDs จากทุก active order
       const orderIds = activeOrders.map((order) => order.order_id.toString());
-      console.log('Order IDs for employee lookup:', orderIds);
 
       // แก้ไขบัค: ไม่ควรใช้ toString() กับอาร์เรย์ แต่ควรส่ง orderIds โดยตรง
       const assignEmployees = await this.assignEmployeeModel
@@ -300,10 +277,7 @@ export class MachineInfoService {
         .populate<{ user_id: IUser }>('user_id')
         .lean();
 
-      console.log('Found assign employees:', assignEmployees.length);
-
       if (assignEmployees.length === 0) {
-        console.log('No active employee assignments found for these orders');
         return [];
       }
 
@@ -312,21 +286,16 @@ export class MachineInfoService {
         new Set(
           assignEmployees
             .map((assign) => {
-              console.log('User_id data:', assign.user_id);
               return assign.user_id?.employee_id;
             })
             .filter((id): id is string => !!id),
         ),
       );
 
-      console.log('Employee IDs for lookup:', employeeIds);
-
       // ดึงข้อมูลพนักงาน
       const employees = await this.employeeModel
         .find<IEmployee>({ employee_id: { $in: employeeIds } })
         .lean();
-
-      console.log('Found employees:', employees.length);
 
       // สร้างรายละเอียดพนักงาน
       const result = assignEmployees.map((assign): IEmployeeDetail => {
@@ -335,13 +304,6 @@ export class MachineInfoService {
           employees.find((emp) => emp.employee_id === userData.employee_id) ||
           ({} as IEmployee);
 
-        console.log('Mapping employee:', {
-          userId: userData._id?.toString(),
-          employeeId: userData.employee_id,
-          firstName: employeeData.first_name,
-          lastName: employeeData.last_name,
-        });
-
         return {
           id: userData._id?.toString() || '',
           employee_id: userData.employee_id || '',
@@ -349,7 +311,6 @@ export class MachineInfoService {
         };
       });
 
-      console.log('Final employee details:', result.length);
       return result; // เพิ่ม return statement ที่ขาดหายไป
     } catch (error) {
       console.error('Error fetching active employees from orders:', error);
@@ -365,64 +326,45 @@ export class MachineInfoService {
     }
 
     try {
-      // 1. ค้นหาแบบแยก query เพื่อง่ายต่อการ debug
+      // 1. ค้นหา part ก่อน
+      const part = await this.masterPartModel
+        .findOne({ material_number: materialNumber })
+        .lean();
+
+      if (!part) {
+        return { cavityData: null, partData: null };
+      }
+
+      // 2. ค้นหา cavity ที่มี part นี้ - ทั้งในรูปแบบ ObjectId และ String
+      const partIdString = part._id.toString();
+
       const cavity = await this.masterCavityModel
-        .findOne()
-        .populate({
-          path: 'parts',
-          model: 'MasterPart',
-          match: { material_number: materialNumber },
-          select: 'material_number part_number part_name weight',
+        .findOne({
+          $or: [
+            { parts: { $in: [part._id] } }, // ค้นหาแบบ ObjectId
+            { parts: { $in: [partIdString] } }, // ค้นหาแบบ String
+          ],
         })
         .lean();
 
-      // Debug logs
-
       if (!cavity) {
+        // เพิ่มการตรวจสอบว่ามี cavity ใดบ้างในระบบเพื่อ debug
+        const allCavities = await this.masterCavityModel.find().limit(3).lean();
+
         return { cavityData: null, partData: null };
       }
 
-      if (!cavity.parts || cavity.parts.length === 0) {
-        return { cavityData: null, partData: null };
-      }
-
-      // 2. ถ้าไม่พบข้อมูล ลองค้นหาโดยตรงจาก MasterPart
-      if (!cavity.parts.length) {
-        const part = await this.masterPartModel
-          .findOne({ material_number: materialNumber })
-          .lean();
-
-        if (part) {
-          // ค้นหา cavity ที่มี part นี้
-          const cavityWithPart = await this.masterCavityModel
-            .findOne({ parts: part._id })
-            .lean();
-
-          if (cavityWithPart) {
-            return {
-              cavityData: {
-                cavity: cavityWithPart.cavity,
-                runner: cavityWithPart.runner,
-                tonnage: cavityWithPart.tonnage,
-              },
-              partData: part,
-            };
-          }
-        }
-      }
-
-      // 3. ถ้าพบข้อมูลปกติ
+      // 3. ส่งผลลัพธ์ที่ถูกต้อง
       return {
         cavityData: {
           cavity: cavity.cavity,
           runner: cavity.runner,
           tonnage: cavity.tonnage,
         },
-        partData: cavity.parts[0],
+        partData: part,
       };
     } catch (error) {
       console.error('Error getting cavity and part data:', error);
-      // Log detailed error information
       console.error('Error details:', {
         materialNumber,
         errorMessage: (error as Error).message,
