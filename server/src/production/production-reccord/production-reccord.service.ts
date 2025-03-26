@@ -127,16 +127,6 @@ export class ProductionRecordService {
       // กำหนดค่า cavity count
       const cavityCount = cavityData?.cavity || 1;
 
-      // Debug logs
-      // console.log('Cavity and Counter Info:', {
-      //   material_number: productionOrder.material_number,
-      //   cavity_data: cavityData,
-      //   part_data: partData,
-      //   cavity_count: cavityCount,
-      //   machine_counter: machine.counter,
-      //   recorded_counter: machine.recorded_counter,
-      // });
-
       const availableCounter = calculateAvailableCounter(
         machine.counter,
         machine.recorded_counter,
@@ -183,48 +173,28 @@ export class ProductionRecordService {
   private async getCavityData(materialNumber: string) {
     try {
       // ค้นหา cavity ที่มี part ที่ตรงกับ material number
-      const cavity = await this.masterCavityModel
-        .findOne()
-        .populate({
-          path: 'parts',
-          model: 'MasterPart',
-          match: { material_number: materialNumber },
-          select: 'material_number part_number part_name weight',
-        })
+      // 1. ค้นหา part ก่อน
+      const part = await this.masterPartModel
+        .findOne({ material_number: materialNumber })
         .lean();
 
-      // กรณีไม่พบ cavity
-      if (!cavity) {
-        // console.log('No cavity found for material:', materialNumber);
+      if (!part) {
         return { cavityData: null, partData: null };
       }
 
-      // กรณีพบ cavity แต่ไม่มี part ที่ตรงกัน
-      if (!cavity.parts?.length) {
-        // console.log('Trying to find part directly');
-        const part = await this.masterPartModel
-          .findOne({ material_number: materialNumber })
-          .lean();
+      // 2. ค้นหา cavity ที่มี part นี้ - ทั้งในรูปแบบ ObjectId และ String
+      const partIdString = part._id.toString();
 
-        if (part) {
-          // console.log('Found part:', part);
-          // ค้นหา cavity ที่มี part นี้
-          const cavityWithPart = await this.masterCavityModel
-            .findOne({ parts: part._id })
-            .lean();
+      const cavity = await this.masterCavityModel.findOne({
+        $or: [
+          { parts: { $in: [part._id] } }, // ค้นหาแบบ ObjectId
+          { parts: { $in: [partIdString] } }, // ค้นหาแบบ String
+        ],
+      });
 
-          if (cavityWithPart) {
-            // console.log('Found cavity through part:', cavityWithPart);
-            return {
-              cavityData: {
-                cavity: cavityWithPart.cavity,
-                runner: cavityWithPart.runner,
-                tonnage: cavityWithPart.tonnage,
-              },
-              partData: part,
-            };
-          }
-        }
+      // กรณีไม่พบ cavity
+      if (!cavity) {
+        console.log('No cavity found for material:', materialNumber);
         return { cavityData: null, partData: null };
       }
 
@@ -235,7 +205,7 @@ export class ProductionRecordService {
           runner: cavity.runner,
           tonnage: cavity.tonnage,
         },
-        partData: cavity.parts[0],
+        partData: part,
       };
     } catch (error) {
       console.error('Error getting cavity data:', error);
