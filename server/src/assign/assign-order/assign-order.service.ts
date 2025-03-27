@@ -101,7 +101,12 @@ export class AssignOrderService {
         assign_stage: false,
       });
 
-      if (!order) {
+      const assignOrder = await this.assignOrderModel.findOne({
+        production_order_id: createDto.production_order_id,
+        status: 'suspended',
+      });
+
+      if (!order && !assignOrder) {
         throw new HttpException(
           {
             status: 'error',
@@ -110,6 +115,15 @@ export class AssignOrderService {
           },
           HttpStatus.NOT_FOUND,
         );
+      }
+
+      if (assignOrder) {
+        await this.update(assignOrder._id.toString(), { status: 'active' });
+        return {
+          status: 'success',
+          message: 'assign order successfully',
+          data: [],
+        };
       }
       const checkOrder = await this.assignOrderModel.aggregate([
         {
