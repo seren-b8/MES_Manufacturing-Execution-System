@@ -1,7 +1,7 @@
 import { HttpStatus, HttpException } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import {
   CreateAssignOrderDto,
   UpdateAssignOrderDto,
@@ -96,13 +96,17 @@ export class AssignOrderService {
     createDto: CreateAssignOrderDto,
   ): Promise<ResponseFormat<AssignOrder>> {
     try {
+      const production_order_id = new Types.ObjectId(
+        createDto.production_order_id,
+      );
+
       const order = await this.productionOrderModel.findOne({
-        _id: createDto.production_order_id,
+        _id: production_order_id,
         assign_stage: false,
       });
 
       const assignOrder = await this.assignOrderModel.findOne({
-        production_order_id: createDto.production_order_id,
+        production_order_id: production_order_id.toString(),
         status: 'suspended',
       });
 
@@ -164,17 +168,6 @@ export class AssignOrderService {
         status: 'active',
       });
 
-      if (activeOrdersCount >= 2) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Machine is already assigned to an order',
-            data: [],
-          },
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
       // If this is the first order for the machine, reset the counter
       if (activeOrdersCount === 0) {
         this.resetMachineCounter(createDto.machine_number, true);
@@ -193,10 +186,9 @@ export class AssignOrderService {
 
       const savedOrder = await newAssignOrder.save();
 
-      await this.productionOrderModel.findByIdAndUpdate(
-        createDto.production_order_id,
-        { assign_stage: true },
-      );
+      await this.productionOrderModel.findByIdAndUpdate(production_order_id, {
+        assign_stage: true,
+      });
 
       // NEW CODE: Check for active employee assignments on the same machine
       // and create matching assignments for the new order
