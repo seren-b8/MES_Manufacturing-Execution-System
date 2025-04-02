@@ -21,6 +21,14 @@ export class CreateMasterPartDto {
   @IsNotEmpty()
   @IsNumber()
   weight: number;
+
+  @IsOptional()
+  @IsString()
+  part_model?: string;
+
+  @IsOptional()
+  @IsString()
+  image_url?: string;
 }
 
 export class UpdateMasterPartDto extends PartialType(CreateMasterPartDto) {}
