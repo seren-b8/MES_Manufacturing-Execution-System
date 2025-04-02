@@ -11,6 +11,7 @@ import { MasterNotGood } from 'src/shared/modules/schema/master-not-good.schema'
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 import {
   CreateProductionRecordDto,
+  labelData,
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
 import { ResponseFormat } from 'src/shared/interface';
@@ -2030,6 +2031,81 @@ export class ProductionRecordService {
           (error as Error).message || 'Failed to retrieve production summaries',
         data: [],
       };
+    }
+  }
+
+  async getLabelData(
+    serial_number: string,
+    materialNumber: string,
+  ): Promise<ResponseFormat<labelData>> {
+    try {
+      const record = await this.productionRecordModel.findOne({
+        serial_code: serial_number,
+      });
+
+      if (!record) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Serial number not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const part = await this.masterPartModel.findOne({
+        material_number: materialNumber,
+      });
+
+      if (!part) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Material number not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const cavityData = await this.masterCavityModel.findOne({
+        parts: { $in: [part._id] },
+      });
+
+      if (!cavityData) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Cavity data not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const labelData: labelData = {
+        color: cavityData.color,
+        date: record.production_date.toString(),
+        part_model: part.part_model,
+        part_name: part.part_name,
+      };
+
+      return {
+        status: 'success',
+        message: 'Label data retrieved successfully',
+        data: [labelData],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to get label data: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

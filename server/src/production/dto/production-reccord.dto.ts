@@ -1,4 +1,5 @@
 import { Types } from 'mongoose';
+import { string } from 'yargs';
 
 export class CreateProductionRecordDto {
   assign_order_id: string;
@@ -26,4 +27,11 @@ interface AssignEmployee {
 
 interface MasterNotGood {
   _id: Types.ObjectId;
+}
+
+export interface labelData {
+  color: string;
+  date: string;
+  part_model: string;
+  part_name: string;
 }

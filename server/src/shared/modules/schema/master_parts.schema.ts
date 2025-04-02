@@ -20,6 +20,12 @@ export class MasterPart extends Document {
 
   @Prop()
   weight: number;
+
+  @Prop()
+  part_model: string;
+
+  @Prop()
+  image_url: string;
 }
 
 export const MasterPartSchema = SchemaFactory.createForClass(MasterPart);
