@@ -2097,6 +2097,8 @@ export class ProductionRecordService {
         date: record.production_date.toString(),
         part_model: part.part_model,
         part_name: part.part_name,
+        part_code: part.part_number,
+        mat: cavityData.mat,
       };
 
       return {
@@ -2203,9 +2205,9 @@ export class ProductionRecordService {
         customer_name: data?.customerName ?? labelData?.customer_name ?? '-',
         model: labelData?.part_model ?? '-',
         supplier: 'Serenity',
-        part_code: data?.partCode ?? '-',
+        part_code: labelData?.partCode ?? '-',
         part_name: labelData?.part_name ?? '-',
-        mat: data?.mat ?? '-',
+        mat: labelData?.mat ?? '-',
         color: labelData?.color ?? '-',
         producer: data?.producer ?? '-',
         date: labelData?.date

@@ -61,6 +61,10 @@ export class CreateMasterCavityDto {
   @IsString()
   @IsOptional()
   color?: string;
+
+  @IsString()
+  @IsOptional()
+  mat?: string;
 }
 
 // update-master-cavity.dto.ts
@@ -95,6 +99,10 @@ export class UpdateMasterCavityDto {
   @IsString()
   @IsOptional()
   color?: string;
+
+  @IsString()
+  @IsOptional()
+  mat?: string;
 }
 
 export class CreateFromPartsDto extends OmitType(CreateMasterCavityDto, [

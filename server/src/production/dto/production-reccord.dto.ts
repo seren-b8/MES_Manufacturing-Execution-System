@@ -34,6 +34,8 @@ export interface labelData {
   date: string;
   part_model: string;
   part_name: string;
+  part_code: string;
+  mat: string;
 }
 
 export class PrintRequestDto {

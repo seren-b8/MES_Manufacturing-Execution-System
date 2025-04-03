@@ -23,6 +23,9 @@ export class MasterCavity extends Document {
 
   @Prop()
   color: string;
+
+  @Prop()
+  mat: string;
 }
 
 export const MasterCavitySchema = SchemaFactory.createForClass(MasterCavity);
