@@ -2059,14 +2059,7 @@ export class ProductionRecordService {
       });
 
       if (!record) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Serial number not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
+        console.warn(`Record not found for serial number: ${serial_number}`);
       }
 
       const part = await this.masterPartModel.findOne({
@@ -2227,11 +2220,11 @@ export class ProductionRecordService {
       };
 
       // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
-      console.log('Sending print request to:', printServiceUrl);
-      console.log('Print payload:', printPayload);
+      // console.log('Sending print request to:', printServiceUrl);
+      // console.log('Print payload:', printPayload);
       const response = await axios.post(printServiceUrl, printPayload);
 
-      console.log('Print response:', response);
+      //console.log('Print response:', response);
 
       return {
         status: 'success',
