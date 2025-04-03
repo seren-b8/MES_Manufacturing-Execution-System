@@ -11,6 +11,11 @@ import {
   HttpStatus,
   UseGuards,
   HttpException,
+  UseInterceptors,
+  UploadedFile,
+  FileTypeValidator,
+  ParseFilePipe,
+  MaxFileSizeValidator,
 } from '@nestjs/common';
 import { MasterPartsService } from './master-parts.service';
 import { ResponseFormat } from 'src/shared/interface';
@@ -20,6 +25,7 @@ import {
   CreateMasterPartDto,
   UpdateMasterPartDto,
 } from '../dto/master-parts.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('master-parts')
 @UseGuards(JwtAuthGuard)
@@ -44,18 +50,40 @@ export class MasterPartsController {
   }
 
   @Post()
+  @UseInterceptors(FileInterceptor('image'))
   async create(
     @Body() createDto: CreateMasterPartDto,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new FileTypeValidator({ fileType: '.(png|jpeg|jpg)' }),
+        ],
+        fileIsRequired: false,
+      }),
+    )
+    file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
-    return this.masterPartsService.create(createDto);
+    return this.masterPartsService.create(createDto, file);
   }
 
   @Put(':id')
+  @UseInterceptors(FileInterceptor('image'))
   async update(
     @Param('id') id: string,
     @Body() updateDto: UpdateMasterPartDto,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new FileTypeValidator({ fileType: '.(png|jpeg|jpg)' }),
+        ],
+        fileIsRequired: false,
+      }),
+    )
+    file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
-    return this.masterPartsService.update(id, updateDto);
+    return this.masterPartsService.update(id, updateDto, file);
   }
 
   @Delete(':id')

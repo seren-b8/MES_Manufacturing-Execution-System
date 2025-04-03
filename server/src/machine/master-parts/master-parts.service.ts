@@ -8,6 +8,7 @@ import {
   CreateMasterPartDto,
   UpdateMasterPartDto,
 } from '../dto/master-parts.dto';
+import axios from 'axios';
 
 @Injectable()
 export class MasterPartsService {
@@ -33,6 +34,43 @@ export class MasterPartsService {
     const partName = description.substring(firstSpaceIndex + 1).trim();
 
     return { partNumber, partName };
+  }
+
+  // Helper method to handle image upload
+  private async uploadImage(
+    file: Express.Multer.File,
+    materialNumber: string,
+  ): Promise<string> {
+    try {
+      // Generate a unique filename using material number and timestamp
+      const timestamp = new Date().getTime();
+      const fileExtension = file.originalname.split('.').pop();
+      const filename = `${materialNumber}_${timestamp}.${fileExtension}`;
+      console.log('filename', filename);
+
+      // Define the base server URL
+      const baseServerUrl = process.env.IMAGE_SERVER_URL;
+
+      // Create a FormData object for the file upload
+      const formData = new FormData();
+
+      // Convert Buffer to Blob
+      const blob = new Blob([file.buffer], { type: file.mimetype });
+      formData.append('file', blob, filename);
+
+      // Upload the file to your server
+      await axios.post(`${baseServerUrl}upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      // Return the URL to access the image
+      return `${baseServerUrl}${filename}`;
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      throw new Error(`Image upload failed: ${(error as Error).message}`);
+    }
   }
 
   async findAll(query: any = {}): Promise<ResponseFormat<MasterPart>> {
@@ -127,12 +165,15 @@ export class MasterPartsService {
 
   async create(
     createDto: CreateMasterPartDto,
+    file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
     try {
       // Check if material number already exists
       const exists = await this.masterPartModel.findOne({
         material_number: createDto.material_number,
       });
+
+      console.log(createDto);
 
       if (exists) {
         throw new HttpException(
@@ -143,6 +184,14 @@ export class MasterPartsService {
           },
           HttpStatus.BAD_REQUEST,
         );
+      }
+
+      if (file) {
+        const imagePath = await this.uploadImage(
+          file,
+          createDto.material_number,
+        );
+        createDto.image_url = imagePath;
       }
 
       const newPart = await this.masterPartModel.create(createDto);
@@ -167,9 +216,21 @@ export class MasterPartsService {
   async update(
     id: string,
     updateDto: UpdateMasterPartDto,
+    file?: Express.Multer.File, // Add file parameter
   ): Promise<ResponseFormat<MasterPart>> {
     try {
       // Check if material number exists on another record if updating
+      const part = await this.masterPartModel.findById(id);
+      if (!part) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Part not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
       if (updateDto.material_number) {
         const exists = await this.masterPartModel.findOne({
           material_number: updateDto.material_number,
@@ -186,6 +247,14 @@ export class MasterPartsService {
             HttpStatus.BAD_REQUEST,
           );
         }
+      }
+
+      // Process image upload if file is provided
+      if (file) {
+        const materialNumber =
+          updateDto.material_number || part.material_number;
+        const imagePath = await this.uploadImage(file, materialNumber);
+        updateDto.image_url = imagePath;
       }
 
       const updatedPart = await this.masterPartModel

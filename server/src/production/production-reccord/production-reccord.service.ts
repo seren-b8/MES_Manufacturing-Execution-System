@@ -33,6 +33,7 @@ import axios from 'axios';
 import { AssignEmployeeService } from 'src/assign/assign-employee/assign-employee.service';
 import { DateRangeSummaryData } from 'src/shared/interface/product';
 import { MachineInfoService } from 'src/machine/machine-info/machine-info.service';
+import { response } from 'express';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -99,6 +100,17 @@ export class ProductionRecordService {
       },
       HttpStatus.INTERNAL_SERVER_ERROR,
     );
+  }
+
+  private formatDateForPrinter(dateString: string): string {
+    const date = new Date(dateString);
+
+    // Create dd/mm/yyyy format
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0'); // +1 because months are 0-indexed
+    const year = date.getFullYear();
+
+    return `${day}/${month}/${year}`;
   }
 
   private async validateMachineCounter(assignOrder: any, quantity: number) {
@@ -2191,7 +2203,7 @@ export class ProductionRecordService {
       // สร้าง payload โดยใช้ข้อมูลจาก labelData ถ้ามี
       const printPayload: PrintDto = {
         tag_no: data.serial_number
-          ? parseInt(data.serial_number.split('-')[1] || '0')
+          ? parseInt(data.serial_number.split('-')[2] || '0000')
           : 0,
         order_id: data?.jobOrder ?? '-',
         sap_no: data?.matNo ?? '-',
@@ -2204,15 +2216,22 @@ export class ProductionRecordService {
         color: labelData?.color ?? '-',
         producer: data?.producer ?? '-',
         date: labelData?.date
-          ? new Date(labelData.date).toISOString().split('T')[0]
-          : new Date().toISOString().split('T')[0],
+          ? this.formatDateForPrinter(
+              new Date(labelData.date).toISOString().split('T')[0],
+            )
+          : this.formatDateForPrinter(new Date().toISOString().split('T')[0]),
         quantity: data?.quantityStd ?? 0,
         number_of_tags: data?.number_of_tags ?? 1,
         code: data?.serial_number ?? '-',
+        image_url: labelData?.image_url ?? '',
       };
 
       // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
+      console.log('Sending print request to:', printServiceUrl);
+      console.log('Print payload:', printPayload);
       const response = await axios.post(printServiceUrl, printPayload);
+
+      console.log('Print response:', response);
 
       return {
         status: 'success',
@@ -2225,6 +2244,18 @@ export class ProductionRecordService {
         ],
       };
     } catch (error) {
+      if (error instanceof HttpException) throw error;
+
+      if (axios.isAxiosError(error)) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Failed to send print request: ${error.response?.data?.message}`,
+            data: [error.response?.data?.data || {}],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
       throw new HttpException(
         {
           status: 'error',
