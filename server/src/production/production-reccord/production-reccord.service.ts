@@ -2112,7 +2112,7 @@ export class ProductionRecordService {
     }
   }
 
-  async printLabel(data: PrintRequestDto): Promise<ResponseFormat<any>> {
+  async printLabel(data: PrintRequestDto): Promise<ResponseFormat<[]>> {
     try {
       let printerIp = ''; // ค่าเริ่มต้นสำหรับ IP ของเครื่องพิมพ์
 
@@ -2138,11 +2138,29 @@ export class ProductionRecordService {
             console.warn(
               `Printer ${printer.device_name} is not active, using default printer`,
             );
+
+            throw new HttpException(
+              {
+                status: 'error',
+                message: `Printer ${printer.device_name} is not active`,
+                data: [],
+              },
+              HttpStatus.INTERNAL_SERVER_ERROR,
+            );
           }
         } else {
           // ถ้าไม่พบเครื่องพิมพ์สำหรับเครื่องจักรนี้
           console.warn(
             `No printer found for machine ${data.machine_number}, using default printer`,
+          );
+
+          throw new HttpException(
+            {
+              status: 'error',
+              message: `No printer found for machine ${data.machine_number}`,
+              data: [],
+            },
+            HttpStatus.INTERNAL_SERVER_ERROR,
           );
         }
       }
@@ -2194,17 +2212,16 @@ export class ProductionRecordService {
       };
 
       // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
-      console.log(printPayload);
       const response = await axios.post(printServiceUrl, printPayload);
 
       return {
         status: 'success',
         message: `Print request sent successfully to printer at ${printerIp}`,
         data: [
-          {
-            ...response.data,
-            printer_ip: printerIp,
-          },
+          // {
+          //   ...response.data,
+          //   printer_ip: printerIp,
+          // },
         ],
       };
     } catch (error) {
