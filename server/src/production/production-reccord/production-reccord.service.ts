@@ -12,6 +12,8 @@ import { ProductionRecord } from 'src/shared/modules/schema/production-record.sc
 import {
   CreateProductionRecordDto,
   labelData,
+  PrintDto,
+  PrintRequestDto,
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
 import { ResponseFormat } from 'src/shared/interface';
@@ -27,11 +29,10 @@ import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import { User } from 'src/shared/modules/schema/user.schema';
 import * as moment from 'moment-timezone';
+import axios from 'axios';
 import { AssignEmployeeService } from 'src/assign/assign-employee/assign-employee.service';
-import {
-  DailySummaryDataForProduct,
-  DateRangeSummaryData,
-} from 'src/shared/interface/product';
+import { DateRangeSummaryData } from 'src/shared/interface/product';
+import { MachineInfoService } from 'src/machine/machine-info/machine-info.service';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -61,6 +62,8 @@ export class ProductionRecordService {
     @InjectModel(User.name) private userModel: Model<User>,
 
     private AssignEmployeeService: AssignEmployeeService,
+
+    private readonly machineInfoService: MachineInfoService, // เพิ่ม service ของ machine-info
   ) {}
 
   private calculateProductionDate(date?: Date): Date {
@@ -2102,6 +2105,113 @@ export class ProductionRecordService {
         {
           status: 'error',
           message: `Failed to get label data: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async printLabel(data: PrintRequestDto): Promise<ResponseFormat<any>> {
+    try {
+      let printerIp = ''; // ค่าเริ่มต้นสำหรับ IP ของเครื่องพิมพ์
+
+      // ถ้ามีการระบุ machine_id
+      if (data.machine_number) {
+        // ดึงข้อมูลเครื่องพิมพ์ของเครื่องจักร
+        const machineResponse = await this.machineInfoService.getMachinePrinter(
+          data.machine_number,
+        );
+
+        // ตรวจสอบว่ามีข้อมูลเครื่องพิมพ์หรือไม่
+        if (
+          machineResponse.status === 'success' &&
+          machineResponse.data.length > 0
+        ) {
+          const printer = machineResponse.data[0];
+
+          // ถ้าเครื่องพิมพ์มีสถานะ active ให้ใช้ IP ของเครื่องพิมพ์นั้น
+          if (printer.status === 'active') {
+            printerIp = printer.ip_device;
+          } else {
+            // ถ้าเครื่องพิมพ์ไม่มีสถานะ active ให้ใช้ค่าเริ่มต้น
+            console.warn(
+              `Printer ${printer.device_name} is not active, using default printer`,
+            );
+          }
+        } else {
+          // ถ้าไม่พบเครื่องพิมพ์สำหรับเครื่องจักรนี้
+          console.warn(
+            `No printer found for machine ${data.machine_number}, using default printer`,
+          );
+        }
+      }
+
+      // สร้าง URL สำหรับการส่งคำขอพิมพ์
+      const printServiceUrl = `http://${printerIp}:8000/api/print`;
+
+      // ดึงข้อมูล label จาก getLabelData ถ้ามีทั้ง serial_number และ matNo
+      let labelDataResult = null;
+      if (data.serial_number && data.matNo) {
+        try {
+          labelDataResult = await this.getLabelData(
+            data.serial_number,
+            data.matNo,
+          );
+        } catch (error) {
+          console.warn(`Failed to get label data: ${(error as Error).message}`);
+          // ดำเนินการต่อแม้จะไม่สามารถดึงข้อมูล label ได้
+        }
+      }
+
+      // นำข้อมูล label มาใช้ถ้ามี
+      const labelData =
+        labelDataResult?.status === 'success' && labelDataResult.data.length > 0
+          ? labelDataResult.data[0]
+          : null;
+
+      // สร้าง payload โดยใช้ข้อมูลจาก labelData ถ้ามี
+      const printPayload: PrintDto = {
+        tag_no: data.serial_number
+          ? parseInt(data.serial_number.split('-')[1] || '0')
+          : 0,
+        order_id: data?.jobOrder ?? '-',
+        sap_no: data?.matNo ?? '-',
+        customer_name: data?.customerName ?? labelData?.customer_name ?? '-',
+        model: labelData?.part_model ?? '-',
+        supplier: 'Serenity',
+        part_code: data?.partCode ?? '-',
+        part_name: labelData?.part_name ?? '-',
+        mat: data?.mat ?? '-',
+        color: labelData?.color ?? '-',
+        producer: data?.producer ?? '-',
+        date: labelData?.date
+          ? new Date(labelData.date).toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0],
+        quantity: data?.quantityStd ?? 0,
+        number_of_tags: data?.number_of_tags ?? 1,
+        code: data?.serial_number ?? '-',
+      };
+
+      // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
+      console.log(printPayload);
+      const response = await axios.post(printServiceUrl, printPayload);
+
+      return {
+        status: 'success',
+        message: `Print request sent successfully to printer at ${printerIp}`,
+        data: [
+          {
+            ...response.data,
+            printer_ip: printerIp,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: (error as Error).message || 'Failed to send print request',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
