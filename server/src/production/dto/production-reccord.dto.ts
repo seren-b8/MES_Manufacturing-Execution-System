@@ -36,6 +36,7 @@ export interface labelData {
   part_name: string;
   part_code: string;
   mat: string;
+  image_url: string;
 }
 
 export class PrintRequestDto {

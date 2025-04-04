@@ -11,7 +11,6 @@ import { MasterNotGood } from 'src/shared/modules/schema/master-not-good.schema'
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 import {
   CreateProductionRecordDto,
-  labelData,
   PrintDto,
   PrintRequestDto,
   UpdateProductionRecordDto,
@@ -2049,76 +2048,6 @@ export class ProductionRecordService {
     }
   }
 
-  async getLabelData(
-    serial_number: string,
-    materialNumber: string,
-  ): Promise<ResponseFormat<labelData>> {
-    try {
-      const record = await this.productionRecordModel.findOne({
-        serial_code: serial_number,
-      });
-
-      if (!record) {
-        console.warn(`Record not found for serial number: ${serial_number}`);
-      }
-
-      const part = await this.masterPartModel.findOne({
-        material_number: materialNumber,
-      });
-
-      if (!part) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Material number not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      const cavityData = await this.masterCavityModel.findOne({
-        parts: { $in: [part._id] },
-      });
-
-      if (!cavityData) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Cavity data not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      const labelData: labelData = {
-        color: cavityData.color,
-        date: record.production_date.toString(),
-        part_model: part.part_model,
-        part_name: part.part_name,
-        part_code: part.part_number,
-        mat: cavityData.mat,
-      };
-
-      return {
-        status: 'success',
-        message: 'Label data retrieved successfully',
-        data: [labelData],
-      };
-    } catch (error) {
-      if (error instanceof HttpException) throw error;
-      throw new HttpException(
-        {
-          status: 'error',
-          message: `Failed to get label data: ${(error as Error).message}`,
-          data: [],
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
   async printLabel(data: PrintRequestDto): Promise<ResponseFormat<[]>> {
     try {
       let printerIp = ''; // ค่าเริ่มต้นสำหรับ IP ของเครื่องพิมพ์
@@ -2175,25 +2104,27 @@ export class ProductionRecordService {
       // สร้าง URL สำหรับการส่งคำขอพิมพ์
       const printServiceUrl = `http://${printerIp}:8000/api/print`;
 
-      // ดึงข้อมูล label จาก getLabelData ถ้ามีทั้ง serial_number และ matNo
-      let labelDataResult = null;
-      if (data.serial_number && data.matNo) {
-        try {
-          labelDataResult = await this.getLabelData(
-            data.serial_number,
-            data.matNo,
-          );
-        } catch (error) {
-          console.warn(`Failed to get label data: ${(error as Error).message}`);
-          // ดำเนินการต่อแม้จะไม่สามารถดึงข้อมูล label ได้
-        }
-      }
+      const masterPart = await this.masterPartModel.aggregate([
+        {
+          $match: { material_number: data.matNo },
+        },
+        {
+          $lookup: {
+            from: 'master_cavity',
+            let: { part_id: { $toString: '$_id' } }, // แปลง ObjectId เป็น String
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $in: ['$$part_id', '$parts'] }, // ตรวจสอบว่ามีอยู่ใน array parts
+                },
+              },
+            ],
+            as: 'cavity_info',
+          },
+        },
+      ]);
 
-      // นำข้อมูล label มาใช้ถ้ามี
-      const labelData =
-        labelDataResult?.status === 'success' && labelDataResult.data.length > 0
-          ? labelDataResult.data[0]
-          : null;
+      const labelData = masterPart[0];
 
       // สร้าง payload โดยใช้ข้อมูลจาก labelData ถ้ามี
       const printPayload: PrintDto = {
@@ -2202,13 +2133,13 @@ export class ProductionRecordService {
           : 0,
         order_id: data?.jobOrder ?? '-',
         sap_no: data?.matNo ?? '-',
-        customer_name: data?.customerName ?? labelData?.customer_name ?? '-',
-        model: labelData?.part_model ?? '-',
+        customer_name: data?.customerName ?? '-',
+        model: labelData.part_model ?? '-',
         supplier: 'Serenity',
-        part_code: labelData?.partCode ?? '-',
+        part_code: labelData?.part_number ?? '-',
         part_name: labelData?.part_name ?? '-',
-        mat: labelData?.mat ?? '-',
-        color: labelData?.color ?? '-',
+        mat: labelData?.cavity_info[0]?.mat ?? '-',
+        color: labelData?.cavity_info[0]?.color ?? '-',
         producer: data?.producer ?? '-',
         date: labelData?.date
           ? this.formatDateForPrinter(
@@ -2222,21 +2153,12 @@ export class ProductionRecordService {
       };
 
       // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
-      // console.log('Sending print request to:', printServiceUrl);
-      // console.log('Print payload:', printPayload);
-      const response = await axios.post(printServiceUrl, printPayload);
-
-      //console.log('Print response:', response);
+      await axios.post(printServiceUrl, printPayload);
 
       return {
         status: 'success',
         message: `Print request sent successfully to printer at ${printerIp}`,
-        data: [
-          // {
-          //   ...response.data,
-          //   printer_ip: printerIp,
-          // },
-        ],
+        data: [],
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;

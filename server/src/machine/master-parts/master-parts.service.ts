@@ -1,7 +1,7 @@
 // master-parts.service.ts
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
 import {
@@ -9,6 +9,7 @@ import {
   UpdateMasterPartDto,
 } from '../dto/master-parts.dto';
 import axios from 'axios';
+import { Type } from 'class-transformer';
 
 @Injectable()
 export class MasterPartsService {
@@ -216,11 +217,24 @@ export class MasterPartsService {
   async update(
     id: string,
     updateDto: UpdateMasterPartDto,
-    file?: Express.Multer.File, // Add file parameter
+    file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
     try {
-      // Check if material number exists on another record if updating
+      // ตรวจสอบรูปแบบ ObjectId
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Invalid ID format',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // ค้นหา part โดยใช้ ObjectId โดยตรง (ไม่ต้องแปลงซ้ำ)
       const part = await this.masterPartModel.findById(id);
+
       if (!part) {
         throw new HttpException(
           {
@@ -231,10 +245,12 @@ export class MasterPartsService {
           HttpStatus.NOT_FOUND,
         );
       }
+
+      // ตรวจสอบความซ้ำซ้อนของ material_number
       if (updateDto.material_number) {
         const exists = await this.masterPartModel.findOne({
           material_number: updateDto.material_number,
-          _id: { $ne: id },
+          _id: { $ne: id }, // ใช้ id string ได้เลย ไม่ต้องแปลงซ้ำ
         });
 
         if (exists) {
@@ -249,7 +265,7 @@ export class MasterPartsService {
         }
       }
 
-      // Process image upload if file is provided
+      // จัดการไฟล์อัปโหลด
       if (file) {
         const materialNumber =
           updateDto.material_number || part.material_number;
@@ -257,20 +273,12 @@ export class MasterPartsService {
         updateDto.image_url = imagePath;
       }
 
-      const updatedPart = await this.masterPartModel
-        .findByIdAndUpdate(id, updateDto, { new: true })
-        .lean();
-
-      if (!updatedPart) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Part not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
+      // อัปเดตข้อมูล (ไม่จำเป็นต้องใช้ lean() ถ้าไม่มีความจำเป็น)
+      const updatedPart = await this.masterPartModel.findByIdAndUpdate(
+        id,
+        updateDto,
+        { new: true },
+      );
 
       return {
         status: 'success',
@@ -279,10 +287,13 @@ export class MasterPartsService {
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
+
+      console.error('Update part error:', error);
+
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to update part',
+          message: (error as Error).message || 'Failed to update part',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
