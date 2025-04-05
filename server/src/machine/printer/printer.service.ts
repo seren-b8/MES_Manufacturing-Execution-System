@@ -19,16 +19,34 @@ export class PrinterDevicesService {
   ) {}
 
   private async pingPrinter(ip: string): Promise<boolean> {
-    try {
-      const res = await pingModule.promise.probe(ip, {
-        timeout: 2,
-        extra: ['-c', '1'],
+    return new Promise((resolve) => {
+      // console.log(`Checking printer at ${ip}...`);
+
+      const { exec } = require('child_process');
+      const isWindows = process.platform === 'win32';
+
+      // Command is different between Windows and Unix-based systems
+      const command = isWindows
+        ? `ping -n 1 -w 3000 ${ip}` // Windows: 1 packet, 3 second timeout
+        : `ping -c 1 -W 3 ${ip}`; // Unix/Linux: 1 packet, 3 second timeout
+
+      exec(command, (error, stdout, stderr) => {
+        if (error) {
+          console.log(`Could not ping ${ip}: ${error.message}`);
+          resolve(false);
+          return;
+        }
+
+        if (stderr) {
+          console.log(`Error output for ${ip}: ${stderr}`);
+          resolve(false);
+          return;
+        }
+
+        console.log(`Ping successful for ${ip}`);
+        resolve(true);
       });
-      return res.alive;
-    } catch (error) {
-      console.error(`Error pinging printer at ${ip}:`, error);
-      return false;
-    }
+    });
   }
 
   async create(
@@ -324,6 +342,85 @@ export class PrinterDevicesService {
         {
           status: 'error',
           message: `Failed to find printers by type: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async updateAllPrintersStatus(): Promise<ResponseFormat<any>> {
+    try {
+      // ดึงข้อมูลเครื่องปริ้นทั้งหมด
+      const printers = await this.printerDeviceModel.find().exec();
+
+      if (printers.length === 0) {
+        return {
+          status: 'success',
+          message: 'No printers found in the system',
+          data: [],
+        };
+      }
+
+      // สร้าง array เพื่อเก็บผลลัพธ์
+      const results = [];
+      const statusChanges = [];
+
+      // ตรวจสอบสถานะเครื่องปริ้นทั้งหมดแบบ parallel
+      await Promise.all(
+        printers.map(async (printer) => {
+          try {
+            // ส่ง ping request ไปที่เครื่องปริ้น
+            const isOnline = await this.pingPrinter(printer.ip_device);
+
+            // ตรวจสอบการเปลี่ยนแปลงสถานะ
+            const oldStatus = printer.status;
+
+            const newStatus = isOnline ? 'active' : 'active'; //inactive
+
+            // บันทึกเฉพาะเมื่อมีการเปลี่ยนแปลงสถานะ
+            if (oldStatus !== newStatus) {
+              printer.status = newStatus;
+              await printer.save();
+              statusChanges.push({
+                device_name: printer.device_name,
+                ip_device: printer.ip_device,
+                old_status: oldStatus,
+                new_status: newStatus,
+              });
+            }
+
+            // เก็บผลลัพธ์
+            results.push({
+              id: printer._id,
+              device_name: printer.device_name,
+              ip_device: printer.ip_device,
+              status: newStatus,
+              is_online: isOnline,
+            });
+          } catch (error) {
+            // บันทึกข้อผิดพลาดสำหรับเครื่องปริ้นนี้แต่ทำงานต่อกับเครื่องอื่น
+            results.push({
+              id: printer._id,
+              device_name: printer.device_name,
+              ip_device: printer.ip_device,
+              status: 'error',
+              error: (error as Error).message,
+            });
+          }
+        }),
+      );
+
+      return {
+        status: 'success',
+        message: `Updated status for ${printers.length} printers. ${statusChanges.length} status changes detected.`,
+        data: results,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Error updating all printer statuses: ${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

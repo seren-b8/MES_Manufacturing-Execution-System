@@ -19,6 +19,7 @@ import {
   UpdatePrinterDeviceDto,
 } from '../dto/printer.dto';
 import { PrinterDevicesService } from './printer.service';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Controller('printer/devices')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -69,4 +70,10 @@ export class PrinterDevicesController {
   checkStatus(@Param('id') id: string) {
     return this.printerDevicesService.checkPrinterStatus(id);
   }
+
+  // @Cron(CronExpression.EVERY_10_SECONDS)
+  // checkPrinterStatusCron() {
+  //   // console.log('Checking printer status...');
+  //   return this.printerDevicesService.updateAllPrintersStatus();
+  // }
 }

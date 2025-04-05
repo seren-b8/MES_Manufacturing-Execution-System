@@ -340,9 +340,15 @@ export class MasterPartsService {
     updatedCount: number;
     errors: Array<{ materialNumber: string; error: string }>;
   }> {
-    // ดึงข้อมูลทั้งหมดที่มี material_description
+    // ดึงเฉพาะข้อมูลที่มี material_description แต่ยังไม่มี part_number หรือ part_name
     const masterParts = await this.masterPartModel.find({
       material_description: { $exists: true, $ne: null },
+      $or: [
+        { part_number: { $exists: false } },
+        { part_number: null },
+        { part_name: { $exists: false } },
+        { part_name: null },
+      ],
     });
 
     let updatedCount = 0;
