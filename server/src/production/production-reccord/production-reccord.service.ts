@@ -2154,7 +2154,7 @@ export class ProductionRecordService {
       console.log('printPayload', printPayload);
 
       // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
-      // await axios.post(printServiceUrl, printPayload);
+      await axios.post(printServiceUrl, printPayload);
 
       return {
         status: 'success',

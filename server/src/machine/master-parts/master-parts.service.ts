@@ -10,6 +10,7 @@ import {
 } from '../dto/master-parts.dto';
 import axios from 'axios';
 import { Type } from 'class-transformer';
+import * as _ from 'lodash';
 
 @Injectable()
 export class MasterPartsService {
@@ -215,25 +216,14 @@ export class MasterPartsService {
   }
 
   async update(
-    id: string,
     updateDto: UpdateMasterPartDto,
-    file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
     try {
-      // ตรวจสอบรูปแบบ ObjectId
-      if (!mongoose.Types.ObjectId.isValid(id)) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Invalid ID format',
-            data: [],
-          },
-          HttpStatus.BAD_REQUEST,
-        );
-      }
+      const part = await this.masterPartModel.findOne({
+        material_number: updateDto.material_number,
+      });
 
-      // ค้นหา part โดยใช้ ObjectId โดยตรง (ไม่ต้องแปลงซ้ำ)
-      const part = await this.masterPartModel.findById(id);
+      console.log(part);
 
       if (!part) {
         throw new HttpException(
@@ -246,38 +236,11 @@ export class MasterPartsService {
         );
       }
 
-      // ตรวจสอบความซ้ำซ้อนของ material_number
-      if (updateDto.material_number) {
-        const exists = await this.masterPartModel.findOne({
-          material_number: updateDto.material_number,
-          _id: { $ne: id }, // ใช้ id string ได้เลย ไม่ต้องแปลงซ้ำ
-        });
-
-        if (exists) {
-          throw new HttpException(
-            {
-              status: 'error',
-              message: 'Material number already exists',
-              data: [],
-            },
-            HttpStatus.BAD_REQUEST,
-          );
-        }
-      }
-
-      // จัดการไฟล์อัปโหลด
-      if (file) {
-        const materialNumber =
-          updateDto.material_number || part.material_number;
-        const imagePath = await this.uploadImage(file, materialNumber);
-        updateDto.image_url = imagePath;
-      }
-
       // อัปเดตข้อมูล (ไม่จำเป็นต้องใช้ lean() ถ้าไม่มีความจำเป็น)
-      const updatedPart = await this.masterPartModel.findByIdAndUpdate(
-        id,
-        updateDto,
-        { new: true },
+      const updatedPart = await this.masterPartModel.findOneAndUpdate(
+        { material_number: updateDto.material_number },
+        { $set: updateDto },
+        { new: true, runValidators: true },
       );
 
       return {
