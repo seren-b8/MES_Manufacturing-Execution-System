@@ -74,7 +74,7 @@ export class SapOrderService {
               ,[PlanTargetDay]
               ,[Show_Job]
               ,[LogDate]
-        FROM [SNC-SAP].[dbo].[IIOT_IPC_OperationSlip]`;
+        FROM [SNC-SAP].[dbo].[IIOT_B8_OperationSlip]`;
       const sqlData = await this.sqlService.query(query);
 
       // 2. แปลงข้อมูลให้ตรงกับ Schema และแปลงรูปแบบวันที่
