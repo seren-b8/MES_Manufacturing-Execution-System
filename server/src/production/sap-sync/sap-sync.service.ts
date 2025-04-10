@@ -8,6 +8,7 @@ import { GroupedProductionData } from 'src/shared/interface/sap';
 import { SapSyncValidationService } from './sap-sync-validation.service';
 import * as moment from 'moment-timezone';
 import * as _ from 'lodash';
+import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 
 @Injectable()
 export class SapProductionSyncService {
@@ -16,6 +17,8 @@ export class SapProductionSyncService {
     private readonly productionRecordModel: Model<ProductionRecord>,
     @InjectModel(SAPSyncLog.name)
     private readonly sapSyncLogModel: Model<SAPSyncLog>,
+    @InjectModel(ProductionOrder.name)
+    private readonly productionOrderModel: Model<ProductionOrder>,
     private readonly sqlService: SqlService,
     private readonly validationService: SapSyncValidationService,
   ) {}
@@ -141,6 +144,7 @@ export class SapProductionSyncService {
     }
   }
 
+  //! ส่งข้อมูลไปยัง SAP โดยใช้ retry mechanism
   private async sendToSap(
     syncLog: SAPSyncLog,
     groupedData: GroupedProductionData,
@@ -186,6 +190,7 @@ export class SapProductionSyncService {
     }
   }
 
+  //! ส่งข้อมูลไปยัง SAP ในชุดๆ โดยใช้ Promise.all
   private async sendToSapInBatches(
     syncLogEntries: SAPSyncLog[],
     concurrentLimit = 3, // ลดจาก 5 เป็น 3
@@ -271,7 +276,8 @@ export class SapProductionSyncService {
     await this.sapSyncLogModel.findByIdAndUpdate(logId, updateData);
   }
 
-  private async processRecords(
+  //! ประมวลผลข้อมูลก่อนส่งไปยัง SAP
+  private async createSyncLogsFromRecords(
     records: any[],
     orderTidMap: Map<string, string>,
   ) {
@@ -322,7 +328,8 @@ export class SapProductionSyncService {
           // ใช้ TID ที่มีอยู่แล้วหรือสร้างใหม่
           let sharedTid = orderTidMap.get(orderId);
           if (!sharedTid) {
-            sharedTid = await this.validationService.createTID();
+            sharedTid = await this.validationService.createTID(orderId);
+
             orderTidMap.set(orderId, sharedTid);
           }
           // เตรียมข้อมูลสำหรับทุกกลุ่มใน order นี้
@@ -445,7 +452,7 @@ export class SapProductionSyncService {
 
           // ในฟังก์ชัน processRecords
           // ส่งข้อมูลทั้งหมดไป SAP
-          await this.sendToSapInBatches(allSyncLogEntries);
+          // await this.sendToSapInBatches(allSyncLogEntries);
           return groups.reduce(
             (total, { records }) => total + records.length,
             0,
@@ -516,7 +523,7 @@ export class SapProductionSyncService {
     });
   }
 
-  async syncPendingRecords() {
+  async createSyncLogsFromPendingRecords() {
     try {
       // นับจำนวนข้อมูลทั้งหมดที่ต้องประมวลผล
       const totalCount = await this.productionRecordModel.countDocuments({
@@ -572,7 +579,7 @@ export class SapProductionSyncService {
         if (pendingRecords.length === 0) break;
 
         // ประมวลผล batch นี้ โดยส่ง orderTidMap เข้าไปด้วย
-        const batchProcessed = await this.processRecords(
+        const batchProcessed = await this.createSyncLogsFromRecords(
           pendingRecords,
           orderTidMap,
         );
@@ -602,23 +609,402 @@ export class SapProductionSyncService {
     }
   }
 
-  async getSyncLogs(filter: any) {
+  async sendPendingSyncLogsByTid(tids: string[]) {
     try {
-      const logs = await this.sapSyncLogModel
-        .find(filter)
-        .sort({ createdAt: -1 })
+      // ค้นหา SyncLog ที่มีสถานะ pending และ ID ตรงตามที่ระบุ
+      const pendingSyncLogs = await this.sapSyncLogModel
+        .find({ tid: { $in: tids }, status: 'pending' })
         .lean();
+
+      if (pendingSyncLogs.length === 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'No pending sync logs found with the specified IDs',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      // วันที่ปัจจุบันในรูปแบบที่ต้องการ
+      const currentDate = moment().tz('Asia/Bangkok');
+      const currentMonth = currentDate.month();
+      const currentYear = currentDate.year();
+
+      // วันที่ 1 ของเดือนปัจจุบัน ในรูปแบบ YYYYMMDD
+      const firstDayOfCurrentMonth = moment()
+        .tz('Asia/Bangkok')
+        .startOf('month')
+        .format('YYYYMMDD');
+
+      // 1. ตรวจสอบและปรับ budat ให้ตรงกับเดือนปัจจุบันก่อน
+      const updatedSyncLogs = [];
+
+      for (const syncLog of pendingSyncLogs) {
+        // สร้าง copy ของ syncLog เพื่อไม่แก้ไขข้อมูลต้นฉบับ
+        const updatedLog = { ...syncLog };
+
+        // ตรวจสอบเดือนของ budat
+        const budatMonth = moment(syncLog.budat, 'YYYYMMDD').month();
+        const budatYear = moment(syncLog.budat, 'YYYYMMDD').year();
+
+        // ถ้าเดือนไม่ตรงกับเดือนปัจจุบัน ให้ปรับเป็นวันที่ 1 ของเดือนปัจจุบัน
+        if (budatMonth !== currentMonth || budatYear !== currentYear) {
+          updatedLog.budat = firstDayOfCurrentMonth;
+
+          // อัพเดท budat ใน database
+          await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
+            budat: firstDayOfCurrentMonth,
+          });
+        }
+
+        updatedSyncLogs.push(updatedLog);
+      }
+
+      // 2. แปลง aufnr เป็น order_id โดยตัด 0 ด้านหน้าออก
+      const orderIds = updatedSyncLogs.map((log) => {
+        return log.aufnr.replace(/^0+/, '');
+      });
+
+      // 3. ดึงข้อมูล production orders
+      const productionOrders = await this.productionOrderModel
+        .find({ order_id: { $in: orderIds } })
+        .lean();
+
+      // สร้าง map เพื่อค้นหาข้อมูล order ได้เร็วขึ้น
+      const orderMap = new Map();
+      for (const order of productionOrders) {
+        orderMap.set(order.order_id, order);
+      }
+
+      // 4. ตรวจสอบความถูกต้องของเดือนเทียบกับ order
+      const validLogs = [];
+      const invalidLogs = [];
+
+      for (const syncLog of updatedSyncLogs) {
+        const orderId = syncLog.aufnr.replace(/^0+/, '');
+        const order = orderMap.get(orderId);
+
+        if (!order || !order.basic_start_date) {
+          invalidLogs.push({
+            syncLogId: syncLog._id,
+            aufnr: syncLog.aufnr,
+            orderId: orderId,
+            reason: !order
+              ? `Order ${orderId} not found in production orders`
+              : `Order ${orderId} has no basic_start_date`,
+          });
+          continue;
+        }
+
+        // ตรวจสอบเดือน
+        const orderStartMonth = moment(order.basic_start_date).month();
+        const orderStartYear = moment(order.basic_start_date).year();
+        const syncMonth = moment(syncLog.budat, 'YYYYMMDD').month();
+        const syncYear = moment(syncLog.budat, 'YYYYMMDD').year();
+
+        // ตรวจสอบทั้งเดือนและปี
+        if (orderStartMonth !== syncMonth || orderStartYear !== syncYear) {
+          invalidLogs.push({
+            syncLogId: syncLog._id,
+            aufnr: syncLog.aufnr,
+            orderId: orderId,
+            orderStartDate: order.basic_start_date,
+            syncDate: syncLog.budat,
+            reason: `Month/Year mismatch: order start date (${moment(order.basic_start_date).format('YYYY-MM')}) vs sync date (${moment(syncLog.budat, 'YYYYMMDD').format('YYYY-MM')})`,
+          });
+        } else {
+          validLogs.push(syncLog);
+        }
+      }
+
+      // ถ้ามี logs ที่ไม่ถูกต้อง
+      if (invalidLogs.length > 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message:
+              'Cannot send sync logs with month/year mismatch between order start date and sync date',
+            data: invalidLogs,
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // ส่งเฉพาะ logs ที่ผ่านการตรวจสอบแล้ว
+      if (validLogs.length > 0) {
+        await this.sendToSapInBatches(validLogs);
+      }
 
       return {
         status: 'success',
-        message: 'Successfully retrieved sync logs',
-        data: logs,
+        message: 'Successfully sent pending sync logs to SAP',
+        data: [{ sent: validLogs.length }],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to send pending sync logs by ID: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * อัปเดต order ID ใน sync logs ทุกตัวที่มีสถานะ pending ให้เป็น order ที่มี basic start date ตรงกับเดือนปัจจุบัน
+   * @returns ข้อมูลการอัปเดต
+   */
+  async updateOrdersToCurrentMonth() {
+    try {
+      // ค้นหา sync logs ทั้งหมดที่มีสถานะ pending
+      const allPendingSyncLogs = await this.sapSyncLogModel
+        .find({ status: 'pending' })
+        .lean();
+
+      // จัดกลุ่ม logs ตาม order ID (aufnr) และเลือกเพียง 1 รายการต่อกลุ่ม
+      const orderIdGroups = {};
+
+      // จัดกลุ่มตาม order ID
+      allPendingSyncLogs.forEach((log) => {
+        const orderId = log.aufnr.replace(/^0+/, ''); // ตัด leading zeros
+        if (!orderIdGroups[orderId]) {
+          orderIdGroups[orderId] = [];
+        }
+        orderIdGroups[orderId].push(log);
+      });
+
+      // เลือก 1 รายการต่อ order ID
+      const pendingSyncLogs = Object.values(orderIdGroups).map(
+        (logs) => logs[0],
+      );
+
+      if (pendingSyncLogs.length === 0) {
+        return {
+          status: 'success',
+          message: 'No pending sync logs found',
+          data: [],
+        };
+      }
+
+      // จัดกลุ่ม logs ตาม material number
+      // ใช้สำหรับหา order ที่มี material เดียวกัน แต่เดือนต่างกัน
+      const groupedByMaterialAndOrder = {};
+
+      // 1. จัดกลุ่ม logs และดึงข้อมูล orders
+      // สร้าง array ของ order IDs ที่ต้องการดึงข้อมูล
+      const orderIds = pendingSyncLogs.map((log) =>
+        log.aufnr.replace(/^0+/, ''),
+      );
+
+      // ดึงข้อมูล production orders
+      const productionOrders = await this.productionOrderModel
+        .find({ order_id: { $in: orderIds } })
+        .lean();
+
+      // สร้าง map จาก order_id ไปยัง order object
+      const orderMap = new Map();
+      for (const order of productionOrders) {
+        orderMap.set(order.order_id, order);
+
+        // จัดกลุ่มตาม material_number
+        if (order.material_number) {
+          if (!groupedByMaterialAndOrder[order.material_number]) {
+            groupedByMaterialAndOrder[order.material_number] = {};
+          }
+          groupedByMaterialAndOrder[order.material_number][order.order_id] =
+            order;
+        }
+      }
+
+      // 2. หา orders ที่มีเดือนตรงกับเดือนปัจจุบัน
+      const currentDate = moment().tz('Asia/Bangkok');
+      const currentMonth = currentDate.month();
+      const currentYear = currentDate.year();
+
+      // สร้าง map ของ material_number ไปยัง current month order
+      const materialToCurrentMonthOrder = new Map();
+
+      for (const [material, orders] of Object.entries(
+        groupedByMaterialAndOrder,
+      )) {
+        for (const [orderId, order] of Object.entries(orders)) {
+          if (order.basic_start_date) {
+            const orderStartMonth = moment(order.basic_start_date).month();
+            const orderStartYear = moment(order.basic_start_date).year();
+
+            if (
+              orderStartMonth === currentMonth &&
+              orderStartYear === currentYear
+            ) {
+              materialToCurrentMonthOrder.set(material, order);
+              break; // เมื่อพบ order ที่มีเดือนตรงกับเดือนปัจจุบันแล้ว ไม่ต้องค้นหาต่อ
+            }
+          }
+        }
+      }
+
+      // 3. ค้นหา orders ที่มีเดือนล่าสุดสำหรับแต่ละ material ที่ไม่มี current month order
+      const materialToLatestOrder = new Map();
+
+      for (const [material, orders] of Object.entries(
+        groupedByMaterialAndOrder,
+      )) {
+        if (materialToCurrentMonthOrder.has(material)) {
+          continue; // ถ้ามี current month order แล้ว ข้ามไป
+        }
+
+        let latestOrder = null;
+        let latestDate = null;
+
+        for (const [orderId, order] of Object.entries(orders)) {
+          if (order.basic_start_date) {
+            const orderDate = moment(order.basic_start_date);
+
+            if (!latestDate || orderDate.isAfter(latestDate)) {
+              latestDate = orderDate;
+              latestOrder = order;
+            }
+          }
+        }
+
+        if (latestOrder) {
+          materialToLatestOrder.set(material, latestOrder);
+        }
+      }
+
+      // 4. ค้นหา orders เพิ่มเติมที่มีเดือนเป็นเดือนปัจจุบัน
+      // สำหรับ material ที่ยังไม่มี current month order
+      const materialsNeedingCurrentMonthOrder = Array.from(
+        materialToLatestOrder.keys(),
+      );
+
+      if (materialsNeedingCurrentMonthOrder.length > 0) {
+        const currentMonthStartDate = moment()
+          .tz('Asia/Bangkok')
+          .startOf('month')
+          .toDate();
+        const currentMonthEndDate = moment()
+          .tz('Asia/Bangkok')
+          .endOf('month')
+          .toDate();
+
+        const additionalOrders = await this.productionOrderModel
+          .find({
+            material_number: { $in: materialsNeedingCurrentMonthOrder },
+            basic_start_date: {
+              $gte: currentMonthStartDate,
+              $lte: currentMonthEndDate,
+            },
+          })
+          .lean();
+
+        // เพิ่ม orders ที่พบเข้าไปใน map
+        for (const order of additionalOrders) {
+          materialToCurrentMonthOrder.set(order.material_number, order);
+        }
+      }
+
+      // 5. อัปเดต syncLogs
+      const updateResults = {
+        total: pendingSyncLogs.length,
+        updated: 0,
+        skipped: 0,
+        details: [],
+      };
+
+      for (const syncLog of pendingSyncLogs) {
+        const originalOrderId = syncLog.aufnr.replace(/^0+/, '');
+        const originalOrder = orderMap.get(originalOrderId);
+
+        if (!originalOrder) {
+          updateResults.skipped++;
+          updateResults.details.push({
+            syncLogId: syncLog._id,
+            status: 'skipped',
+            reason: `Order ${originalOrderId} not found`,
+          });
+          continue;
+        }
+
+        // ค้นหา logs ทั้งหมดที่มี order ID เดียวกัน เพื่ออัปเดตทั้งกลุ่ม
+        const allLogsWithSameOrderId = await this.sapSyncLogModel.find({
+          aufnr: syncLog.aufnr,
+          status: 'pending',
+        });
+
+        // ตรวจสอบว่า order มีเดือนเป็นเดือนปัจจุบันหรือไม่
+        if (originalOrder.basic_start_date) {
+          const orderStartMonth = moment(
+            originalOrder.basic_start_date,
+          ).month();
+          const orderStartYear = moment(originalOrder.basic_start_date).year();
+
+          if (
+            orderStartMonth === currentMonth &&
+            orderStartYear === currentYear
+          ) {
+            // Order มีเดือนเป็นเดือนปัจจุบันอยู่แล้ว
+            updateResults.skipped++;
+            updateResults.details.push({
+              syncLogId: syncLog._id,
+              status: 'skipped',
+              reason: `Order ${originalOrderId} already has current month date`,
+            });
+            continue;
+          }
+        }
+
+        // ค้นหา current month order สำหรับ material เดียวกัน
+        const material = originalOrder.material_number;
+        const currentMonthOrder = materialToCurrentMonthOrder.get(material);
+
+        if (!currentMonthOrder) {
+          updateResults.skipped++;
+          updateResults.details.push({
+            syncLogId: syncLog._id,
+            status: 'skipped',
+            reason: `No current month order found for material ${material}`,
+          });
+          continue;
+        }
+
+        // อัปเดต syncLog ด้วย order ใหม่
+        const newOrderId = currentMonthOrder.order_id.padStart(12, '0');
+
+        // อัปเดตทุก logs ที่มี order ID เดียวกัน
+        for (const logToUpdate of allLogsWithSameOrderId) {
+          await this.sapSyncLogModel.findByIdAndUpdate(logToUpdate._id, {
+            aufnr: newOrderId,
+          });
+
+          updateResults.updated++;
+          updateResults.details.push({
+            syncLogId: logToUpdate._id,
+            status: 'updated',
+            originalOrderId: originalOrderId,
+            newOrderId: currentMonthOrder.order_id,
+            material: material,
+          });
+        }
+      }
+
+      return {
+        status: 'success',
+        message: `Updated ${updateResults.updated} of ${updateResults.total} sync logs`,
+        data: [updateResults],
       };
     } catch (error) {
       throw new HttpException(
         {
           status: 'error',
-          message: `Failed to retrieve sync logs: ${(error as Error).message}`,
+          message: `Failed to update orders: ${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -696,44 +1082,44 @@ export class SapProductionSyncService {
     }
   }
 
-  async processProductionSync(
-    productionRecordIds: Types.ObjectId[],
-    groupedData: GroupedProductionData,
-  ): Promise<void> {
-    // สร้าง TID เดียวสำหรับทุกรายการในกลุ่มเดียวกัน
-    const sharedTid = await this.validationService.createTID();
+  // async processProductionSync(
+  //   productionRecordIds: Types.ObjectId[],
+  //   groupedData: GroupedProductionData,
+  // ): Promise<void> {
+  //   // สร้าง TID เดียวสำหรับทุกรายการในกลุ่มเดียวกัน
+  //   const sharedTid = await this.validationService.createTID();
 
-    // สร้างข้อมูลสำหรับส่ง SAP ทั้งหมดก่อน
-    const syncLogEntries: SAPSyncLog[] = [];
-    let itemCounter = 1; // เริ่มนับ item จาก 1
+  //   // สร้างข้อมูลสำหรับส่ง SAP ทั้งหมดก่อน
+  //   const syncLogEntries: SAPSyncLog[] = [];
+  //   let itemCounter = 1; // เริ่มนับ item จาก 1
 
-    for (const [employeeId, quantity] of groupedData.employee_quantities) {
-      const syncLog = await this.createSyncLogEntryWithSharedTid(
-        productionRecordIds,
-        employeeId,
-        quantity,
-        'EMP',
-        groupedData,
-        sharedTid,
-        itemCounter++,
-      );
-      syncLogEntries.push(syncLog);
-    }
+  //   for (const [employeeId, quantity] of groupedData.employee_quantities) {
+  //     const syncLog = await this.createSyncLogEntryWithSharedTid(
+  //       productionRecordIds,
+  //       employeeId,
+  //       quantity,
+  //       'EMP',
+  //       groupedData,
+  //       sharedTid,
+  //       itemCounter++,
+  //     );
+  //     syncLogEntries.push(syncLog);
+  //   }
 
-    // สร้าง entry สำหรับ SNC ถ้ามี
-    if (groupedData.snc_quantity > 0) {
-      const sncSyncLog = await this.createSyncLogEntryWithSharedTid(
-        productionRecordIds,
-        'SNC',
-        groupedData.snc_quantity,
-        'SNC',
-        groupedData,
-        sharedTid,
-        itemCounter++,
-      );
-      syncLogEntries.push(sncSyncLog);
-    }
+  //   // สร้าง entry สำหรับ SNC ถ้ามี
+  //   if (groupedData.snc_quantity > 0) {
+  //     const sncSyncLog = await this.createSyncLogEntryWithSharedTid(
+  //       productionRecordIds,
+  //       'SNC',
+  //       groupedData.snc_quantity,
+  //       'SNC',
+  //       groupedData,
+  //       sharedTid,
+  //       itemCounter++,
+  //     );
+  //     syncLogEntries.push(sncSyncLog);
+  //   }
 
-    await this.sendToSapInBatches(syncLogEntries);
-  }
+  //   await this.sendToSapInBatches(syncLogEntries);
+  // }
 }

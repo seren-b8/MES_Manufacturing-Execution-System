@@ -251,46 +251,57 @@ export class SapSyncValidationService {
     return employeeId.substring(0, this.EMP_ID_MAX_LENGTH);
   }
 
-  async createTID(): Promise<string> {
+  async createTID(orderId: string): Promise<string> {
     try {
-      // คำนำหน้าพื้นฐานสำหรับ TID
-      const base = 'TID';
+      console.log(`Creating TID for orderId: ${orderId}`);
 
-      // กำหนดความยาวของส่วนต่อท้าย
-      const suffixLength = 17; // ปรับเป็น 17 ตัวอักษร
+      // รวมข้อมูลที่ใช้สร้างความเป็นเอกลักษณ์
+      const timestamp = Date.now();
+      const orderDigits = orderId.replace(/\D/g, ''); // เอาเฉพาะตัวเลข
+      const randomValue = Math.floor(Math.random() * 1000000);
 
-      // ค้นหาเรคอร์ดล่าสุดเพื่อดึงรหัสที่ถูกสร้างล่าสุด
-      const lastRecord = await this.sapSyncLogModel
-        .findOne()
-        .sort({ tid: -1 })
-        .lean()
-        .exec();
+      // สร้าง seed สำหรับการเข้ารหัส
+      const seedValue = `${timestamp}-${orderDigits}-${randomValue}`;
+      console.log(`Seed value: ${seedValue}`);
 
-      // กำหนดค่าเริ่มต้นให้กับส่วนต่อท้าย
-      let nextSuffix = 'B4F60E209F1369AB01'; // ค่าเริ่มต้นที่มีความยาว 17 ตัวอักษร
+      // ใช้ crypto เพื่อสร้าง hash
+      const crypto = require('crypto');
+      const hash = crypto.createHash('sha256').update(seedValue).digest('hex');
 
-      if (lastRecord && lastRecord.tid) {
-        // แยกส่วนต่อท้ายออกจากรหัสที่สร้างล่าสุด
-        const lastGenerated = lastRecord.tid.slice(base.length);
+      // ใช้ส่วนหนึ่งของ hash เป็น serial number (16 ตัวอักษร)
+      const serialPart = hash.substring(0, 16);
 
-        // ตรวจสอบว่ารูปแบบถูกต้อง
-        if (/^[0-9A-F]+$/.test(lastGenerated)) {
-          // เพิ่มค่าเลขฐานสิบหกและจัดรูปแบบให้เป็นตัวอักษรพิมพ์ใหญ่
-          nextSuffix = (BigInt(`0x${lastGenerated}`) + BigInt(1))
-            .toString(16)
-            .toUpperCase()
-            .padStart(suffixLength, '0');
-        }
+      // สร้าง TID แบบมีรูปแบบ: TID + serialized value
+      const tid = `TID${serialPart.toUpperCase()}`;
+      console.log(`Generated TID: ${tid}`);
+
+      // ตรวจสอบความซ้ำซ้อนในฐานข้อมูล
+      const existingLog = await this.sapSyncLogModel.findOne({ tid });
+      if (existingLog) {
+        console.log(`TID ${tid} already exists, regenerating...`);
+        // หน่วงเวลาเล็กน้อยเพื่อให้ timestamp เปลี่ยน
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return this.createTID(orderId);
       }
 
-      // รวมคำนำหน้าและส่วนต่อท้าย
-      return `${base}${nextSuffix}`;
+      console.log(
+        `New TID ${tid} for order ${orderId} is created successfully`,
+      );
+      return tid;
     } catch (error) {
-      console.error('Error generating TID:', error);
+      console.error(`Error creating TID for orderId ${orderId}:`, error);
 
-      // ในกรณีที่มีข้อผิดพลาด ใช้ timestamp เป็นค่าสำรอง
-      const timestamp = new Date().getTime().toString(16).toUpperCase();
-      return `TID${timestamp.padStart(17, '0')}`;
+      // Fallback method ในกรณีที่มีข้อผิดพลาด
+      const fallbackSeed = `${Date.now()}-${orderId}-fallback`;
+      const crypto = require('crypto');
+      const fallbackHash = crypto
+        .createHash('md5')
+        .update(fallbackSeed)
+        .digest('hex');
+      const fallbackTid = `TID${fallbackHash.substring(0, 16).toUpperCase()}`;
+
+      console.log(`Created fallback TID: ${fallbackTid}`);
+      return fallbackTid;
     }
   }
 }

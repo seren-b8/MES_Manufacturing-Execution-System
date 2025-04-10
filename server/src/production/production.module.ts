@@ -12,6 +12,7 @@ import { SapProductionSyncService } from './sap-sync/sap-sync.service';
 import { SapSyncValidationService } from './sap-sync/sap-sync-validation.service';
 import { AssignModule } from 'src/assign/assign.module';
 import { MachineModule } from 'src/machine/machine.module';
+import { SapSyncLogService } from './sap-sync/sap-sync-log.service';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule, AssignModule, MachineModule],
@@ -27,6 +28,7 @@ import { MachineModule } from 'src/machine/machine.module';
     ProductionRecordService,
     SapProductionSyncService,
     SapSyncValidationService,
+    SapSyncLogService,
   ],
   exports: [
     SapOrderService,
@@ -34,6 +36,7 @@ import { MachineModule } from 'src/machine/machine.module';
     ProductionRecordService,
     SapProductionSyncService,
     SapSyncValidationService,
+    SapSyncLogService,
   ],
 })
 export class ProductionModule {}
