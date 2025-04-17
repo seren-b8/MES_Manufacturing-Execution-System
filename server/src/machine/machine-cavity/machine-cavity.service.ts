@@ -51,41 +51,6 @@ export class MachineCavityService {
     }
   }
 
-  // async findOne(id: string): Promise<ResponseFormat<MasterCavity>> {
-  //   try {
-  //     const cavity = await this.machineCavityModel.findById(id).lean();
-
-  //     if (!cavity) {
-  //       throw new HttpException(
-  //         {
-  //           status: 'error',
-  //           message: 'Machine cavity not found',
-  //           data: [],
-  //         },
-  //         HttpStatus.NOT_FOUND,
-  //       );
-  //     }
-
-  //     return {
-  //       status: 'success',
-  //       message: 'Retrieved machine cavity successfully',
-  //       data: [cavity],
-  //     };
-  //   } catch (error) {
-  //     if (error instanceof HttpException) {
-  //       throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
-  //     }
-  //     throw new HttpException(
-  //       {
-  //         status: 'error',
-  //         message: 'Failed to retrieve machine cavity ',
-  //         data: [],
-  //       },
-  //       HttpStatus.INTERNAL_SERVER_ERROR,
-  //     );
-  //   }
-  // }
-
   async findByMaterialNumber(
     materialNumber: string,
   ): Promise<ResponseFormat<MasterCavity>> {
