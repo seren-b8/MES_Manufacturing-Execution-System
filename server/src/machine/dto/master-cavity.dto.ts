@@ -44,7 +44,7 @@ export class CreateMasterCavityDto {
 
   @IsNotEmpty()
   @IsNumber()
-  runner: number;
+  runner?: number;
 
   @IsNumber()
   @IsOptional()

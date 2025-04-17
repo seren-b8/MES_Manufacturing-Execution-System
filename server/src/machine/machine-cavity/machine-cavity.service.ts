@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import mongoose, { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
 import {
@@ -130,15 +130,19 @@ export class MachineCavityService {
   ): Promise<ResponseFormat<MasterCavity>> {
     try {
       // Validate unique material numbers within the request
+
+      const objectIdParts = createDto.parts.map(
+        (id) => new mongoose.Types.ObjectId(id.toString()),
+      );
       const parts = await this.masterPartModel.find({
-        _id: { $in: createDto.parts },
+        _id: { $in: objectIdParts },
       });
 
       if (parts.length !== createDto.parts.length) {
         throw new HttpException(
           {
             status: 'error',
-            massage: 'One ormore part IDs not found',
+            message: 'One ormore part IDs not found',
             data: [],
           },
           HttpStatus.BAD_REQUEST,
