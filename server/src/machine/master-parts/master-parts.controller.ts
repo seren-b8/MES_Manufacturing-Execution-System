@@ -64,14 +64,28 @@ export class MasterPartsController {
     )
     file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
+    if (file) {
+      console.log('file', file);
+    }
     return this.masterPartsService.create(createDto, file);
   }
 
   @Put()
+  @UseInterceptors(FileInterceptor('image'))
   async update(
     @Body() updateDto: UpdateMasterPartDto,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
+          new FileTypeValidator({ fileType: '.(png|jpeg|jpg)' }),
+        ],
+        fileIsRequired: false,
+      }),
+    )
+    file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
-    return this.masterPartsService.update(updateDto);
+    return this.masterPartsService.update(updateDto, file);
   }
 
   @Delete(':id')

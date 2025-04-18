@@ -11,13 +11,49 @@ import {
 import axios from 'axios';
 import { Type } from 'class-transformer';
 import * as _ from 'lodash';
+import path from 'path';
+import { FileClientService } from 'src/shared/services/file-client/file-client.service';
 
 @Injectable()
 export class MasterPartsService {
   constructor(
     @InjectModel(MasterPart.name)
     private readonly masterPartModel: Model<MasterPart>,
+    private readonly fileClientService: FileClientService,
   ) {}
+
+  /**
+   * สร้างชื่อไฟล์ใหม่ที่ไม่ซ้ำกัน
+   * @param originalFilename ชื่อไฟล์ต้นฉบับ
+   * @param machineNumber หมายเลขเครื่องจักร
+   * @returns ชื่อไฟล์ใหม่
+   */
+  // ควรจะเป็นประมาณนี้
+  // ควรนำไปแทนที่ฟังก์ชันเดิมทั้งหมด
+  private generateUniqueFilename(
+    originalFilename: string,
+    materialNumber: string,
+  ): string {
+    try {
+      // ตรวจสอบว่ามี path module หรือไม่
+      const nodePath = require('path');
+
+      // ตรวจสอบและจัดการกับค่า null/undefined
+      if (!originalFilename) {
+        return `${materialNumber || 'part'}_image_${Date.now()}.jpg`;
+      }
+
+      // ดึงนามสกุลไฟล์
+      const ext = nodePath.extname(originalFilename) || '.jpg';
+
+      // สร้างชื่อไฟล์ใหม่
+      return `${materialNumber || 'part'}_image_${Date.now()}${ext}`;
+    } catch (error) {
+      // หากเกิดข้อผิดพลาด ให้ใช้ชื่อพื้นฐาน
+      console.error('Error in generateUniqueFilename:', error);
+      return `part_image_${Date.now()}.jpg`;
+    }
+  }
 
   private splitPartNumberAndName(description: string): {
     partNumber: string;
@@ -36,43 +72,6 @@ export class MasterPartsService {
     const partName = description.substring(firstSpaceIndex + 1).trim();
 
     return { partNumber, partName };
-  }
-
-  // Helper method to handle image upload
-  private async uploadImage(
-    file: Express.Multer.File,
-    materialNumber: string,
-  ): Promise<string> {
-    try {
-      // Generate a unique filename using material number and timestamp
-      const timestamp = new Date().getTime();
-      const fileExtension = file.originalname.split('.').pop();
-      const filename = `${materialNumber}_${timestamp}.${fileExtension}`;
-      console.log('filename', filename);
-
-      // Define the base server URL
-      const baseServerUrl = process.env.IMAGE_SERVER_URL;
-
-      // Create a FormData object for the file upload
-      const formData = new FormData();
-
-      // Convert Buffer to Blob
-      const blob = new Blob([file.buffer], { type: file.mimetype });
-      formData.append('file', blob, filename);
-
-      // Upload the file to your server
-      await axios.post(`${baseServerUrl}upload`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      // Return the URL to access the image
-      return `${baseServerUrl}${filename}`;
-    } catch (error) {
-      console.error('Image upload failed:', error);
-      throw new Error(`Image upload failed: ${(error as Error).message}`);
-    }
   }
 
   async findAll(query: any = {}): Promise<ResponseFormat<MasterPart>> {
@@ -170,12 +169,25 @@ export class MasterPartsService {
     file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
     try {
-      // Check if material number already exists
-      const exists = await this.masterPartModel.findOne({
-        material_number: createDto.material_number,
-      });
+      console.log('Original request data:', createDto);
 
-      console.log(createDto);
+      // สร้าง object ใหม่เพื่อใช้ในการบันทึกข้อมูล โดยเลือกเฉพาะฟิลด์ที่ต้องการ
+      const partData = {
+        material_number: createDto.material_number,
+        material_description: createDto.material_description,
+        part_name: createDto.part_name,
+        weight:
+          typeof createDto.weight === 'string'
+            ? parseFloat(createDto.weight)
+            : createDto.weight,
+        part_model: createDto.part_model,
+        image_url: '',
+      };
+
+      // ตรวจสอบการซ้ำกัน
+      const exists = await this.masterPartModel.findOne({
+        material_number: partData.material_number,
+      });
 
       if (exists) {
         throw new HttpException(
@@ -188,42 +200,73 @@ export class MasterPartsService {
         );
       }
 
+      // จัดการกับไฟล์ที่อัพโหลด
       if (file) {
-        const imagePath = await this.uploadImage(
-          file,
-          createDto.material_number,
-        );
-        createDto.image_url = imagePath;
+        try {
+          const imagePath = 'mes/b8/master-parts';
+
+          const newFilename = this.generateUniqueFilename(
+            file.originalname,
+            partData.material_number,
+          );
+
+          console.log('New filename:', newFilename);
+
+          const response = await this.fileClientService.uploadFile(
+            file,
+            imagePath,
+            newFilename,
+          );
+
+          console.log('File upload response:', response);
+
+          if (
+            response &&
+            response.status === 'success' &&
+            response.data &&
+            response.data.length > 0
+          ) {
+            // เพิ่ม image_url ที่ได้จากการอัพโหลดไฟล์
+            partData.image_url = response.data[0].url;
+            console.log('Set image_url to:', partData.image_url);
+          }
+        } catch (fileError) {
+          console.error('File upload error:', fileError);
+        }
       }
 
-      const newPart = await this.masterPartModel.create(createDto);
+      console.log('Final part data to save:', partData);
+      const newPart = await this.masterPartModel.create(partData);
+
       return {
         status: 'success',
         message: 'Created part successfully',
         data: [newPart],
       };
     } catch (error) {
+      console.error('Create part error:', error);
+
       if (error instanceof HttpException) throw error;
+
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to create part',
+          message: (error as Error).message || 'Failed to create part',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
-
   async update(
     updateDto: UpdateMasterPartDto,
+    file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
     try {
+      // ค้นหา part ด้วย material_number
       const part = await this.masterPartModel.findOne({
         material_number: updateDto.material_number,
       });
-
-      console.log(part);
 
       if (!part) {
         throw new HttpException(
@@ -236,7 +279,31 @@ export class MasterPartsService {
         );
       }
 
-      // อัปเดตข้อมูล (ไม่จำเป็นต้องใช้ lean() ถ้าไม่มีความจำเป็น)
+      // ถ้ามีการอัพโหลดไฟล์ใหม่
+      if (file) {
+        const imagePath = 'mes/b8/master-parts';
+
+        // สร้างชื่อไฟล์ใหม่
+        const newFilename = this.generateUniqueFilename(
+          file.originalname,
+          updateDto.material_number,
+        );
+
+        // อัพโหลดไฟล์ไปยัง file microservice
+        const response = await this.fileClientService.uploadFile(
+          file,
+          imagePath,
+          newFilename,
+        );
+
+        if (response.status === 'success') {
+          // อัพเดต URL ของรูปภาพใน updateDto
+          const fileUrl = response.data[0].url;
+          updateDto.image_url = fileUrl;
+        }
+      }
+
+      // อัปเดตข้อมูล
       const updatedPart = await this.masterPartModel.findOneAndUpdate(
         { material_number: updateDto.material_number },
         { $set: updateDto },
@@ -252,7 +319,6 @@ export class MasterPartsService {
       if (error instanceof HttpException) throw error;
 
       console.error('Update part error:', error);
-
       throw new HttpException(
         {
           status: 'error',

@@ -3,9 +3,6 @@ import mongoose, { Document } from 'mongoose';
 
 @Schema({ collection: 'master_parts' })
 export class MasterPart extends Document {
-  @Prop()
-  _id: mongoose.Types.ObjectId;
-
   @Prop({ required: true, unique: true })
   material_number: string;
 

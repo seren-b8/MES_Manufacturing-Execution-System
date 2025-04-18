@@ -16,9 +16,16 @@ import { ConfigModule } from '@nestjs/config';
 import { CustomCacheKeyGenerator } from 'src/shared/utils/custom-cache-key.generator';
 import { MachineAnalysisCacheInterceptor } from './interceptors/machine-analysis-cache.interceptor';
 import { MesCacheModule } from 'src/shared/modules/cache/cache.module';
+import { FileClientModule } from 'src/shared/services/file-client/file-client.module';
 
 @Module({
-  imports: [MongooseSchemaModule, DatabaseModule, MesCacheModule, ConfigModule],
+  imports: [
+    MongooseSchemaModule,
+    DatabaseModule,
+    MesCacheModule,
+    ConfigModule,
+    FileClientModule,
+  ],
   controllers: [
     MachineInfoController,
     MachineCavityController,
