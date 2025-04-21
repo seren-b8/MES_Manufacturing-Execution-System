@@ -20,7 +20,6 @@ import {
 } from '../dto/printer.dto';
 import { PrinterDevicesService } from './printer.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { CacheTTL } from '@nestjs/cache-manager';
 
 @Controller('printer/devices')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -34,7 +33,6 @@ export class PrinterDevicesController {
   }
 
   @Get()
-  @CacheTTL(3)
   @Roles(Role.ADMIN)
   findAll() {
     return this.printerDevicesService.findAll();
