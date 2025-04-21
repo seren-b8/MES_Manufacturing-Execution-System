@@ -42,7 +42,7 @@ export class MachineInfoController {
   }
 
   @Get()
-  @CacheTTL(3)
+  @CacheTTL(10)
   async getAllMachinesDetails() {
     return await this.machineInfoService.getAllMachinesDetails();
   }

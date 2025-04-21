@@ -8,6 +8,7 @@ import {
   Param,
   HttpException,
   HttpStatus,
+  Catch,
 } from '@nestjs/common';
 import { MasterNotGoodService } from './master-not-good.service';
 import {
@@ -16,12 +17,14 @@ import {
 } from '../dto/master-not-good.dto';
 import { ResponseFormat } from 'src/shared/interface';
 import { MasterNotGood } from 'src/shared/modules/schema/master-not-good.schema';
+import { CacheTTL } from '@nestjs/cache-manager';
 
 @Controller('master-not-good')
 export class MasterNotGoodController {
   constructor(private readonly masterNotGoodService: MasterNotGoodService) {}
 
   @Get()
+  @CacheTTL(3)
   async findAll(): Promise<ResponseFormat<MasterNotGood>> {
     const items = await this.masterNotGoodService.findAll();
     return {

@@ -212,23 +212,25 @@ export class MachineInfoService {
   private getErrorMachineData(machine: any) {
     return {
       machine_info: {
+        machine_name: machine.machine_name || '',
         work_center: machine.work_center || '',
         machine_number: machine.machine_number || '',
         line: machine.line || '',
         status: 'error',
         counter: 0,
+        available_counter: 0,
+        is_counter_paused: false,
         cycle_time: 0,
         cavity_info: null,
+        tonnage: machine.tonnage || 0,
       },
       orders_summary: {
         total_orders: 0,
         completed_orders: 0,
-        pending_orders: 0,
+        suspended_orders: 0, // เปลี่ยนจาก pending_orders เป็น suspended_orders
         waiting_assign_orders: 0,
       },
-      active_order: null,
-      active_employees: { count: 0, details: [] },
-      latest_production: null,
+      active_orders: [], // เปลี่ยนจาก active_order: null เป็น active_orders: []
     };
   }
 
@@ -327,278 +329,320 @@ export class MachineInfoService {
 
     try {
       // 1. ค้นหา part ก่อน
-      const part = await this.masterPartModel
-        .findOne({ material_number: materialNumber })
-        .lean();
+      const [part, cavity] = await Promise.all([
+        this.masterPartModel
+          .findOne({ material_number: materialNumber })
+          .lean(),
+        // รอผลลัพธ์ part ก่อนค่อยค้นหา cavity
+        materialNumber
+          ? this.masterCavityModel
+              .findOne({
+                'parts.material_number': materialNumber,
+              })
+              .lean()
+          : null,
+      ]);
 
       if (!part) {
         return { cavityData: null, partData: null };
       }
 
-      // 2. ค้นหา cavity ที่มี part นี้ - ทั้งในรูปแบบ ObjectId และ String
-      const partIdString = part._id.toString();
-
-      const cavity = await this.masterCavityModel
-        .findOne({
-          $or: [
-            { parts: { $in: [part._id] } }, // ค้นหาแบบ ObjectId
-            { parts: { $in: [partIdString] } }, // ค้นหาแบบ String
-          ],
-        })
-        .lean();
-
-      if (!cavity) {
-        // เพิ่มการตรวจสอบว่ามี cavity ใดบ้างในระบบเพื่อ debug
-        const allCavities = await this.masterCavityModel.find().limit(3).lean();
-
-        return { cavityData: null, partData: null };
-      }
-
       // 3. ส่งผลลัพธ์ที่ถูกต้อง
       return {
-        cavityData: {
-          cavity: cavity.cavity,
-          runner: cavity.runner,
-          tonnage: cavity.tonnage,
-        },
+        cavityData: cavity
+          ? {
+              cavity: cavity.cavity,
+              runner: cavity.runner,
+              tonnage: cavity.tonnage,
+            }
+          : null,
         partData: part,
       };
     } catch (error) {
       console.error('Error getting cavity and part data:', error);
-      console.error('Error details:', {
-        materialNumber,
-        errorMessage: (error as Error).message,
-        errorStack: (error as Error).stack,
-      });
-      return { cavityData: null, partData: null };
+      // เพิ่ม retry logic
+      return this.retryCavityAndPartData(materialNumber, 3);
     }
   }
 
-  // 2. แยกฟังก์ชันดึงข้อมูล active order
-  private async getActiveOrdersData(machine: any) {
+  private async retryCavityAndPartData(
+    materialNumber: string,
+    retries: number,
+    delay: number = 500,
+  ): Promise<CavityAndPartResult> {
+    if (retries <= 0) {
+      console.error('Max retries exceeded for getCavityAndPartData');
+      return { cavityData: null, partData: null };
+    }
+
     try {
-      // ดึงข้อมูล active orders
-      const activeOrders = await this.assignOrderModel
-        .find({
-          machine_number: machine.machine_number,
-          status: 'active',
-        })
-        .populate<{ production_order_id: ProductionOrder }>(
-          'production_order_id',
-        )
-        .lean();
+      await new Promise((resolve) => setTimeout(resolve, delay));
 
-      if (!activeOrders?.length) return [];
+      const [part, cavity] = await Promise.all([
+        this.masterPartModel
+          .findOne({ material_number: materialNumber })
+          .lean(),
+        materialNumber
+          ? this.masterCavityModel
+              .findOne({
+                'parts.material_number': materialNumber,
+              })
+              .lean()
+          : null,
+      ]);
 
-      // เตรียมข้อมูลเบื้องต้น
-      const orderIds = activeOrders.map((order) => order._id);
+      if (!part) {
+        return { cavityData: null, partData: null };
+      }
 
-      // สร้าง orders พร้อมรายละเอียด
-      const ordersWithBasicDetails = await Promise.all(
-        activeOrders.map(async (activeOrder) => {
-          if (!activeOrder?.production_order_id) return null;
-
-          const { cavityData, partData } = await this.getCavityAndPartData(
-            activeOrder.production_order_id.material_number,
-          );
-
-          return {
-            order_id: activeOrder._id,
-            production_order: {
-              id: activeOrder.production_order_id._id,
-              order_number: activeOrder.production_order_id.order_id,
-              material_number: activeOrder.production_order_id.material_number,
-              material_description:
-                activeOrder.production_order_id.material_description,
-              target_quantity: activeOrder.production_order_id.target_quantity,
-              target_daily: activeOrder.production_order_id.plan_target_day,
-              plan_cycle_time: activeOrder.production_order_id.plan_cycle_time,
-              part_info: partData
-                ? {
-                    weight: (partData as any).weight,
-                    weight_runner: cavityData?.runner || 0,
-                  }
-                : null,
-            },
-            production_summary: {
-              ...(activeOrder.current_summary || {}),
-              achievement_rate: this.calculateAchievementRate(
-                activeOrder.current_summary?.total_good_quantity || 0,
-                activeOrder.production_order_id.target_quantity || 0,
-              ),
-            },
-            datetime_open_order: activeOrder.datetime_open_order,
-          };
-        }),
-      );
-
-      // กรอง orders ที่เป็น null ออก
-      const filteredOrders = ordersWithBasicDetails.filter(Boolean);
-
-      // ดึงข้อมูลสรุปรายวันสำหรับแต่ละ order
-      const ordersWithDailySummary = await Promise.all(
-        filteredOrders.map(async (order) => {
-          // เรียกใช้ getDailySummary เพื่อดึงข้อมูลสรุปรายวัน
-          const dailySummary = await this.getDailySummary(
-            order.order_id.toString(),
-          );
-
-          const summaryData = dailySummary?.data?.[0];
-
-          // เพิ่มข้อมูลสรุปรายวันเข้าไปใน order object
-          return {
-            ...order,
-            daily_summary: {
-              total_quantity: summaryData.total_quantity ?? 0,
-              good_quantity: summaryData.good_quantity ?? 0,
-              not_good_quantity: summaryData.not_good_quantity ?? 0,
-            },
-          };
-        }),
-      );
-
-      // ดึงข้อมูลพนักงานสำหรับแต่ละ order ผ่านฟังก์ชัน getActiveEmployeesFromOrders
-      // โดยสร้าง structure แบบเดียวกับที่ getActiveEmployeesFromOrders ต้องการ
-      const orderWithEmployeeInfos = await Promise.all(
-        ordersWithDailySummary.map(async (order) => {
-          // เรียกใช้ getActiveEmployeesFromOrders สำหรับ order เดียว
-          const employees = await this.getActiveEmployeesFromOrders([
-            {
-              order_id: order.order_id,
-            },
-          ]);
-
-          // เพิ่มข้อมูลพนักงานเข้าไปใน order object
-          return {
-            ...order,
-            employees: employees || [],
-          };
-        }),
-      );
-
-      return orderWithEmployeeInfos;
+      return {
+        cavityData: cavity
+          ? {
+              cavity: cavity.cavity,
+              runner: cavity.runner,
+              tonnage: cavity.tonnage,
+            }
+          : null,
+        partData: part,
+      };
     } catch (error) {
-      console.error('Error getting active orders data:', error);
-      return [];
+      console.error(`Retry ${4 - retries}/3 failed:`, error);
+      return this.retryCavityAndPartData(
+        materialNumber,
+        retries - 1,
+        delay * 1.5,
+      );
     }
   }
 
   async getAllMachinesDetails(): Promise<ResponseFormat<any>> {
     try {
-      const machines = await this.machineInfoModel.find().lean();
+      // ดึงเฉพาะข้อมูลของเครื่องจักรที่จำเป็นก่อน
+      const machines = await this.machineInfoModel
+        .find(
+          {},
+          {
+            machine_name: 1,
+            work_center: 1,
+            machine_number: 1,
+            line: 1,
+            status: 1,
+            counter: 1,
+            recorded_counter: 1,
+            is_counter_paused: 1,
+            pause_start_counter: 1,
+            cycletime: 1,
+            tonnage: 1,
+          },
+        )
+        .lean();
 
-      const machinesWithDetails = await Promise.all(
-        machines.map(async (machine) => {
-          try {
-            const activeOrders = await this.getActiveOrdersData(machine);
-            const primaryActiveOrder =
-              activeOrders.length > 0 ? activeOrders[0] : null;
-            // ดึงข้อมูลพื้นฐาน
-            const [allOrders, allProductionOrder] = await Promise.all([
-              this.assignOrderModel.find({
-                machine_number: machine.machine_number,
-              }),
-              this.productionOrderModel.find({
-                work_center: machine.work_center,
-                assign_stage: false,
-              }),
-            ]);
+      // ดึงข้อมูล assign orders ทั้งหมดในครั้งเดียว
+      const allAssignOrders = await this.assignOrderModel.find().lean();
 
-            // ดึงข้อมูล daily summary สำหรับทุก active order
-            let consolidatedSummary = {
-              total_quantity: 0,
-              good_quantity: 0,
-              not_good_quantity: 0,
-            };
+      // ดึงข้อมูล active orders ทั้งหมดในครั้งเดียว
+      const allActiveOrders = await this.assignOrderModel.aggregate([
+        { $match: { status: 'active' } },
+        {
+          $lookup: {
+            from: 'production_orders',
+            localField: 'production_order_id',
+            foreignField: '_id',
+            as: 'production_order',
+          },
+        },
+        { $unwind: '$production_order' },
+      ]);
 
-            if (activeOrders.length > 0) {
-              const dailySummaries = await Promise.all(
-                activeOrders.map((order) =>
-                  this.getDailySummary(order.order_id.toString()),
-                ),
-              );
+      // จัดกลุ่ม orders ตาม machine_number
+      const ordersByMachine = {};
+      const activeOrdersByMachine = {};
 
-              // รวมข้อมูลจากทุก order
-              dailySummaries.forEach((summary) => {
-                if (summary?.data[0]) {
-                  consolidatedSummary.total_quantity +=
-                    summary.data[0].total_quantity || 0;
-                  consolidatedSummary.good_quantity +=
-                    summary.data[0].good_quantity || 0;
-                  consolidatedSummary.not_good_quantity +=
-                    summary.data[0].not_good_quantity || 0;
+      allAssignOrders.forEach((order) => {
+        if (!ordersByMachine[order.machine_number]) {
+          ordersByMachine[order.machine_number] = [];
+        }
+        ordersByMachine[order.machine_number].push(order);
+      });
+
+      allActiveOrders.forEach((order) => {
+        if (!activeOrdersByMachine[order.machine_number]) {
+          activeOrdersByMachine[order.machine_number] = [];
+        }
+        activeOrdersByMachine[order.machine_number].push(order);
+      });
+
+      // ดึงข้อมูล production orders ทั้งหมด
+      const allProductionOrders = await this.productionOrderModel
+        .find({
+          assign_stage: false,
+        })
+        .lean();
+
+      // จัดกลุ่ม production orders ตาม work_center
+      const productionOrdersByWorkCenter = {};
+      allProductionOrders.forEach((order) => {
+        if (!productionOrdersByWorkCenter[order.work_center]) {
+          productionOrdersByWorkCenter[order.work_center] = [];
+        }
+        productionOrdersByWorkCenter[order.work_center].push(order);
+      });
+
+      // ดึงข้อมูล material numbers ทั้งหมด
+      const materialNumbers = [
+        ...new Set(
+          allActiveOrders
+            .map((order) => order.production_order?.material_number)
+            .filter(Boolean),
+        ),
+      ];
+
+      // ดึงข้อมูล parts และ cavities ทั้งหมดในครั้งเดียว
+      const [allParts, allCavities] = await Promise.all([
+        this.masterPartModel
+          .find({
+            material_number: { $in: materialNumbers },
+          })
+          .lean(),
+        this.masterCavityModel.find().lean(),
+      ]);
+
+      // สร้าง lookup maps
+      const partsByMaterialNumber = {};
+      allParts.forEach((part) => {
+        partsByMaterialNumber[part.material_number] = part;
+      });
+
+      const cavitiesByPartId = {};
+      allCavities.forEach((cavity) => {
+        if (cavity.parts && Array.isArray(cavity.parts)) {
+          cavity.parts.forEach((partId) => {
+            const partIdStr = partId.toString();
+            cavitiesByPartId[partIdStr] = cavity;
+          });
+        }
+      });
+
+      // ประมวลผลข้อมูลตามกลุ่ม - แบ่งเป็นชุดๆ ละ 10 เครื่อง
+      const chunkSize = 10;
+      const machinesWithDetails = [];
+
+      for (let i = 0; i < machines.length; i += chunkSize) {
+        const chunk = machines.slice(i, i + chunkSize);
+
+        const processedChunk = await Promise.all(
+          chunk.map(async (machine) => {
+            try {
+              // ใช้ข้อมูลที่มีแล้วแทนการ query ใหม่
+              const activeOrders =
+                activeOrdersByMachine[machine.machine_number] || [];
+              const allOrders = ordersByMachine[machine.machine_number] || [];
+              const allProductionOrder =
+                productionOrdersByWorkCenter[machine.work_center] || [];
+
+              // หา primaryActiveOrder
+              const primaryActiveOrder =
+                activeOrders.length > 0 ? activeOrders[0] : null;
+
+              // ใช้ข้อมูล part และ cavity จาก maps แทนการ query
+              let cavityData = null;
+              let partData = null;
+
+              if (primaryActiveOrder) {
+                const materialNumber =
+                  primaryActiveOrder.production_order.material_number;
+                partData = partsByMaterialNumber[materialNumber] || null;
+
+                if (partData) {
+                  cavityData =
+                    cavitiesByPartId[partData._id.toString()] || null;
                 }
-              });
+              }
+
+              // ดึงข้อมูล daily summary สำหรับทุก active order
+              let consolidatedSummary = {
+                total_quantity: 0,
+                good_quantity: 0,
+                not_good_quantity: 0,
+              };
+
+              if (activeOrders.length > 0) {
+                const dailySummaries = await Promise.all(
+                  activeOrders.map((order) =>
+                    this.getDailySummary(order._id.toString()),
+                  ),
+                );
+
+                // รวมข้อมูลจากทุก order
+                dailySummaries.forEach((summary) => {
+                  if (summary?.data[0]) {
+                    consolidatedSummary.total_quantity +=
+                      summary.data[0].total_quantity || 0;
+                    consolidatedSummary.good_quantity +=
+                      summary.data[0].good_quantity || 0;
+                    consolidatedSummary.not_good_quantity +=
+                      summary.data[0].not_good_quantity || 0;
+                  }
+                });
+              }
+
+              return {
+                machine_info: {
+                  machine_name: machine.machine_name || '',
+                  work_center: machine.work_center || '',
+                  machine_number: machine.machine_number || '',
+                  line: machine.line || '',
+                  status: machine.status || 'unknown',
+                  counter: machine.counter,
+                  available_counter: calculateAvailableCounter(
+                    machine.counter,
+                    machine.recorded_counter,
+                    cavityData?.cavity || 1,
+                    machine.is_counter_paused,
+                    machine.pause_start_counter,
+                  ),
+                  cavity_info: cavityData
+                    ? {
+                        cavity_count: cavityData.cavity,
+                        runner: cavityData.runner,
+                        part_info: partData
+                          ? {
+                              material_number: partData.material_number,
+                              part_number: partData.part_number,
+                              part_name: partData.part_name,
+                              weight: partData.weight,
+                            }
+                          : null,
+                      }
+                    : null,
+                  is_counter_paused: machine.is_counter_paused || false,
+                  cycle_time: machine.cycletime || 0,
+                  tonnage: machine.tonnage || 0,
+                },
+                orders_summary: {
+                  total_orders: allOrders.length,
+                  completed_orders: allOrders.filter(
+                    (o) => o?.status === 'completed',
+                  ).length,
+                  suspended_orders: allOrders.filter(
+                    (o) => o?.status === 'suspended',
+                  ).length,
+                  waiting_assign_orders: allProductionOrder.length,
+                },
+                active_orders: activeOrders,
+              };
+            } catch (error) {
+              console.error(
+                `Error processing machine ${machine.machine_number}:`,
+                error,
+              );
+              return this.getErrorMachineData(machine);
             }
+          }),
+        );
 
-            // ดึงข้อมูล cavity และ part จาก primary order (ถ้ามี)
-            const { cavityData, partData } = primaryActiveOrder
-              ? await this.getCavityAndPartData(
-                  primaryActiveOrder.production_order.material_number,
-                )
-              : { cavityData: null, partData: null };
-
-            // ดึงข้อมูลพนักงานจากทุก active order
-            // const activeEmployees =
-            //   await this.getActiveEmployeesFromOrders(activeOrders);
-
-            return {
-              machine_info: {
-                machine_name: machine.machine_name || '',
-                work_center: machine.work_center || '',
-                machine_number: machine.machine_number || '',
-                line: machine.line || '',
-                status: machine.status || 'unknown',
-                counter: machine.counter,
-                available_counter: calculateAvailableCounter(
-                  machine.counter,
-                  machine.recorded_counter,
-                  cavityData?.cavity || 1,
-                  machine.is_counter_paused,
-                  machine.pause_start_counter,
-                ),
-                cavity_info: cavityData
-                  ? {
-                      cavity_count: cavityData.cavity,
-                      runner: cavityData.runner,
-                      part_info: partData
-                        ? {
-                            material_number: partData.material_number,
-                            part_number: partData.part_number,
-                            part_name: partData.part_name,
-                            weight: partData.weight,
-                          }
-                        : null,
-                    }
-                  : null,
-                is_counter_paused: machine.is_counter_paused || false,
-                cycle_time: machine.cycletime || 0,
-                tonnage: machine.tonnage || 0,
-              },
-              orders_summary: {
-                total_orders: allOrders.length,
-                completed_orders: allOrders.filter(
-                  (o) => o?.status === 'completed',
-                ).length,
-                suspended_orders: allOrders.filter(
-                  (o) => o?.status === 'suspended',
-                ).length,
-                waiting_assign_orders: allProductionOrder.length,
-              },
-              active_orders: activeOrders, // เปลี่ยนจาก active_order เป็น active_orders
-              // daily_total_quantity: consolidatedSummary.total_quantity,
-              // daily_good_quantity: consolidatedSummary.good_quantity,
-              // daily_not_good_quantity: consolidatedSummary.not_good_quantity,
-            };
-          } catch (error) {
-            console.error(
-              `Error processing machine ${machine.machine_number}:`,
-              error,
-            );
-            return this.getErrorMachineData(machine);
-          }
-        }),
-      );
+        machinesWithDetails.push(...processedChunk);
+      }
 
       return {
         status: 'success',
@@ -1308,7 +1352,7 @@ export class MachineInfoService {
 
       // ค้นหาข้อมูล cavity
       const cavity = await this.masterCavityModel.findOne({
-        parts: { $in: [product._id] },
+        parts: { $in: [product._id.toString()] },
       });
 
       // กำหนดค่า cavity (ถ้าไม่มีให้ใช้ค่า default คือ 1)

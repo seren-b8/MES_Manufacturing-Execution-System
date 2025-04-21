@@ -14,6 +14,7 @@ import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import { IAssignEmployeeDocument } from 'src/shared/interface/assign.emp';
 import * as moment from 'moment-timezone';
 import { error } from 'console';
+import { tap } from 'rxjs';
 
 @Injectable()
 export class AssignEmployeeService {
@@ -84,7 +85,7 @@ export class AssignEmployeeService {
       // ตรวจสอบก่อนว่า main assignment มีอยู่แล้วหรือไม่
       const mainExistingAssignment = await this.assignEmployeeModel.findOne({
         user_id: createDto.user_id,
-        assign_order_id: createDto.assign_order_id,
+        assign_order_id: createDto.assign_order_id.toString(),
         status: 'active',
       });
 
@@ -102,7 +103,7 @@ export class AssignEmployeeService {
             // ตรวจสอบว่ามี assignment อยู่แล้วหรือไม่
             const existingAssignment = await this.assignEmployeeModel.findOne({
               user_id: createDto.user_id,
-              assign_order_id: order._id,
+              assign_order_id: order._id.toString(),
               status: 'active',
             });
 
@@ -114,7 +115,7 @@ export class AssignEmployeeService {
             // ลบ assignment เก่าที่ไม่ active (ถ้ามี)
             const deleteResult = await this.assignEmployeeModel.deleteMany({
               user_id: createDto.user_id,
-              assign_order_id: order._id,
+              assign_order_id: order._id.toString(),
               status: { $ne: 'active' },
             });
 
@@ -156,7 +157,7 @@ export class AssignEmployeeService {
             // ตรวจสอบว่ามี assignment อยู่แล้วหรือไม่
             const existingAssignment = await this.assignEmployeeModel.findOne({
               user_id: createDto.user_id,
-              assign_order_id: order._id,
+              assign_order_id: order._id.toString(),
               status: 'active',
             });
 
@@ -168,7 +169,7 @@ export class AssignEmployeeService {
             // ลบ assignment เก่าที่ไม่ active (ถ้ามี)
             const deleteResult = await this.assignEmployeeModel.deleteMany({
               user_id: createDto.user_id,
-              assign_order_id: order._id,
+              assign_order_id: order._id.toString(),
               status: { $ne: 'active' },
             });
 

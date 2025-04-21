@@ -26,6 +26,7 @@ import {
   UpdateMasterPartDto,
 } from '../dto/master-parts.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { CacheTTL } from '@nestjs/cache-manager';
 
 @Controller('master-parts')
 @UseGuards(JwtAuthGuard)
@@ -33,6 +34,7 @@ export class MasterPartsController {
   constructor(private readonly masterPartsService: MasterPartsService) {}
 
   @Get()
+  @CacheTTL(3)
   async findAll(@Query() query: any): Promise<ResponseFormat<MasterPart>> {
     return this.masterPartsService.findAll(query);
   }

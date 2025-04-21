@@ -18,6 +18,7 @@ import {
   UpdateMasterCavityDto,
 } from '../dto/master-cavity.dto';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
+import { CacheTTL } from '@nestjs/cache-manager';
 
 @Controller('machine-cavity')
 @UseGuards(JwtAuthGuard)
@@ -25,6 +26,7 @@ export class MachineCavityController {
   constructor(private readonly machineCavityService: MachineCavityService) {}
 
   @Get()
+  @CacheTTL(3)
   async findAll(@Query() query: any): Promise<ResponseFormat<MasterCavity>> {
     return this.machineCavityService.findAll(query);
   }

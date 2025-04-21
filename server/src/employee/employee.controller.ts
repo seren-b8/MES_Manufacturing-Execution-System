@@ -16,6 +16,7 @@ import { Employee } from 'src/shared/modules/schema/employee.schema';
 import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
 import { Role } from 'src/auth/enum/roles.enum';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';
+import { CacheTTL } from '@nestjs/cache-manager';
 
 @Controller('employee')
 export class EmployeeController {
@@ -39,6 +40,7 @@ export class EmployeeController {
   @Get('find-all-employee')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @HttpCode(HttpStatus.OK)
+  @CacheTTL(3)
   async findAllUsers(): Promise<ResponseFormat<Employee>> {
     return this.employeeSyncService.findAllEmployee();
   }
