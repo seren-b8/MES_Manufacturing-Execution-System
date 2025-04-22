@@ -190,6 +190,8 @@ export class AssignOrderService {
         assign_stage: true,
       });
 
+      console.log('activeOrdersCount:', activeOrdersCount);
+
       // NEW CODE: Check for active employee assignments on the same machine
       // and create matching assignments for the new order
       if (activeOrdersCount > 0) {
@@ -211,7 +213,7 @@ export class AssignOrderService {
           for (const assignment of activeAssignments) {
             await this.assignEmployeeModel.create({
               user_id: assignment.user_id,
-              assign_order_id: savedOrder._id,
+              assign_order_id: savedOrder._id.toString(),
               status: 'active',
               log_date: moment().toDate(),
             });
