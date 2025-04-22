@@ -205,3 +205,64 @@ export interface DailySummaryData {
   good_quantity: number;
   not_good_quantity: number;
 }
+
+export type TMachineInfo = {
+  machine_info: {
+    work_center: string;
+    machine_number: string;
+    machine_name: string;
+    line: string;
+    status: string;
+    counter: number;
+    available_counter: number;
+    is_counter_paused: boolean;
+    cycle_time: number;
+    tonnage: number;
+  };
+  orders_summary: {
+    total_orders: number;
+    completed_orders: number;
+    pending_orders: number;
+    suspended_orders: number;
+    waiting_assign_orders: number;
+  };
+  active_orders: {
+    order_id: string;
+    production_order: {
+      id: string;
+      order_number: string;
+      material_number: string;
+      material_description: string;
+      target_quantity: number;
+      target_daily: number;
+      plan_cycle_time: number;
+      weight: number;
+      weight_runner: number;
+    };
+    production_summary: {
+      total_good_quantity: number;
+      total_not_good_quantity: number;
+      last_update: string;
+      achievement_rate: number;
+    };
+    daily_summary: {
+      total_quantity: number;
+      good_quantity: number;
+      not_good_quantity: number;
+    };
+    datetime_open_order: string;
+    employees: {
+      id: string;
+      employee_id: string;
+      name: string;
+    }[];
+  }[];
+  latest_production: {
+    start_time: string;
+    running_time: number;
+    efficiency: number;
+    daily_total_quantity: number;
+    daily_good_quantity: number;
+    daily_not_good_quantity: number;
+  };
+};

@@ -12,12 +12,15 @@ export const databaseConfig = registerAs('database', () => ({
       directConnection: true,
       retryWrites: true,
       family: 4,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 15000,
+      socketTimeoutMS: 60000,
+      maxPoolSize: 30,
       minPoolSize: 5,
-      maxIdleTimeMS: 15000,
-      waitQueueTimeoutMS: 3000,
+      maxIdleTimeMS: 30000,
+      waitQueueTimeoutMS: 10000,
+      // เพิ่มตัวเลือกใหม่เพื่อช่วยเพิ่มประสิทธิภาพ
+      connectTimeoutMS: 15000, // เวลาที่รอในการเชื่อมต่อใหม่
+      heartbeatFrequencyMS: 30000, // ตรวจสอบสถานะการเชื่อมต่อทุก 30 วินาที
     },
   },
   sqlServer: {
