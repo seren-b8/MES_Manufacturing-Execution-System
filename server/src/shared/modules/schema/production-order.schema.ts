@@ -105,7 +105,25 @@ export class ProductionOrder extends Document {
   createdAt?: Date; // จาก timestamps: true
 
   updateAt?: Date; // จาก timestamps: true
+
+  // ฟิลด์ใหม่สำหรับติดตามสถานะใน SQL
+  @Prop({ default: true })
+  sql_active: boolean;
+
+  // วันเวลาที่ sync กับ SQL ล่าสุด
+  @Prop({ type: Date, default: Date.now })
+  sql_last_sync: Date;
+
+  // วันเวลาที่ตรวจพบว่าไม่มีใน SQL แล้ว
+  @Prop({ type: Date })
+  sql_inactive_date: Date;
 }
 
 export const ProductionOrderSchema =
   SchemaFactory.createForClass(ProductionOrder);
+
+// เพิ่ม Index เพื่อช่วยในการค้นหา
+ProductionOrderSchema.index({ order_id: 1, work_center: 1 }, { unique: true });
+ProductionOrderSchema.index({ sql_active: 1 });
+ProductionOrderSchema.index({ sql_inactive_date: -1 });
+ProductionOrderSchema.index({ assign_stage: 1, sql_active: 1 });

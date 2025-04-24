@@ -19,7 +19,7 @@ export class SapOrderService {
 
     try {
       // แปลงวันที่จากหลายรูปแบบที่เป็นไปได้
-      const parsedDate = moment(dateString);
+      const parsedDate = moment(dateString).tz('Asia/Bangkok');
 
       // ตรวจสอบว่าวันที่ถูกต้องหรือไม่
       if (!parsedDate.isValid()) return null;
@@ -118,8 +118,42 @@ export class SapOrderService {
           log_date: logDate,
           condition_amount: null,
           assign_stage: false,
+          sql_active: true,
+          sql_last_sync: new Date(), // วันที่ที่ทำการซิงค์ล่าสุด
         };
       });
+
+      // 3. รวบรวม order_id และ work_center ทั้งหมดจาก SQL
+      const sqlIdentifiers = new Map();
+      transformedData.forEach((item) => {
+        const key = `${item.order_id}|${item.work_center}`;
+        sqlIdentifiers.set(key, true);
+      });
+
+      // 4. ตั้งค่า sql_active = false สำหรับรายการที่ไม่มีใน SQL แล้ว
+      const allMongoOrders = await this.productionOrderModel.find({});
+      const orderIdsToUpdate = [];
+
+      for (const order of allMongoOrders) {
+        const key = `${order.order_id}|${order.work_center}`;
+        if (!sqlIdentifiers.has(key)) {
+          orderIdsToUpdate.push(order._id);
+        }
+      }
+
+      let inactivatedCount = 0;
+      if (orderIdsToUpdate.length > 0) {
+        const inactivateResult = await this.productionOrderModel.updateMany(
+          { _id: { $in: orderIdsToUpdate } },
+          {
+            $set: {
+              sql_active: false,
+              sql_inactive_date: new Date(),
+            },
+          },
+        );
+        inactivatedCount = inactivateResult.modifiedCount;
+      }
 
       // 3. เตรียมตัวแปรสำหรับเก็บข้อมูล
       const ordersToUpdate = []; // คำสั่งที่ต้องอัพเดต (ไม่รวม workcenter)
@@ -220,6 +254,7 @@ export class SapOrderService {
             workCenterChanged: workCenterChangedCount,
             newOrdersCreated: ordersToCreate.length,
             newWorkCenterCreated: ordersWithNewWorkcenter.length,
+            inactivated: inactivatedCount,
             total: updatedCount + createdCount,
           },
         ],

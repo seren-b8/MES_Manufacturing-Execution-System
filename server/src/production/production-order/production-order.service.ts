@@ -1,7 +1,9 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import moment from 'moment';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
+import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 
 @Injectable()
@@ -165,6 +167,47 @@ export class ProductionOrderService {
           status: 'error',
           message:
             'Failed to retrieve active production orders: ' +
+            (error as Error).message,
+          data: [],
+        } as ResponseFormat<never>,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * หาข้อมูลที่สามารถ assign ได้
+   */
+
+  async findAvailableAssignOrders(
+    workCenter: string,
+  ): Promise<ResponseFormat<any>> {
+    try {
+      const now = moment().tz('Asia/Bangkok').toDate();
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      // สร้างวันแรกของเดือนถัดไป (เพื่อใช้เป็นขอบบน)
+      const firstDayOfNextMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        1,
+      );
+      const order = await this.productionOrderModel
+        .find({
+          worlk_center: workCenter,
+          basic_start_date: { $gte: firstDayOfMonth, $lt: firstDayOfNextMonth },
+          sql_active: true,
+        })
+        .populate(AssignOrder.name, {});
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message:
+            'Failed to retrieve available assign orders: ' +
             (error as Error).message,
           data: [],
         } as ResponseFormat<never>,

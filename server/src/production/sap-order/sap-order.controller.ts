@@ -13,7 +13,7 @@ export class SqlOrderController {
     return await this.sqlOrderService.syncProductionOrders();
   }
 
-  @Cron(CronExpression.EVERY_4_HOURS)
+  @Cron(CronExpression.EVERY_2_HOURS)
   async syncProductionOrdersCron() {
     return await this.sqlOrderService.syncProductionOrders();
   }
