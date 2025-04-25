@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, isValidObjectId, Types } from 'mongoose';
+import { ProductionOrder } from './production-order.schema';
 
 @Schema({
   collection: 'assign_order',
@@ -10,7 +11,7 @@ export class AssignOrder extends Document {
   @Prop({
     required: true,
     index: true,
-    ref: 'ProductionOrder',
+    ref: ProductionOrder.name,
     type: Types.ObjectId,
   })
   production_order_id: Types.ObjectId;

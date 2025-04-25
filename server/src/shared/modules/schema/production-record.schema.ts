@@ -1,6 +1,9 @@
 import { Prop, SchemaFactory, Schema } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import * as moment from 'moment-timezone';
+import { User, UserSchema } from './user.schema';
+import { AssignOrder } from './assign-order.schema';
+import { AssignEmployee } from './assign-employee.schema';
 
 @Schema({
   collection: 'production_records',
@@ -11,12 +14,12 @@ export class ProductionRecord extends Document {
   @Prop({
     required: true,
     index: true,
-    ref: 'AssignEmployee',
+    ref: AssignEmployee.name,
     type: [Types.ObjectId],
   })
   assign_employee_ids: Types.ObjectId[];
 
-  @Prop({ type: Types.ObjectId, ref: 'AssignOrder', required: true })
+  @Prop({ type: Types.ObjectId, ref: AssignOrder.name, required: true })
   assign_order_id: Types.ObjectId; // เพิ่มฟิลด์นี้
 
   @Prop({ required: true, index: true })
@@ -59,7 +62,7 @@ export class ProductionRecord extends Document {
   })
   confirmation_status: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: Types.ObjectId, ref: User.name })
   confirmed_by: Types.ObjectId;
 
   @Prop()

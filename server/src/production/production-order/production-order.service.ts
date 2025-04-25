@@ -179,40 +179,40 @@ export class ProductionOrderService {
    * หาข้อมูลที่สามารถ assign ได้
    */
 
-  async findAvailableAssignOrders(
-    workCenter: string,
-  ): Promise<ResponseFormat<any>> {
-    try {
-      const now = moment().tz('Asia/Bangkok').toDate();
-      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  // async findAvailableAssignOrders(
+  //   workCenter: string,
+  // ): Promise<ResponseFormat<any>> {
+  //   try {
+  //     const now = moment().tz('Asia/Bangkok').toDate();
+  //     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      // สร้างวันแรกของเดือนถัดไป (เพื่อใช้เป็นขอบบน)
-      const firstDayOfNextMonth = new Date(
-        now.getFullYear(),
-        now.getMonth() + 1,
-        1,
-      );
-      const order = await this.productionOrderModel
-        .find({
-          worlk_center: workCenter,
-          basic_start_date: { $gte: firstDayOfMonth, $lt: firstDayOfNextMonth },
-          sql_active: true,
-        })
-        .populate(AssignOrder.name, {});
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      throw new HttpException(
-        {
-          status: 'error',
-          message:
-            'Failed to retrieve available assign orders: ' +
-            (error as Error).message,
-          data: [],
-        } as ResponseFormat<never>,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
+  //     // สร้างวันแรกของเดือนถัดไป (เพื่อใช้เป็นขอบบน)
+  //     const firstDayOfNextMonth = new Date(
+  //       now.getFullYear(),
+  //       now.getMonth() + 1,
+  //       1,
+  //     );
+  //     const order = await this.productionOrderModel
+  //       .find({
+  //         worlk_center: workCenter,
+  //         basic_start_date: { $gte: firstDayOfMonth, $lt: firstDayOfNextMonth },
+  //         sql_active: true,
+  //       })
+  //       .populate(AssignOrder.name, {});
+  //   } catch (error) {
+  //     if (error instanceof HttpException) {
+  //       throw error;
+  //     }
+  //     throw new HttpException(
+  //       {
+  //         status: 'error',
+  //         message:
+  //           'Failed to retrieve available assign orders: ' +
+  //           (error as Error).message,
+  //         data: [],
+  //       } as ResponseFormat<never>,
+  //       HttpStatus.INTERNAL_SERVER_ERROR,
+  //     );
+  //   }
+  // }
 }

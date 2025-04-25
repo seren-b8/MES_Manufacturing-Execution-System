@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { PrinterDevice } from './printer-device.schema';
 
 @Schema({ timestamps: false, collection: 'machine_info' })
 export class MachineInfo extends Document {
@@ -27,7 +28,7 @@ export class MachineInfo extends Document {
   @Prop({ default: 0 })
   recorded_counter: number; // ค่าที่บันทึกไปแล้ว
 
-  @Prop({ type: Types.ObjectId, ref: 'PrinterDevice' })
+  @Prop({ type: Types.ObjectId, ref: PrinterDevice.name })
   printer_id: Types.ObjectId;
 
   @Prop({ default: false })
