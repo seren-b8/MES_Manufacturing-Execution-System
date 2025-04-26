@@ -79,7 +79,6 @@ export class AssignEmployeeService {
       // สร้าง array เพื่อเก็บ assignments ที่สร้างสำเร็จ
       const createdAssignments = [];
       let skippedCount = 0;
-      let deletedCount = 0;
       let failedCount = 0;
 
       // ตรวจสอบก่อนว่า main assignment มีอยู่แล้วหรือไม่
@@ -110,17 +109,6 @@ export class AssignEmployeeService {
             if (existingAssignment) {
               skippedCount++;
               continue; // ข้ามไปทำ order ถัดไป
-            }
-
-            // ลบ assignment เก่าที่ไม่ active (ถ้ามี)
-            const deleteResult = await this.assignEmployeeModel.deleteMany({
-              user_id: createDto.user_id,
-              assign_order_id: order._id.toString(),
-              status: { $ne: 'active' },
-            });
-
-            if (deleteResult.deletedCount > 0) {
-              deletedCount += deleteResult.deletedCount;
             }
 
             // สร้าง assignment ใหม่
@@ -164,17 +152,6 @@ export class AssignEmployeeService {
             if (existingAssignment) {
               skippedCount++;
               continue; // ข้ามไปทำ order ถัดไป
-            }
-
-            // ลบ assignment เก่าที่ไม่ active (ถ้ามี)
-            const deleteResult = await this.assignEmployeeModel.deleteMany({
-              user_id: createDto.user_id,
-              assign_order_id: order._id.toString(),
-              status: { $ne: 'active' },
-            });
-
-            if (deleteResult.deletedCount > 0) {
-              deletedCount += deleteResult.deletedCount;
             }
 
             // สร้าง assignment ใหม่
