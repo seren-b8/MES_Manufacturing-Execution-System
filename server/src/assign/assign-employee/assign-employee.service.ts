@@ -91,14 +91,6 @@ export class AssignEmployeeService {
         );
       });
 
-      // const deleteResult = await this.assignEmployeeModel.deleteMany({
-      //   user_id: userId,
-      //   assign_order_id: { $in: orderIds },
-      //   status: { $ne: 'active' },
-      // });
-
-      // const deletedCount = deleteResult.deletedCount || 0;
-
       const ordersToCreate = activeOrders.filter(
         (order) => !existingAssignmentMap.has(order._id.toString()),
       );
@@ -119,7 +111,7 @@ export class AssignEmployeeService {
           createdAssignments =
             await this.assignEmployeeModel.insertMany(newAssignmentsData);
         } catch (error) {
-          console.error('Error inserting assignments:', error);
+          console.error('Error inserting assignments:');
           failedCount = newAssignmentsData.length;
         }
       }
@@ -161,6 +153,12 @@ export class AssignEmployeeService {
           HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
+
+      return {
+        status: 'success',
+        message: `Employee assigned successfully. Created ${createdAssignments.length} assignments, skipped ${skippedCount}.`,
+        data: [mainAssignment.toObject() as IAssignEmployeeDocument],
+      };
     } catch (error) {
       console.error('Error in create:', error);
 

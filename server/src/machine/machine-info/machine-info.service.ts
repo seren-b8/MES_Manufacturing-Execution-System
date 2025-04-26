@@ -321,7 +321,6 @@ export class MachineInfoService {
   private async getCavityAndPartData(
     materialNumber: string,
   ): Promise<CavityAndPartResult> {
-    console.log('materialNumber :', materialNumber);
     if (!materialNumber) {
       console.error('material number not found');
       return { cavityData: null, partData: null };
@@ -347,7 +346,7 @@ export class MachineInfoService {
 
       if (!cavity) {
         // เพิ่ม debug logs
-        console.error('cavity not found for part:', part);
+        // console.error('cavity not found for part:', part);
 
         // ทดลองค้นหาด้วยวิธีอื่น
         const alternativeCavity = await this.masterCavityModel
@@ -357,7 +356,7 @@ export class MachineInfoService {
           .lean();
 
         if (alternativeCavity) {
-          console.log('Found cavity using string conversion');
+          // console.log('Found cavity using string conversion');
 
           return {
             cavityData: {

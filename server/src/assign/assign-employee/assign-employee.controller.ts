@@ -23,6 +23,7 @@ import { ResponseFormat } from 'src/shared/interface';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 import mongoose from 'mongoose';
 import { toObjectId } from '../../shared/utils/type.utils';
+import { promises } from 'dns';
 
 @Controller('assign-employee')
 @UseGuards(JwtAuthGuard)
@@ -30,9 +31,10 @@ export class AssignEmployeeController {
   constructor(private readonly assignEmployeeService: AssignEmployeeService) {}
 
   @Post()
-  async create(@Body() createDto: CreateAssignEmployeeDto) {
+  async create(
+    @Body() createDto: CreateAssignEmployeeDto,
+  ): Promise<ResponseFormat<AssignEmployee>> {
     const data = await this.assignEmployeeService.create(createDto);
-    console.log('data', data);
     return data;
   }
 
