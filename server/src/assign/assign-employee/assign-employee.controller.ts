@@ -21,6 +21,8 @@ import {
 } from '../dto/assign-employee.dto';
 import { ResponseFormat } from 'src/shared/interface';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
+import mongoose from 'mongoose';
+import { toObjectId } from '../../shared/utils/type.utils';
 
 @Controller('assign-employee')
 @UseGuards(JwtAuthGuard)
@@ -29,12 +31,16 @@ export class AssignEmployeeController {
 
   @Post()
   async create(@Body() createDto: CreateAssignEmployeeDto) {
-    return await this.assignEmployeeService.create(createDto);
+    const data = await this.assignEmployeeService.create(createDto);
+    console.log('data', data);
+    return data;
   }
 
   @Get('order/:assignOrderId')
   async findByAssignOrder(@Param('assignOrderId') assignOrderId: string) {
-    return await this.assignEmployeeService.findByAssignOrder(assignOrderId);
+    return await this.assignEmployeeService.findByAssignOrder(
+      toObjectId(assignOrderId),
+    );
   }
 
   @Get('user/:userId/active')

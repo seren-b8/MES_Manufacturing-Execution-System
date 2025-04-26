@@ -1,9 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { MasterPart } from './master_parts.schema';
 
 @Schema({ collection: 'master_cavity' })
 export class MasterCavity extends Document {
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'MasterPart' }], required: true })
+  @Prop({
+    type: [{ type: Types.ObjectId, ref: MasterPart.name }],
+    required: true,
+  })
   parts: Types.ObjectId[];
 
   @Prop({ required: true })

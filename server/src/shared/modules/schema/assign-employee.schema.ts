@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { AssignOrder } from './assign-order.schema';
-import { userInfo } from 'os';
+import { User } from './user.schema';
 
 @Schema({
   collection: 'assign_employee',
@@ -13,7 +13,7 @@ export class AssignEmployee extends Document {
     type: Types.ObjectId,
     required: true,
     index: true,
-    ref: userInfo.name,
+    ref: User.name,
   })
   user_id: Types.ObjectId;
 

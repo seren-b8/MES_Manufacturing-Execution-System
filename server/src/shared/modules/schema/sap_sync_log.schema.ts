@@ -1,15 +1,18 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
+import { ProductionRecord } from './production-record.schema';
 
 @Schema({
   collection: 'sap_sync_logs',
   timestamps: true,
 })
 export class SAPSyncLog {
-  // MongoDB id
-  _id: Types.ObjectId; // เพิ่ม _id
   // ข้อมูลอ้างอิง
-  @Prop({ type: [{ type: Types.ObjectId }], required: true })
+  @Prop({
+    type: [{ type: Types.ObjectId }],
+    ref: ProductionRecord.name,
+    required: true,
+  })
   production_record_ids: Types.ObjectId[];
 
   // ข้อมูลพื้นฐาน

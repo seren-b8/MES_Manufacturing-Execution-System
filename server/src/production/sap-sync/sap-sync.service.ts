@@ -165,7 +165,7 @@ export class SapProductionSyncService {
         // ใช้ Promise.race เพื่อจัดการ timeout
         await Promise.race([this.sqlService.query(query), timeoutPromise]);
 
-        await this.updateSyncLogStatus(syncLog._id, 'completed');
+        await this.updateSyncLogStatus((syncLog as any)._id, 'completed');
         return; // ส่งสำเร็จ ออกจาก loop
       } catch (error) {
         retryCount++;
@@ -181,7 +181,7 @@ export class SapProductionSyncService {
 
         // ถ้า retry ครบแล้วยังไม่สำเร็จ ให้บันทึกข้อผิดพลาด
         await this.updateSyncLogStatus(
-          syncLog._id,
+          (syncLog as any)._id,
           'failed',
           (error as Error).message,
         );
@@ -249,7 +249,7 @@ export class SapProductionSyncService {
             );
             // อัพเดทสถานะ log เป็น failed
             await this.updateSyncLogStatus(
-              syncLog._id,
+              (syncLog as any)._id,
               'failed',
               (itemError as Error).message,
             );

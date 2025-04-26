@@ -15,14 +15,15 @@ import { IAssignEmployeeDocument } from 'src/shared/interface/assign.emp';
 import * as moment from 'moment-timezone';
 import { error } from 'console';
 import e from 'express';
+import { toObjectId } from '../../shared/utils/type.utils';
 
 @Injectable()
 export class AssignEmployeeService {
   constructor(
-    @InjectModel('AssignEmployee')
+    @InjectModel(AssignEmployee.name)
     private assignEmployeeModel: Model<AssignEmployee>,
-    @InjectModel('User') private userModel: Model<User>,
-    @InjectModel('AssignOrder') private assignOrderModel: Model<AssignOrder>,
+    @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(AssignOrder.name) private assignOrderModel: Model<AssignOrder>,
   ) {}
 
   private isValidStatusTransition(
@@ -42,29 +43,20 @@ export class AssignEmployeeService {
     createDto: CreateAssignEmployeeDto,
   ): Promise<ResponseFormat<IAssignEmployeeDocument>> {
     try {
-      const user = await this.userModel.findById(createDto.user_id);
+      const userId = toObjectId(createDto.user_id);
+      const assignOrderId = toObjectId(createDto.assign_order_id);
 
-      if (!user) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'not found user',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
+      const user = await this.userModel.findById(userId);
       const assignOrder = await this.assignOrderModel.findOne({
-        _id: createDto.assign_order_id,
+        _id: assignOrderId,
         status: 'active',
       });
 
-      if (!assignOrder) {
+      if (!user || !assignOrder) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'assign order not found or not active',
+            message: user ? 'assign order not found' : 'User not found',
             data: [],
           },
           HttpStatus.NOT_FOUND,
@@ -76,149 +68,98 @@ export class AssignEmployeeService {
         status: 'active',
       });
 
-      // สร้าง array เพื่อเก็บ assignments ที่สร้างสำเร็จ
-      const createdAssignments = [];
-      let skippedCount = 0;
-      let deletedCount = 0;
-      let failedCount = 0;
+      const orderIds = activeOrders.map((order) => order._id);
 
       // ตรวจสอบก่อนว่า main assignment มีอยู่แล้วหรือไม่
       const mainExistingAssignment = await this.assignEmployeeModel.findOne({
-        user_id: createDto.user_id.toString(),
-        assign_order_id: createDto.assign_order_id.toString(),
+        user_id: userId,
+        assign_order_id: assignOrderId,
         status: 'active',
       });
 
-      // ถ้ามี main assignment อยู่แล้ว ให้ใช้อันนั้นเลย
-      if (mainExistingAssignment) {
-        // Loop ข้อมูลจาก activeOrders และสร้าง assignment เฉพาะอันที่ยังไม่มี
-        for (const order of activeOrders) {
-          try {
-            // ข้ามถ้าเป็น main order เพราะมีอยู่แล้ว
-            if (order._id.toString() === createDto.assign_order_id.toString()) {
-              skippedCount++;
-              continue;
-            }
+      const existingAssignments = await this.assignEmployeeModel.find({
+        user_id: userId,
+        assign_order_id: { $in: orderIds },
+        status: 'active',
+      });
 
-            // ตรวจสอบว่ามี assignment อยู่แล้วหรือไม่
-            const existingAssignment = await this.assignEmployeeModel.findOne({
-              user_id: createDto.user_id,
-              assign_order_id: order._id.toString(),
-              status: 'active',
-            });
+      const existingAssignmentMap = new Map();
+      existingAssignments.forEach((assignment) => {
+        existingAssignmentMap.set(
+          assignment.assign_order_id.toString(),
+          assignment,
+        );
+      });
 
-            if (existingAssignment) {
-              skippedCount++;
-              continue; // ข้ามไปทำ order ถัดไป
-            }
+      // const deleteResult = await this.assignEmployeeModel.deleteMany({
+      //   user_id: userId,
+      //   assign_order_id: { $in: orderIds },
+      //   status: { $ne: 'active' },
+      // });
 
-            // ลบ assignment เก่าที่ไม่ active (ถ้ามี)
-            const deleteResult = await this.assignEmployeeModel.deleteMany({
-              user_id: createDto.user_id,
-              assign_order_id: order._id.toString(),
-              status: { $ne: 'active' },
-            });
+      // const deletedCount = deleteResult.deletedCount || 0;
 
-            if (deleteResult.deletedCount > 0) {
-              deletedCount += deleteResult.deletedCount;
-            }
+      const ordersToCreate = activeOrders.filter(
+        (order) => !existingAssignmentMap.has(order._id.toString()),
+      );
 
-            // สร้าง assignment ใหม่
-            const newAssignment = new this.assignEmployeeModel({
-              user_id: createDto.user_id,
-              assign_order_id: order._id.toString(),
-              status: 'active',
-              log_date: new Date(),
-            });
+      const newAssignmentsData = ordersToCreate.map((order) => ({
+        user_id: userId,
+        assign_order_id: order._id,
+        status: 'active',
+        log_date: new Date(),
+      }));
 
-            const savedAssignment = await newAssignment.save();
+      let createdAssignments = [];
+      let skippedCount = existingAssignments.length;
+      let failedCount = 0;
 
-            // เก็บ assignment ที่สร้างสำเร็จ
-            createdAssignments.push(savedAssignment);
-          } catch (error) {
-            // ถ้าเป็น error อื่น ให้บันทึกและทำต่อ
-            console.error(`Error processing order ${order._id}:`, error);
-            failedCount++;
-          }
+      if (newAssignmentsData.length > 0) {
+        try {
+          createdAssignments =
+            await this.assignEmployeeModel.insertMany(newAssignmentsData);
+        } catch (error) {
+          console.error('Error inserting assignments:', error);
+          failedCount = newAssignmentsData.length;
         }
+      }
 
-        // ส่งคืน main assignment ที่มีอยู่แล้ว
+      if (mainExistingAssignment) {
         return {
           status: 'success',
-          message: `Employee already assigned. Created ${createdAssignments.length} additional assignments, skipped ${skippedCount}, failed ${failedCount}.`,
+          message: `Employee already assigned. Created ${createdAssignments.length} additional assignments, skipped ${skippedCount}.`,
           data: [mainExistingAssignment.toObject() as IAssignEmployeeDocument],
         };
       }
-      // กรณีไม่มี main assignment
-      else {
-        // Loop ข้อมูลจาก activeOrders และสร้าง assignment ทีละอัน
-        for (const order of activeOrders) {
-          try {
-            // ตรวจสอบว่ามี assignment อยู่แล้วหรือไม่
-            const existingAssignment = await this.assignEmployeeModel.findOne({
-              user_id: createDto.user_id,
-              assign_order_id: order._id.toString(),
-              status: 'active',
-            });
 
-            if (existingAssignment) {
-              skippedCount++;
-              continue; // ข้ามไปทำ order ถัดไป
-            }
+      // กรณีไม่มี main assignment จำเป็นต้องสร้าง
+      const mainAssignment = createdAssignments.find((assignment) =>
+        assignment.assign_order_id.equals(assignOrderId),
+      );
 
-            // ลบ assignment เก่าที่ไม่ active (ถ้ามี)
-            const deleteResult = await this.assignEmployeeModel.deleteMany({
-              user_id: createDto.user_id,
-              assign_order_id: order._id.toString(),
-              status: { $ne: 'active' },
-            });
-
-            if (deleteResult.deletedCount > 0) {
-              deletedCount += deleteResult.deletedCount;
-            }
-
-            // สร้าง assignment ใหม่
-            const newAssignment = new this.assignEmployeeModel({
-              user_id: createDto.user_id,
-              assign_order_id: order._id.toString(),
-              status: 'active',
-              log_date: new Date(),
-            });
-
-            const savedAssignment = await newAssignment.save();
-
-            // เก็บ assignment ที่สร้างสำเร็จ
-            createdAssignments.push(savedAssignment);
-          } catch (error) {
-            // ถ้าเป็น error อื่น ให้บันทึกและทำต่อ
-            console.error(`Error processing order ${order._id}:`, error);
-            failedCount++;
-          }
-        }
-
-        // หา assignment ของ order หลักที่ถูกสร้าง
-        const mainAssignment = createdAssignments.find(
-          (assignment) =>
-            assignment.assign_order_id.toString() ===
-            createDto.assign_order_id.toString(),
+      if (!mainAssignment) {
+        // ลองตรวจสอบจาก existingAssignments อีกครั้ง (อาจเป็นกรณีที่มีอยู่แล้วแต่ไม่ได้ถูกสร้างใหม่)
+        const existingMainAssignment = existingAssignments.find((assignment) =>
+          assignment.assign_order_id.equals(assignOrderId),
         );
 
-        if (!mainAssignment) {
-          throw new HttpException(
-            {
-              status: 'error',
-              message: 'Failed to create main assignment',
-              data: [],
-            },
-            HttpStatus.INTERNAL_SERVER_ERROR,
-          );
+        if (existingMainAssignment) {
+          return {
+            status: 'success',
+            message: `Employee assigned successfully. Created ${createdAssignments.length} assignments, skipped ${skippedCount}.`,
+            data: [
+              existingMainAssignment.toObject() as IAssignEmployeeDocument,
+            ],
+          };
         }
-
-        return {
-          status: 'success',
-          message: `Employee assigned successfully. Created ${createdAssignments.length} assignments, skipped ${skippedCount}, failed ${failedCount}.`,
-          data: [mainAssignment.toObject() as IAssignEmployeeDocument],
-        };
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Failed to create main assignment',
+            data: [],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
       }
     } catch (error) {
       console.error('Error in create:', error);
@@ -239,17 +180,17 @@ export class AssignEmployeeService {
   }
 
   async findByAssignOrder(
-    assignOrderId: string,
+    assignOrderId: mongoose.Types.ObjectId,
   ): Promise<ResponseFormat<AssignEmployee>> {
     try {
       const assignments = await this.assignEmployeeModel
-        .find({ assign_order_id: assignOrderId })
+        .findById(assignOrderId)
         .sort({ log_date: -1 });
 
       return {
         status: 'success',
         message: 'Employee assignments retrieved successfully',
-        data: assignments,
+        data: [assignments],
       };
     } catch (error) {
       throw new HttpException(
@@ -268,7 +209,7 @@ export class AssignEmployeeService {
   ): Promise<ResponseFormat<AssignEmployee>> {
     try {
       const assignments = await this.assignEmployeeModel.find({
-        user_id: userId,
+        user_id: toObjectId(userId) as mongoose.Types.ObjectId,
         status: 'active',
       });
 
@@ -389,40 +330,19 @@ export class AssignEmployeeService {
     closeByUserDto: CloseByUserDto,
   ): Promise<ResponseFormat<IAssignEmployeeDocument>> {
     try {
-      // ตรวจสอบความถูกต้องของ ID
-      if (!isValidObjectId(closeByUserDto.assign_order_id)) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Invalid assign order ID format',
-            data: [],
-          },
-          HttpStatus.BAD_REQUEST,
-        );
-      }
+      const userId = toObjectId(closeByUserDto.user_id);
+      const assignOrderId = toObjectId(closeByUserDto.assign_order_id);
 
       // ตรวจสอบว่ามีผู้ใช้นี้หรือไม่
-      const user = await this.userModel.findById(closeByUserDto.user_id);
-      if (!user) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'User not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
+      const user = await this.userModel.findById(userId);
+      const mainAssignOrder =
+        await this.assignOrderModel.findById(assignOrderId);
 
-      // ค้นหา assign order ที่ระบุ
-      const mainAssignOrder = await this.assignOrderModel.findById(
-        closeByUserDto.assign_order_id,
-      );
-      if (!mainAssignOrder) {
+      if (!user || !mainAssignOrder) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'Assign order not found',
+            message: user ? 'assign order not found' : 'User not found',
             data: [],
           },
           HttpStatus.NOT_FOUND,
@@ -431,16 +351,16 @@ export class AssignEmployeeService {
 
       // ค้นหา assignment หลักที่จะปิด
       const mainAssignment = await this.assignEmployeeModel.findOne({
-        user_id: closeByUserDto.user_id,
-        assign_order_id: closeByUserDto.assign_order_id,
+        user_id: userId,
+        assign_order_id: assignOrderId,
         status: 'active',
       });
 
       if (!mainAssignment) {
         // แทนที่จะแจ้ง error ทันที ให้ลองตรวจสอบว่ามี inactive assignments ไหม
         const inactiveMainAssignment = await this.assignEmployeeModel.findOne({
-          user_id: closeByUserDto.user_id,
-          assign_order_id: closeByUserDto.assign_order_id,
+          user_id: userId,
+          assign_order_id: assignOrderId,
         });
 
         if (inactiveMainAssignment) {
@@ -481,27 +401,19 @@ export class AssignEmployeeService {
       for (const order of relatedOrders) {
         try {
           // ใช้ ObjectId แทน string ใน query
-          const orderIdStr = order._id.toString();
-
-          // ทดลองค้นหาด้วยเงื่อนไขที่ยืดหยุ่นกว่า (ไม่ระบุ status เพื่อดูว่ามี assignment อยู่ไหม)
-          const anyAssignment = await this.assignEmployeeModel.findOne({
-            user_id: closeByUserDto.user_id,
-            assign_order_id: orderIdStr,
-          });
+          const orderId = toObjectId(order.id);
 
           // ค้นหา active assignment สำหรับ order นี้
           let assignment = await this.assignEmployeeModel.findOne({
-            user_id: closeByUserDto.user_id,
-            assign_order_id: orderIdStr,
+            user_id: userId,
+            assign_order_id: orderId,
             status: 'active',
           });
 
+          const isMainOrder = orderId.equals(assignOrderId);
+
           // ลอง query อีกวิธีหนึ่งถ้าไม่พบผลลัพธ์
-          if (
-            !assignment &&
-            mainAssignment &&
-            orderIdStr === closeByUserDto.assign_order_id
-          ) {
+          if (!assignment && isMainOrder && mainAssignment) {
             assignment = mainAssignment;
           }
 
@@ -589,10 +501,8 @@ export class AssignEmployeeService {
       }
 
       // หา assignment ของ order หลักที่ถูกปิด
-      const closedMainAssignment = closedAssignments.find(
-        (assignment) =>
-          assignment.assign_order_id.toString() ===
-          closeByUserDto.assign_order_id.toString(),
+      const closedMainAssignment = closedAssignments.find((assignment) =>
+        assignment.assign_order_id.equals(assignOrderId),
       );
 
       // ถ้าไม่มี main assignment ที่ถูกปิด ใช้ assignment แรกที่ปิดได้แทน

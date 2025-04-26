@@ -4,6 +4,7 @@ import * as moment from 'moment-timezone';
 import { User, UserSchema } from './user.schema';
 import { AssignOrder } from './assign-order.schema';
 import { AssignEmployee } from './assign-employee.schema';
+import { MasterNotGood } from './master-not-good.schema';
 
 @Schema({
   collection: 'production_records',
@@ -30,7 +31,7 @@ export class ProductionRecord extends Document {
 
   @Prop({
     type: Types.ObjectId,
-    ref: 'MasterNotGood',
+    ref: MasterNotGood.name,
     required: function (this: ProductionRecord) {
       return this.is_not_good;
     },

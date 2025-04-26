@@ -13,6 +13,7 @@ import { AssignEmployeeService } from '../assign-employee/assign-employee.servic
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
 import * as moment from 'moment-timezone';
+import { toObjectId } from 'src/shared/utils/type.utils';
 
 type OrderStatus = 'active' | 'completed' | 'suspended';
 
@@ -106,7 +107,7 @@ export class AssignOrderService {
       });
 
       const assignOrder = await this.assignOrderModel.findOne({
-        production_order_id: production_order_id.toString(),
+        production_order_id: production_order_id,
         status: 'suspended',
       });
 
@@ -122,7 +123,7 @@ export class AssignOrderService {
       }
 
       if (assignOrder) {
-        await this.update(assignOrder._id.toString(), { status: 'active' });
+        await this.update(assignOrder.id, { status: 'active' });
         return {
           status: 'success',
           message: 'assign order successfully',
@@ -175,6 +176,7 @@ export class AssignOrderService {
 
       const newAssignOrder = new this.assignOrderModel({
         ...createDto,
+        production_order_id: toObjectId(production_order_id),
         datetime_open_order: moment().toDate(),
         status: 'active',
         current_summary: {
@@ -205,15 +207,15 @@ export class AssignOrderService {
         // For each active order, find active employee assignments
         for (const activeOrder of activeOrders) {
           const activeAssignments = await this.assignEmployeeModel.find({
-            assign_order_id: activeOrder._id.toString(),
+            assign_order_id: activeOrder._id,
             status: 'active',
           });
 
           // For each active employee, create a new assignment for the new order
           for (const assignment of activeAssignments) {
             await this.assignEmployeeModel.create({
-              user_id: assignment.user_id,
-              assign_order_id: savedOrder._id.toString(),
+              user_id: toObjectId(assignment.user_id),
+              assign_order_id: toObjectId(savedOrder.id),
               status: 'active',
               log_date: moment().toDate(),
             });

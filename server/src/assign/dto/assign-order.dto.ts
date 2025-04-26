@@ -1,8 +1,16 @@
+import { IsMongoId, IsNotEmpty, IsString } from 'class-validator';
+
 // DTOs
 export class CreateAssignOrderDto {
+  @IsMongoId()
+  @IsNotEmpty()
   production_order_id: string;
+
+  @IsString()
+  @IsNotEmpty()
   machine_number: string;
 }
+
 export type OrderStatus = 'active' | 'completed' | 'suspended';
 export interface UpdateAssignOrderDto {
   status?: OrderStatus;

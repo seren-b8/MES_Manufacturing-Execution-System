@@ -27,6 +27,8 @@ import * as moment from 'moment-timezone';
 import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
 import { PrinterDevice } from 'src/shared/modules/schema/printer-device.schema';
 import { count, error } from 'console';
+import { toObjectId } from 'src/shared/utils/type.utils';
+import { User } from 'src/assign/dto/assign-employee.dto';
 
 @Injectable()
 export class MachineInfoService {
@@ -264,7 +266,7 @@ export class MachineInfoService {
 
     try {
       // รวบรวม order IDs จากทุก active order
-      const orderIds = activeOrders.map((order) => order.order_id.toString());
+      const orderIds = activeOrders.map((order) => toObjectId(order.order_id));
 
       // แก้ไขบัค: ไม่ควรใช้ toString() กับอาร์เรย์ แต่ควรส่ง orderIds โดยตรง
       const assignEmployees = await this.assignEmployeeModel
@@ -272,7 +274,7 @@ export class MachineInfoService {
           assign_order_id: { $in: orderIds },
           status: 'active',
         })
-        .populate<{ user_id: IUser }>('user_id')
+        .populate<{ user_id: User }>('user_id')
         .lean();
 
       if (assignEmployees.length === 0) {
@@ -319,7 +321,9 @@ export class MachineInfoService {
   private async getCavityAndPartData(
     materialNumber: string,
   ): Promise<CavityAndPartResult> {
+    console.log('materialNumber :', materialNumber);
     if (!materialNumber) {
+      console.error('material number not found');
       return { cavityData: null, partData: null };
     }
 
@@ -330,24 +334,49 @@ export class MachineInfoService {
         .lean();
 
       if (!part) {
+        console.error(`part not found ${materialNumber}`);
         return { cavityData: null, partData: null };
       }
 
-      // 2. ค้นหา cavity ที่มี part นี้ - ทั้งในรูปแบบ ObjectId และ String
-      const partIdString = part._id.toString();
-
+      // 2. ค้นหา cavity ที่มี part นี้ - ใช้ _id แทน id
       const cavity = await this.masterCavityModel
         .findOne({
-          $or: [
-            { parts: { $in: [part._id] } }, // ค้นหาแบบ ObjectId
-            { parts: { $in: [partIdString] } }, // ค้นหาแบบ String
-          ],
+          parts: { $in: [toObjectId(part._id as string)] }, // ใช้ _id แทน id
         })
         .lean();
 
       if (!cavity) {
-        // เพิ่มการตรวจสอบว่ามี cavity ใดบ้างในระบบเพื่อ debug
-        const allCavities = await this.masterCavityModel.find().limit(3).lean();
+        // เพิ่ม debug logs
+        console.error('cavity not found for part:', part);
+
+        // ทดลองค้นหาด้วยวิธีอื่น
+        const alternativeCavity = await this.masterCavityModel
+          .findOne({
+            parts: { $in: [part._id.toString()] }, // ลองใช้เป็น string
+          })
+          .lean();
+
+        if (alternativeCavity) {
+          console.log('Found cavity using string conversion');
+
+          return {
+            cavityData: {
+              cavity: alternativeCavity.cavity,
+              runner: alternativeCavity.runner,
+              tonnage: alternativeCavity.tonnage,
+            },
+            partData: part,
+          };
+        }
+
+        // ตรวจสอบโครงสร้างของ parts ในฐานข้อมูล
+        const sampleCavity = await this.masterCavityModel.findOne().lean();
+        // console.log('Sample cavity structure:', {
+        //   hasPartsField: !!sampleCavity?.parts,
+        //   partsType: sampleCavity?.parts ? typeof sampleCavity.parts : 'N/A',
+        //   isArray: Array.isArray(sampleCavity?.parts),
+        //   sampleParts: sampleCavity?.parts,
+        // });
 
         return { cavityData: null, partData: null };
       }
@@ -363,11 +392,6 @@ export class MachineInfoService {
       };
     } catch (error) {
       console.error('Error getting cavity and part data:', error);
-      console.error('Error details:', {
-        materialNumber,
-        errorMessage: (error as Error).message,
-        errorStack: (error as Error).stack,
-      });
       return { cavityData: null, partData: null };
     }
   }
@@ -389,7 +413,7 @@ export class MachineInfoService {
       if (!activeOrders?.length) return [];
 
       // เตรียมข้อมูลเบื้องต้น
-      const orderIds = activeOrders.map((order) => order._id);
+      const orderIds = activeOrders.map((order) => order.id);
 
       // สร้าง orders พร้อมรายละเอียด
       const ordersWithBasicDetails = await Promise.all(
@@ -438,7 +462,7 @@ export class MachineInfoService {
         filteredOrders.map(async (order) => {
           // เรียกใช้ getDailySummary เพื่อดึงข้อมูลสรุปรายวัน
           const dailySummary = await this.getDailySummary(
-            order.order_id.toString(),
+            toObjectId(order.order_id as string),
           );
 
           const summaryData = dailySummary?.data?.[0];
@@ -462,7 +486,7 @@ export class MachineInfoService {
           // เรียกใช้ getActiveEmployeesFromOrders สำหรับ order เดียว
           const employees = await this.getActiveEmployeesFromOrders([
             {
-              order_id: order.order_id,
+              order_id: toObjectId(order.order_id as string),
             },
           ]);
 
@@ -591,7 +615,7 @@ export class MachineInfoService {
           } catch (error) {
             console.error(
               `Error processing machine ${machine.machine_number}:`,
-              error,
+              // error,
             );
             return this.getErrorMachineData(machine);
           }
@@ -929,7 +953,7 @@ export class MachineInfoService {
     try {
       const machines = await this.machineInfoModel
         .find({
-          printer_id: new Types.ObjectId(printerId),
+          printer_id: toObjectId(printerId),
         })
         .exec();
 
@@ -951,10 +975,10 @@ export class MachineInfoService {
   }
 
   async getDailySummary(
-    orderId: string,
+    orderId: string | Types.ObjectId,
   ): Promise<ResponseFormat<DailySummaryData>> {
     try {
-      const orderObjectId = new Types.ObjectId(orderId);
+      const orderObjectId = toObjectId(orderId);
 
       // Get AssignOrder data for validation
       const assignOrder = await this.assignOrderModel.findById(orderObjectId);
