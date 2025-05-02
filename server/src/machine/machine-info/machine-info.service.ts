@@ -1,3 +1,4 @@
+import { User } from 'src/shared/modules/schema/user.schema';
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -8,6 +9,7 @@ import {
   IEmployee,
   IEmployeeDetail,
   IUser,
+  TMachineInfo,
 } from 'src/shared/interface/machine-info';
 import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
 import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
@@ -28,7 +30,7 @@ import { ProductionRecord } from 'src/shared/modules/schema/production-record.sc
 import { PrinterDevice } from 'src/shared/modules/schema/printer-device.schema';
 import { count, error } from 'console';
 import { toObjectId } from 'src/shared/utils/type.utils';
-import { User } from 'src/assign/dto/assign-employee.dto';
+import { stat } from 'fs';
 
 @Injectable()
 export class MachineInfoService {
@@ -41,6 +43,8 @@ export class MachineInfoService {
     @InjectModel(AssignOrder.name) private assignOrderModel: Model<AssignOrder>,
 
     @InjectModel(Employee.name) private employeeModel: Model<Employee>,
+
+    @InjectModel(User.name) private userModel: Model<User>,
 
     @InjectModel(MasterCavity.name)
     private masterCavityModel: Model<MasterCavity>,
@@ -211,423 +215,206 @@ export class MachineInfoService {
     return machineGroups;
   }
 
-  private getErrorMachineData(machine: any) {
-    return {
-      machine_info: {
-        work_center: machine.work_center || '',
-        machine_number: machine.machine_number || '',
-        line: machine.line || '',
-        status: 'error',
-        counter: 0,
-        cycle_time: 0,
-        cavity_info: null,
-      },
-      orders_summary: {
-        total_orders: 0,
-        completed_orders: 0,
-        pending_orders: 0,
-        waiting_assign_orders: 0,
-      },
-      active_orders: [],
-    };
-  }
+  async getAllMachinesDetails(): Promise<ResponseFormat<MachineInfo>> {
+    try {
+      // 1. ตรวจสอบชื่อ collections จริง
+      const machineCollection = this.machineInfoModel.collection.collectionName;
+      const orderCollection =
+        this.productionOrderModel.collection.collectionName;
+      const AssignOrderCollection =
+        this.assignOrderModel.collection.collectionName;
 
-  private handleServiceError(error: any): never {
-    console.error('Service error:', {
-      error: (error as Error).message,
-      stack: (error as Error).stack,
-      timestamp: new Date().toISOString(),
-    });
+      const ProductionRecordCollection =
+        this.productionRecordModel.collection.collectionName;
 
-    if (error instanceof HttpException) throw error;
+      const AssignEmployeeCollection =
+        this.assignEmployeeModel.collection.collectionName;
+      const EmployeeCollection = this.employeeModel.collection.collectionName;
+      const UserCollection = this.userModel.collection.collectionName;
 
-    throw new HttpException(
-      {
-        status: 'error',
-        message: 'Failed to retrieve machines details',
-        data: [
-          {
-            message: (error as Error).message || 'Unknown error',
-            code: (error as any).code,
-            name: (error as Error).name,
+      // 3. ทำ aggregation ด้วยข้อมูลที่ถูกต้อง
+      const machines = await this.machineInfoModel.aggregate([
+        {
+          $lookup: {
+            from: orderCollection,
+            let: { workCenter: '$work_center' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$work_center', '$$workCenter'] },
+                  sql_active: true,
+                },
+              },
+              {
+                $project: {
+                  _id: 1,
+                  order_id: 1,
+                  order_number: 1,
+                  order_type: 1,
+                  basic_start_date: 1,
+                  basic_finish_date: 1,
+                  target_quantity: 1,
+                  production_order_status: 1,
+                },
+              },
+              {
+                $lookup: {
+                  from: AssignOrderCollection,
+                  let: { orderId: '$_id' },
+                  pipeline: [
+                    {
+                      $match: {
+                        $expr: { $eq: ['$production_order_id', '$$orderId'] },
+                        status: 'active',
+                      },
+                    },
+                    {
+                      $lookup: {
+                        from: ProductionRecordCollection,
+                        let: { assignOrderId: '$_id' },
+                        pipeline: [
+                          {
+                            $match: {
+                              $expr: {
+                                $eq: ['$assign_order_id', '$$assignOrderId'],
+                              },
+                            },
+                          },
+                        ],
+                        as: 'production_records',
+                      },
+                    },
+                    {
+                      $lookup: {
+                        from: AssignEmployeeCollection,
+                        let: { assignOrderId: '$_id' },
+                        pipeline: [
+                          {
+                            $match: {
+                              $expr: {
+                                $and: [
+                                  {
+                                    $eq: [
+                                      '$assign_order_id',
+                                      '$$assignOrderId',
+                                    ],
+                                  },
+                                  { $eq: ['$status', 'active'] },
+                                ],
+                              },
+                            },
+                          },
+                          {
+                            $lookup: {
+                              from: UserCollection,
+                              let: { userId: '$user_id' },
+                              pipeline: [
+                                {
+                                  $match: {
+                                    $expr: { $eq: ['$_id', '$$userId'] },
+                                  },
+                                },
+                                {
+                                  $lookup: {
+                                    from: EmployeeCollection,
+                                    let: { employeeId: '$employee_id' },
+                                    pipeline: [
+                                      {
+                                        $match: {
+                                          $expr: {
+                                            $eq: [
+                                              '$employee_id',
+                                              '$$employeeId',
+                                            ],
+                                          },
+                                        },
+                                      },
+                                    ],
+                                    as: 'employee',
+                                  },
+                                },
+                                {
+                                  $project: {
+                                    _id: 1,
+                                    employee_id: 1,
+                                    role: 1,
+                                    first_name: {
+                                      $arrayElemAt: ['$employee.first_name', 0],
+                                    },
+                                    last_name: {
+                                      $arrayElemAt: ['$employee.last_name', 0],
+                                    },
+                                  },
+                                },
+                              ],
+                              as: 'user',
+                            },
+                          },
+                        ],
+                        as: 'assign_employees',
+                      },
+                    },
+                    { $project: { order_id: '$_id' } },
+                  ],
+                  as: 'assign_orders',
+                },
+              },
+              {
+                $addFields: {
+                  has_assign_orders: { $gt: [{ $size: '$assign_orders' }, 0] },
+                },
+              },
+            ],
+            as: 'production_orders',
           },
-        ],
-      },
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
-  }
-
-  private async getActiveEmployeesFromOrders(
-    activeOrders: any[],
-  ): Promise<IEmployeeDetail[]> {
-    if (!activeOrders?.length) {
-      return [];
-    }
-
-    try {
-      // รวบรวม order IDs จากทุก active order
-      const orderIds = activeOrders.map((order) => toObjectId(order.order_id));
-
-      // แก้ไขบัค: ไม่ควรใช้ toString() กับอาร์เรย์ แต่ควรส่ง orderIds โดยตรง
-      const assignEmployees = await this.assignEmployeeModel
-        .find({
-          assign_order_id: { $in: orderIds },
-          status: 'active',
-        })
-        .populate<{ user_id: User }>('user_id')
-        .lean();
-
-      if (assignEmployees.length === 0) {
-        return [];
-      }
-
-      // ดึงรายการ employee IDs ที่ unique
-      const employeeIds = Array.from(
-        new Set(
-          assignEmployees
-            .map((assign) => {
-              return assign.user_id?.employee_id;
-            })
-            .filter((id): id is string => !!id),
-        ),
-      );
-
-      // ดึงข้อมูลพนักงาน
-      const employees = await this.employeeModel
-        .find<IEmployee>({ employee_id: { $in: employeeIds } })
-        .lean();
-
-      // สร้างรายละเอียดพนักงาน
-      const result = assignEmployees.map((assign): IEmployeeDetail => {
-        const userData = assign.user_id || ({} as IUser);
-        const employeeData =
-          employees.find((emp) => emp.employee_id === userData.employee_id) ||
-          ({} as IEmployee);
-
-        return {
-          id: userData._id?.toString() || '',
-          employee_id: userData.employee_id || '',
-          name: `${employeeData.first_name || ''} ${employeeData.last_name || ''}`.trim(),
-        };
-      });
-
-      return result; // เพิ่ม return statement ที่ขาดหายไป
-    } catch (error) {
-      console.error('Error fetching active employees from orders:', error);
-      return [];
-    }
-  }
-
-  private async getCavityAndPartData(
-    materialNumber: string,
-  ): Promise<CavityAndPartResult> {
-    if (!materialNumber) {
-      console.error('material number not found');
-      return { cavityData: null, partData: null };
-    }
-
-    try {
-      // 1. ค้นหา part ก่อน
-      const part = await this.masterPartModel
-        .findOne({ material_number: materialNumber })
-        .lean();
-
-      if (!part) {
-        console.error(`part not found ${materialNumber}`);
-        return { cavityData: null, partData: null };
-      }
-
-      // 2. ค้นหา cavity ที่มี part นี้ - ใช้ _id แทน id
-      const cavity = await this.masterCavityModel
-        .findOne({
-          parts: { $in: [toObjectId(part._id as string)] }, // ใช้ _id แทน id
-        })
-        .lean();
-
-      if (!cavity) {
-        // เพิ่ม debug logs
-        // console.error('cavity not found for part:', part);
-
-        // ทดลองค้นหาด้วยวิธีอื่น
-        const alternativeCavity = await this.masterCavityModel
-          .findOne({
-            parts: { $in: [part._id.toString()] }, // ลองใช้เป็น string
-          })
-          .lean();
-
-        if (alternativeCavity) {
-          // console.log('Found cavity using string conversion');
-
-          return {
-            cavityData: {
-              cavity: alternativeCavity.cavity,
-              runner: alternativeCavity.runner,
-              tonnage: alternativeCavity.tonnage,
-            },
-            partData: part,
-          };
-        }
-
-        // ตรวจสอบโครงสร้างของ parts ในฐานข้อมูล
-        const sampleCavity = await this.masterCavityModel.findOne().lean();
-        // console.log('Sample cavity structure:', {
-        //   hasPartsField: !!sampleCavity?.parts,
-        //   partsType: sampleCavity?.parts ? typeof sampleCavity.parts : 'N/A',
-        //   isArray: Array.isArray(sampleCavity?.parts),
-        //   sampleParts: sampleCavity?.parts,
-        // });
-
-        return { cavityData: null, partData: null };
-      }
-
-      // 3. ส่งผลลัพธ์ที่ถูกต้อง
-      return {
-        cavityData: {
-          cavity: cavity.cavity,
-          runner: cavity.runner,
-          tonnage: cavity.tonnage,
         },
-        partData: part,
-      };
-    } catch (error) {
-      console.error('Error getting cavity and part data:', error);
-      return { cavityData: null, partData: null };
-    }
-  }
-
-  // 2. แยกฟังก์ชันดึงข้อมูล active order
-  private async getActiveOrdersData(machine: any) {
-    try {
-      // ดึงข้อมูล active orders
-      const activeOrders = await this.assignOrderModel
-        .find({
-          machine_number: machine.machine_number,
-          status: 'active',
-        })
-        .populate<{ production_order_id: ProductionOrder }>(
-          'production_order_id',
-        )
-        .lean();
-
-      if (!activeOrders?.length) return [];
-
-      // เตรียมข้อมูลเบื้องต้น
-      const orderIds = activeOrders.map((order) => order.id);
-
-      // สร้าง orders พร้อมรายละเอียด
-      const ordersWithBasicDetails = await Promise.all(
-        activeOrders.map(async (activeOrder) => {
-          if (!activeOrder?.production_order_id) return null;
-
-          const { cavityData, partData } = await this.getCavityAndPartData(
-            activeOrder.production_order_id.material_number,
-          );
-
-          return {
-            order_id: activeOrder._id,
-            production_order: {
-              id: activeOrder.production_order_id._id,
-              order_number: activeOrder.production_order_id.order_id,
-              material_number: activeOrder.production_order_id.material_number,
-              material_description:
-                activeOrder.production_order_id.material_description,
-              target_quantity: activeOrder.production_order_id.target_quantity,
-              target_daily: activeOrder.production_order_id.plan_target_day,
-              plan_cycle_time: activeOrder.production_order_id.plan_cycle_time,
-              part_info: partData
-                ? {
-                    weight: (partData as any).weight,
-                    weight_runner: cavityData?.runner || 0,
-                  }
-                : null,
-            },
-            production_summary: {
-              ...(activeOrder.current_summary || {}),
-              achievement_rate: this.calculateAchievementRate(
-                activeOrder.current_summary?.total_good_quantity || 0,
-                activeOrder.production_order_id.target_quantity || 0,
-              ),
-            },
-            datetime_open_order: activeOrder.datetime_open_order,
-          };
-        }),
-      );
-
-      // กรอง orders ที่เป็น null ออก
-      const filteredOrders = ordersWithBasicDetails.filter(Boolean);
-
-      // ดึงข้อมูลสรุปรายวันสำหรับแต่ละ order
-      const ordersWithDailySummary = await Promise.all(
-        filteredOrders.map(async (order) => {
-          // เรียกใช้ getDailySummary เพื่อดึงข้อมูลสรุปรายวัน
-          const dailySummary = await this.getDailySummary(
-            toObjectId(order.order_id as string),
-          );
-
-          const summaryData = dailySummary?.data?.[0];
-
-          // เพิ่มข้อมูลสรุปรายวันเข้าไปใน order object
-          return {
-            ...order,
-            daily_summary: {
-              total_quantity: summaryData.total_quantity ?? 0,
-              good_quantity: summaryData.good_quantity ?? 0,
-              not_good_quantity: summaryData.not_good_quantity ?? 0,
-            },
-          };
-        }),
-      );
-
-      // ดึงข้อมูลพนักงานสำหรับแต่ละ order ผ่านฟังก์ชัน getActiveEmployeesFromOrders
-      // โดยสร้าง structure แบบเดียวกับที่ getActiveEmployeesFromOrders ต้องการ
-      const orderWithEmployeeInfos = await Promise.all(
-        ordersWithDailySummary.map(async (order) => {
-          // เรียกใช้ getActiveEmployeesFromOrders สำหรับ order เดียว
-          const employees = await this.getActiveEmployeesFromOrders([
-            {
-              order_id: toObjectId(order.order_id as string),
-            },
-          ]);
-
-          // เพิ่มข้อมูลพนักงานเข้าไปใน order object
-          return {
-            ...order,
-            employees: employees || [],
-          };
-        }),
-      );
-
-      return orderWithEmployeeInfos;
-    } catch (error) {
-      console.error('Error getting active orders data:', error);
-      return [];
-    }
-  }
-
-  async getAllMachinesDetails(): Promise<ResponseFormat<any>> {
-    try {
-      const machines = await this.machineInfoModel.find().lean();
-
-      const machinesWithDetails = await Promise.all(
-        machines.map(async (machine) => {
-          try {
-            const activeOrders = await this.getActiveOrdersData(machine);
-            const primaryActiveOrder =
-              activeOrders.length > 0 ? activeOrders[0] : null;
-            // ดึงข้อมูลพื้นฐาน
-            const [allOrders, allProductionOrder] = await Promise.all([
-              this.assignOrderModel.find({
-                machine_number: machine.machine_number,
-              }),
-              this.productionOrderModel.find({
-                work_center: machine.work_center,
-                assign_stage: false,
-              }),
-            ]);
-
-            // ดึงข้อมูล daily summary สำหรับทุก active order
-            let consolidatedSummary = {
-              total_quantity: 0,
-              good_quantity: 0,
-              not_good_quantity: 0,
-            };
-
-            if (activeOrders.length > 0) {
-              const dailySummaries = await Promise.all(
-                activeOrders.map((order) =>
-                  this.getDailySummary(order.order_id.toString()),
-                ),
-              );
-
-              // รวมข้อมูลจากทุก order
-              dailySummaries.forEach((summary) => {
-                if (summary?.data[0]) {
-                  consolidatedSummary.total_quantity +=
-                    summary.data[0].total_quantity || 0;
-                  consolidatedSummary.good_quantity +=
-                    summary.data[0].good_quantity || 0;
-                  consolidatedSummary.not_good_quantity +=
-                    summary.data[0].not_good_quantity || 0;
-                }
-              });
-            }
-
-            // ดึงข้อมูล cavity และ part จาก primary order (ถ้ามี)
-            const { cavityData, partData } = primaryActiveOrder
-              ? await this.getCavityAndPartData(
-                  primaryActiveOrder.production_order.material_number,
-                )
-              : { cavityData: null, partData: null };
-
-            // ดึงข้อมูลพนักงานจากทุก active order
-            // const activeEmployees =
-            //   await this.getActiveEmployeesFromOrders(activeOrders);
-
-            return {
-              machine_info: {
-                machine_name: machine.machine_name || '',
-                work_center: machine.work_center || '',
-                machine_number: machine.machine_number || '',
-                line: machine.line || '',
-                status: machine.status || 'unknown',
-                counter: machine.counter,
-                available_counter: calculateAvailableCounter(
-                  machine.counter,
-                  machine.recorded_counter,
-                  cavityData?.cavity || 1,
-                  machine.is_counter_paused,
-                  machine.pause_start_counter,
-                ),
-                cavity_info: cavityData
-                  ? {
-                      cavity_count: cavityData.cavity,
-                      runner: cavityData.runner,
-                      part_info: partData
-                        ? {
-                            material_number: partData.material_number,
-                            part_number: partData.part_number,
-                            part_name: partData.part_name,
-                            weight: partData.weight,
-                          }
-                        : null,
-                    }
-                  : null,
-                is_counter_paused: machine.is_counter_paused || false,
-                cycle_time: machine.cycletime || 0,
-                tonnage: machine.tonnage || 0,
+        {
+          $addFields: {
+            filtered_production_orders: {
+              $filter: {
+                input: '$production_orders',
+                as: 'order',
+                cond: { $eq: ['$$order.has_assign_orders', true] },
               },
-              orders_summary: {
-                total_orders: allOrders.length,
-                completed_orders: allOrders.filter(
-                  (o) => o?.status === 'completed',
-                ).length,
-                suspended_orders: allOrders.filter(
-                  (o) => o?.status === 'suspended',
-                ).length,
-                waiting_assign_orders: allProductionOrder.length,
-              },
-              active_orders: activeOrders, // เปลี่ยนจาก active_order เป็น active_orders
-              // daily_total_quantity: consolidatedSummary.total_quantity,
-              // daily_good_quantity: consolidatedSummary.good_quantity,
-              // daily_not_good_quantity: consolidatedSummary.not_good_quantity,
-            };
-          } catch (error) {
-            console.error(
-              `Error processing machine ${machine.machine_number}:`,
-              // error,
-            );
-            return this.getErrorMachineData(machine);
-          }
-        }),
-      );
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            machine_info: {
+              machine_name: '$machine_name',
+              work_center: '$work_center',
+              machine_number: '$machine_number',
+              line: '$line',
+              status: '$status',
+              counter: '$counter',
+              is_counter_paused: '$is_counter_paused',
+              cycle_time: '$cycletime',
+              tonnage: '$tonnage',
+              active_orders: '$filtered_production_orders',
+              orders_count: { $size: '$filtered_production_orders' },
+            },
+          },
+        },
+      ]);
 
       return {
         status: 'success',
-        message: 'Machines details retrieved successfully',
-        data: machinesWithDetails,
+        message: 'All machine info retrieved successfully',
+        data: machines,
       };
     } catch (error) {
-      return this.handleServiceError(error);
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message:
+            'Failed to get all machine info: ' + (error as Error).message,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 

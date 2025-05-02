@@ -5,6 +5,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import e from 'express';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -56,7 +57,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Unauthorized access',
+          message: `Unauthorized access:${err?.message || 'User not found'}`,
           data: [],
         },
         HttpStatus.UNAUTHORIZED,

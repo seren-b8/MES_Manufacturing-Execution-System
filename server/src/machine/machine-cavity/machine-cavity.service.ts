@@ -152,7 +152,10 @@ export class MachineCavityService {
         );
       }
 
-      const newCavity = await this.machineCavityModel.create(createDto);
+      const newCavity = await this.machineCavityModel.create({
+        ...createDto,
+        parts: objectIdParts,
+      });
 
       const populatedCavity = await this.machineCavityModel
         .findById(newCavity._id)
@@ -164,11 +167,13 @@ export class MachineCavityService {
         data: [populatedCavity],
       };
     } catch (error) {
-      if (error instanceof HttpException) throw error;
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to create machine cavity',
+          message: `Failed to create machine cavity${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
