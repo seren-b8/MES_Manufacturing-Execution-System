@@ -2,6 +2,7 @@ import { Controller, Post, UseGuards } from '@nestjs/common';
 import { SapOrderService } from './sap-order.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { response } from 'express';
 
 @Controller('/sql-order')
 @UseGuards(JwtAuthGuard)
@@ -10,11 +11,23 @@ export class SqlOrderController {
 
   @Post('sync')
   async syncProductionOrders() {
-    return await this.sqlOrderService.syncProductionOrders();
+    const response = await this.sqlOrderService.syncProductionOrders();
+    if (response.status == 'success') {
+      const autoCreatePartRes = this.sqlOrderService.autoCreateNewPart();
+      console.log(autoCreatePartRes);
+      return response;
+    }
+    return response;
   }
 
   @Cron(CronExpression.EVERY_2_HOURS)
   async syncProductionOrdersCron() {
-    return await this.sqlOrderService.syncProductionOrders();
+    const response = await this.sqlOrderService.syncProductionOrders();
+    if (response.status == 'success') {
+      const autoCreatePartRes = this.sqlOrderService.autoCreateNewPart();
+      console.log(autoCreatePartRes);
+      return response;
+    }
+    return response;
   }
 }

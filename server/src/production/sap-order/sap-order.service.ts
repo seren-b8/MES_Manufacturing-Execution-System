@@ -4,12 +4,19 @@ import { Model } from 'mongoose';
 import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
 import { SqlService } from 'src/shared/services/sql.service';
 import * as moment from 'moment';
+import { errorMonitor } from 'events';
+import { error } from 'console';
+import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
+import { ResponseFormat } from 'src/shared/interface';
+import { toObjectId } from 'src/shared/utils/type.utils';
 
 @Injectable()
 export class SapOrderService {
   constructor(
     @InjectModel(ProductionOrder.name)
     private readonly productionOrderModel: Model<ProductionOrder>,
+    @InjectModel(MasterPart.name)
+    private readonly masterPartModel: Model<MasterPart>,
     private readonly sqlService: SqlService,
   ) {}
 
@@ -264,6 +271,102 @@ export class SapOrderService {
         status: 'error',
         message:
           'Failed to sync production orders: ' + (error as Error).message,
+        data: [],
+      };
+    }
+  }
+
+  async autoCreateNewPart(): Promise<ResponseFormat<MasterPart>> {
+    try {
+      const allMaterials = await this.productionOrderModel
+        .distinct('material_number')
+        .exec();
+
+      if (!allMaterials || allMaterials.length === 0) {
+        return {
+          status: 'success',
+          message: 'No materials found in production orders',
+          data: [],
+        };
+      }
+
+      // Step 2: Get all existing material_number values from masterPartModel
+      const existingMaterials = await this.masterPartModel
+        .distinct('material_number')
+        .exec();
+
+      // Step 3: Find materials that exist in production orders but not in master parts
+      const missingMaterials = allMaterials.filter(
+        (material) => !existingMaterials.includes(material),
+      );
+
+      if (missingMaterials.length === 0) {
+        return {
+          status: 'success',
+          message: 'All materials from production orders exist in master parts',
+          data: [],
+        };
+      }
+
+      // Step 4: Create new parts for missing materials
+      const createdParts: MasterPart[] = [];
+
+      for (const materialNumber of missingMaterials) {
+        // Get order information to extract part details
+        const order = await this.productionOrderModel
+          .findOne({
+            material_number: materialNumber,
+          })
+          .exec();
+
+        if (order) {
+          // Create new part with available informationconst
+          const partDetail = order.material_description
+            ? order.material_description.split(' ')
+            : [];
+          const indexOfFirstSpace = order.material_description
+            ? order.material_description.indexOf(' ')
+            : -1;
+          const partName =
+            indexOfFirstSpace !== -1
+              ? order.material_description
+                  .substring(indexOfFirstSpace + 1)
+                  .trim()
+              : '';
+          const partNo =
+            partDetail.length > 0 ? partDetail[0].trim() : materialNumber;
+
+          const newPart = new this.masterPartModel({
+            material_number: materialNumber,
+            part_number: partNo, // Generate a default part number
+            part_name: partName,
+            description:
+              order.material_description ||
+              `Auto-generated part for ${materialNumber}`,
+            weight: 0, // Default weight, can be updated later
+            mat: '',
+            created_by: toObjectId('67888bf4fa4fd50a5764345b'),
+            created_at: moment().tz('Asia/Bangkok').toDate(), // Using Thai timezone as per documentation
+          });
+
+          // Save the new part
+          const savedPart = await newPart.save();
+          createdParts.push(savedPart);
+
+          console.log(`Auto-created new part: ${materialNumber}`);
+        }
+      }
+
+      // Return success response with all created parts
+      return {
+        status: 'success',
+        message: `Successfully created ${createdParts.length} missing parts`,
+        data: createdParts,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: 'Failed to create product :' + (error as Error).message,
         data: [],
       };
     }
