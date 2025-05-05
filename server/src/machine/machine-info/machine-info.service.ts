@@ -217,26 +217,117 @@ export class MachineInfoService {
 
   async getAllMachinesDetails(): Promise<ResponseFormat<MachineInfo>> {
     try {
-      // 1. ตรวจสอบชื่อ collections จริง
-      const machineCollection = this.machineInfoModel.collection.collectionName;
-      const orderCollection =
-        this.productionOrderModel.collection.collectionName;
-      const AssignOrderCollection =
-        this.assignOrderModel.collection.collectionName;
+      const collectionNames = {
+        machine: this.machineInfoModel.collection.collectionName,
+        order: this.productionOrderModel.collection.collectionName,
+        assignOrder: this.assignOrderModel.collection.collectionName,
+        productionRecord: this.productionRecordModel.collection.collectionName,
+        assignEmployee: this.assignEmployeeModel.collection.collectionName,
+        employee: this.employeeModel.collection.collectionName,
+        user: this.userModel.collection.collectionName,
+      };
 
-      const ProductionRecordCollection =
-        this.productionRecordModel.collection.collectionName;
+      const userLookupPipeline = [
+        {
+          $lookup: {
+            from: collectionNames.user,
+            let: { userId: '$user_id' },
+            pipeline: [
+              { $match: { $expr: { $eq: ['$_id', '$$userId'] } } },
+              {
+                $lookup: {
+                  from: collectionNames.employee,
+                  let: { employeeId: '$employee_id' },
+                  pipeline: [
+                    {
+                      $match: {
+                        $expr: { $eq: ['$employee_id', '$$employeeId'] },
+                      },
+                    },
+                  ],
+                  as: 'employee',
+                },
+              },
+              {
+                $project: {
+                  _id: 1,
+                  employee_id: 1,
+                  role: 1,
+                  first_name: { $arrayElemAt: ['$employee.first_name', 0] },
+                  last_name: { $arrayElemAt: ['$employee.last_name', 0] },
+                },
+              },
+            ],
+            as: 'user',
+          },
+        },
+      ];
 
-      const AssignEmployeeCollection =
-        this.assignEmployeeModel.collection.collectionName;
-      const EmployeeCollection = this.employeeModel.collection.collectionName;
-      const UserCollection = this.userModel.collection.collectionName;
+      const assignEmployeePipeline = [
+        {
+          $lookup: {
+            from: collectionNames.assignEmployee,
+            let: { assignOrderId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$assign_order_id', '$$assignOrderId'] },
+                      { $eq: ['$status', 'active'] },
+                    ],
+                  },
+                },
+              },
+              ...userLookupPipeline,
+            ],
+            as: 'assign_employees',
+          },
+        },
+      ];
 
-      // 3. ทำ aggregation ด้วยข้อมูลที่ถูกต้อง
+      const productionRecordPipeline = [
+        {
+          $lookup: {
+            from: collectionNames.productionRecord,
+            let: { assignOrderId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$assign_order_id', '$$assignOrderId'] },
+                },
+              },
+            ],
+            as: 'production_records',
+          },
+        },
+      ];
+
+      const assignOrderPipeline = [
+        {
+          $lookup: {
+            from: collectionNames.assignOrder,
+            let: { orderId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$production_order_id', '$$orderId'] },
+                  status: 'active',
+                },
+              },
+              ...productionRecordPipeline,
+              ...assignEmployeePipeline,
+              { $project: { order_id: '$_id' } },
+            ],
+            as: 'assign_orders',
+          },
+        },
+      ];
+
       const machines = await this.machineInfoModel.aggregate([
         {
           $lookup: {
-            from: orderCollection,
+            from: collectionNames.order,
             let: { workCenter: '$work_center' },
             pipeline: [
               {
@@ -257,108 +348,7 @@ export class MachineInfoService {
                   production_order_status: 1,
                 },
               },
-              {
-                $lookup: {
-                  from: AssignOrderCollection,
-                  let: { orderId: '$_id' },
-                  pipeline: [
-                    {
-                      $match: {
-                        $expr: { $eq: ['$production_order_id', '$$orderId'] },
-                        status: 'active',
-                      },
-                    },
-                    {
-                      $lookup: {
-                        from: ProductionRecordCollection,
-                        let: { assignOrderId: '$_id' },
-                        pipeline: [
-                          {
-                            $match: {
-                              $expr: {
-                                $eq: ['$assign_order_id', '$$assignOrderId'],
-                              },
-                            },
-                          },
-                        ],
-                        as: 'production_records',
-                      },
-                    },
-                    {
-                      $lookup: {
-                        from: AssignEmployeeCollection,
-                        let: { assignOrderId: '$_id' },
-                        pipeline: [
-                          {
-                            $match: {
-                              $expr: {
-                                $and: [
-                                  {
-                                    $eq: [
-                                      '$assign_order_id',
-                                      '$$assignOrderId',
-                                    ],
-                                  },
-                                  { $eq: ['$status', 'active'] },
-                                ],
-                              },
-                            },
-                          },
-                          {
-                            $lookup: {
-                              from: UserCollection,
-                              let: { userId: '$user_id' },
-                              pipeline: [
-                                {
-                                  $match: {
-                                    $expr: { $eq: ['$_id', '$$userId'] },
-                                  },
-                                },
-                                {
-                                  $lookup: {
-                                    from: EmployeeCollection,
-                                    let: { employeeId: '$employee_id' },
-                                    pipeline: [
-                                      {
-                                        $match: {
-                                          $expr: {
-                                            $eq: [
-                                              '$employee_id',
-                                              '$$employeeId',
-                                            ],
-                                          },
-                                        },
-                                      },
-                                    ],
-                                    as: 'employee',
-                                  },
-                                },
-                                {
-                                  $project: {
-                                    _id: 1,
-                                    employee_id: 1,
-                                    role: 1,
-                                    first_name: {
-                                      $arrayElemAt: ['$employee.first_name', 0],
-                                    },
-                                    last_name: {
-                                      $arrayElemAt: ['$employee.last_name', 0],
-                                    },
-                                  },
-                                },
-                              ],
-                              as: 'user',
-                            },
-                          },
-                        ],
-                        as: 'assign_employees',
-                      },
-                    },
-                    { $project: { order_id: '$_id' } },
-                  ],
-                  as: 'assign_orders',
-                },
-              },
+              ...assignOrderPipeline,
               {
                 $addFields: {
                   has_assign_orders: { $gt: [{ $size: '$assign_orders' }, 0] },
@@ -399,6 +389,8 @@ export class MachineInfoService {
         },
       ]);
 
+      this.createOptimalIndexes();
+
       return {
         status: 'success',
         message: 'All machine info retrieved successfully',
@@ -415,6 +407,33 @@ export class MachineInfoService {
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  private async createOptimalIndexes(): Promise<void> {
+    try {
+      await this.machineInfoModel.collection.createIndex(
+        { work_center: 1 },
+        { background: true },
+      );
+      await this.productionOrderModel.collection.createIndex(
+        { work_center: 1, sql_active: 1 },
+        { background: true },
+      );
+      await this.assignOrderModel.collection.createIndex(
+        { production_order_id: 1, status: 1 },
+        { background: true },
+      );
+      await this.assignEmployeeModel.collection.createIndex(
+        { assign_order_id: 1, status: 1 },
+        { background: true },
+      );
+      await this.productionRecordModel.collection.createIndex(
+        { assign_order_id: 1 },
+        { background: true },
+      );
+    } catch (error) {
+      console.error('Index creation error:', error);
     }
   }
 

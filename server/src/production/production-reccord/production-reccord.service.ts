@@ -33,6 +33,7 @@ import { AssignEmployeeService } from 'src/assign/assign-employee/assign-employe
 import { DateRangeSummaryData } from 'src/shared/interface/product';
 import { MachineInfoService } from 'src/machine/machine-info/machine-info.service';
 import { response } from 'express';
+import { SerialCounter } from 'src/shared/modules/schema/serial-counter.schema';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -60,6 +61,9 @@ export class ProductionRecordService {
     @InjectModel(MasterPart.name) private masterPartModel: Model<MasterPart>,
 
     @InjectModel(User.name) private userModel: Model<User>,
+
+    @InjectModel(SerialCounter.name)
+    private serialCounterModel: Model<SerialCounter>,
 
     private AssignEmployeeService: AssignEmployeeService,
 
@@ -737,42 +741,54 @@ export class ProductionRecordService {
   }
 
   async generateSerialCode(machine_number: string): Promise<string> {
-    // สร้าง prefix ตามวันที่
-    const today = new Date();
-    const prefix = `PR${today.getFullYear().toString().slice(-2)}${(
-      today.getMonth() + 1
-    )
-      .toString()
-      .padStart(2, '0')}${today.getDate().toString().padStart(2, '0')}`;
+    const session = await this.productionRecordModel.db.startSession();
+    try {
+      let serialCode = '';
 
-    // console.log('Searching Pattern:', `^B8MES\\|${prefix}-${machine_number}-`);
+      await session.withTransaction(async () => {
+        // โค้ดเหมือนข้างบน แต่เพิ่ม { session } ในทุก operation
+        const thaiTime = moment().tz('Asia/Bangkok');
+        const dateStr = thaiTime.format('YYYY-MM-DD');
+        const prefix = `PR${thaiTime.format('YYMMDD')}`;
 
-    // ค้นหา serial code ล่าสุดของวันนี้
-    const latestRecord = await this.productionRecordModel
-      .findOne({
-        serial_code: new RegExp(`^B8MES\\|${prefix}-${machine_number}-`),
-      })
-      .sort({ serial_code: -1 });
+        const counterDoc = await this.serialCounterModel.findOneAndUpdate(
+          { prefix: prefix, machine_number: machine_number, date: dateStr },
+          { $inc: { sequence: 1 } },
+          { upsert: true, new: true, session },
+        );
 
-    // console.log('Latest Record:', latestRecord);
-    // console.log('Prefix:', prefix);
+        const sequence = counterDoc.sequence;
+        const timestamp = Date.now().toString();
+        const processId = process.pid % 10000;
+        const randomComponent = Math.floor(Math.random() * 1000)
+          .toString()
+          .padStart(3, '0');
 
-    // คำนวณเลข sequence ถัดไป
-    let sequence = 1;
-    if (latestRecord) {
-      // เพิ่ม log เพื่อดูค่าที่แยกออกมา
-      const parts = latestRecord.serial_code.split('-');
-      // console.log('Split parts:', parts);
+        serialCode = `B8MES|${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}-${timestamp.slice(-6)}-${processId}-${randomComponent}`;
 
-      const lastSequence = parseInt(parts[2]);
-      // console.log('Last sequence:', lastSequence);
-      sequence = lastSequence + 1;
+        // ตรวจสอบการซ้ำ (อยู่ในธุรกรรมเดียวกัน)
+        const existingRecord = await this.productionRecordModel
+          .findOne({ serial_code: serialCode }, null, { session })
+          .exec();
+
+        if (existingRecord) {
+          throw new Error('Duplicate serial code detected');
+        }
+      });
+
+      session.endSession();
+      return serialCode;
+    } catch (error) {
+      session.endSession();
+      console.error('Error generating serial code:', error);
+
+      // ถ้าเจอข้อผิดพลาดเกี่ยวกับ duplicate ให้ลองใหม่
+      if ((error as Error).message === 'Duplicate serial code detected') {
+        return this.generateSerialCode(machine_number);
+      }
+
+      throw new Error('Failed to generate serial code');
     }
-
-    const result = `B8MES|${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}`;
-    // console.log('Generated code:', result);
-
-    return result;
   }
 
   async getDailySummary(date?: Date): Promise<ResponseFormat<any>> {

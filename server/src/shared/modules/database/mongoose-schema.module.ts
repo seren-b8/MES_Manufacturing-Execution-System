@@ -57,6 +57,10 @@ import {
   PrinterDevice,
   PrinterDeviceSchema,
 } from '../schema/printer-device.schema';
+import {
+  SerialCounter,
+  SerialCounterSchema,
+} from '../schema/serial-counter.schema';
 
 @Module({
   imports: [
@@ -66,6 +70,7 @@ import {
       { name: ProductionRecord.name, schema: ProductionRecordSchema },
       { name: AssignOrder.name, schema: AssignOrderSchema },
       { name: AssignEmployee.name, schema: AssignEmployeeSchema },
+      { name: SerialCounter.name, schema: SerialCounterSchema },
 
       // Machine Management
       { name: MachineInfo.name, schema: MachineInfoSchema },
