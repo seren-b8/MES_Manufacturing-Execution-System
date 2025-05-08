@@ -215,7 +215,7 @@ export class MachineInfoService {
     return machineGroups;
   }
 
-  async getAllMachinesDetails(): Promise<ResponseFormat<MachineInfo>> {
+  async getAllMachinesDetails(): Promise<ResponseFormat<any>> {
     try {
       const collectionNames = {
         machine: this.machineInfoModel.collection.collectionName,
@@ -225,6 +225,8 @@ export class MachineInfoService {
         assignEmployee: this.assignEmployeeModel.collection.collectionName,
         employee: this.employeeModel.collection.collectionName,
         user: this.userModel.collection.collectionName,
+        cavity: this.masterCavityModel.collection.collectionName,
+        part: this.masterPartModel.collection.collectionName,
       };
 
       const userLookupPipeline = [
@@ -261,6 +263,12 @@ export class MachineInfoService {
             as: 'user',
           },
         },
+        {
+          $unwind: {
+            path: '$user',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
       ];
 
       const assignEmployeePipeline = [
@@ -280,6 +288,11 @@ export class MachineInfoService {
                 },
               },
               ...userLookupPipeline,
+              {
+                $project: {
+                  user: '$user',
+                },
+              },
             ],
             as: 'assign_employees',
           },
@@ -297,34 +310,120 @@ export class MachineInfoService {
                   $expr: { $eq: ['$assign_order_id', '$$assignOrderId'] },
                 },
               },
+              {
+                $match: {
+                  production_date: {
+                    $gte: {
+                      $dateToString: { format: '%Y-%m-%d', date: new Date() },
+                    },
+                  },
+                },
+              },
+              {
+                $group: {
+                  _id: null,
+                  total_quantity: { $sum: '$quantity' },
+                  not_good_quantity: {
+                    $sum: {
+                      $cond: [{ $eq: ['$is_not_good', true] }, '$quantity', 0],
+                    },
+                  },
+                  good_quantity: {
+                    $sum: {
+                      $cond: [{ $eq: ['$is_not_good', false] }, '$quantity', 0],
+                    },
+                  },
+                },
+              },
+              {
+                $project: {
+                  _id: 0,
+                  total_quantity: { $ifNull: ['$total_quantity', 0] },
+                  good_quantity: { $ifNull: ['$good_quantity', 0] },
+                  not_good_quantity: { $ifNull: ['$not_good_quantity', 0] },
+                },
+              },
             ],
-            as: 'production_records',
+            as: 'daily_summary_array',
+          },
+        },
+        {
+          $addFields: {
+            daily_summary: {
+              $cond: {
+                if: { $gt: [{ $size: '$daily_summary_array' }, 0] },
+                then: { $arrayElemAt: ['$daily_summary_array', 0] },
+                else: {
+                  total_quantity: 0,
+                  good_quantity: 0,
+                  not_good_quantity: 0,
+                },
+              },
+            },
+          },
+        },
+        // ลบฟิลด์ชั่วคราวออก
+        {
+          $project: {
+            daily_summary_array: 0,
           },
         },
       ];
 
-      const assignOrderPipeline = [
+      const cavityPipeline = [
         {
           $lookup: {
-            from: collectionNames.assignOrder,
-            let: { orderId: '$_id' },
+            from: collectionNames.cavity, // Collection ของ cavity
+            let: { partId: '$_id' }, // หรือฟิลด์อื่นๆ ที่ใช้อ้างอิง
             pipeline: [
               {
                 $match: {
-                  $expr: { $eq: ['$production_order_id', '$$orderId'] },
-                  status: 'active',
+                  $expr: { $in: ['$$partId', '$parts'] }, // สมมติว่า 'parts' เป็น array ของ part IDs ใน cavity
                 },
               },
-              ...productionRecordPipeline,
-              ...assignEmployeePipeline,
-              { $project: { order_id: '$_id' } },
             ],
-            as: 'assign_orders',
+            as: 'cavities',
           },
         },
       ];
 
-      const machines = await this.machineInfoModel.aggregate([
+      const partPipeline = [
+        {
+          $lookup: {
+            from: collectionNames.part,
+            let: { materialNumber: '$material_number' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$material_number', '$$materialNumber'] },
+                },
+              },
+              ...cavityPipeline,
+            ],
+            as: 'part',
+          },
+        },
+      ];
+
+      const orderPipeline = [
+        {
+          $lookup: {
+            from: collectionNames.order,
+            let: { orderId: '$production_order_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$_id', '$$orderId'] },
+                },
+              },
+              ...partPipeline,
+            ],
+            as: 'orders',
+          },
+        },
+      ];
+
+      const orderStatusPipeline = [
         {
           $lookup: {
             from: collectionNames.order,
@@ -333,63 +432,290 @@ export class MachineInfoService {
               {
                 $match: {
                   $expr: { $eq: ['$work_center', '$$workCenter'] },
-                  sql_active: true,
+                  sql_active: true, // order ที่ active จาก SQL
                 },
               },
+              // Lookup เพื่อหา assign orders ทั้งหมดที่เกี่ยวข้องกับ order นี้
               {
-                $project: {
-                  _id: 1,
-                  order_id: 1,
-                  order_number: 1,
-                  order_type: 1,
-                  basic_start_date: 1,
-                  basic_finish_date: 1,
-                  target_quantity: 1,
-                  production_order_status: 1,
+                $lookup: {
+                  from: collectionNames.assignOrder,
+                  let: { orderId: '$_id' },
+                  pipeline: [
+                    {
+                      $match: {
+                        $expr: { $eq: ['$production_order_id', '$$orderId'] },
+                      },
+                    },
+                    // Project เฉพาะฟิลด์ที่จำเป็น
+                    {
+                      $project: {
+                        _id: 1,
+                        status: 1,
+                        machine_number: 1,
+                        current_summary: 1,
+                      },
+                    },
+                  ],
+                  as: 'assign_orders',
                 },
               },
-              ...assignOrderPipeline,
+              // เพิ่มฟิลด์สำหรับระบุสถานะของ order
               {
                 $addFields: {
-                  has_assign_orders: { $gt: [{ $size: '$assign_orders' }, 0] },
+                  // กรณีไม่มี assign_orders เลย และ assign_stage = false คือรอ sync
+                  is_waiting_sync: {
+                    $and: [
+                      { $eq: [{ $size: '$assign_orders' }, 0] },
+                      { $eq: ['$assign_stage', false] },
+                    ],
+                  },
+                  // นับจำนวน suspended orders
+                  suspended_count: {
+                    $size: {
+                      $filter: {
+                        input: '$assign_orders',
+                        as: 'assign',
+                        cond: { $eq: ['$$assign.status', 'suspended'] },
+                      },
+                    },
+                  },
+                  // ดึง suspended orders มาเก็บ
+                  suspended_orders: {
+                    $filter: {
+                      input: '$assign_orders',
+                      as: 'assign',
+                      cond: { $eq: ['$$assign.status', 'suspended'] },
+                    },
+                  },
+                },
+              },
+              // แยก orders ตามสถานะ
+              {
+                $facet: {
+                  // Orders ที่รอ sync
+                  waiting_sync: [
+                    { $match: { is_waiting_sync: true } },
+                    {
+                      $project: {
+                        _id: 1,
+                        order_id: 1,
+                        material_number: 1,
+                        target_quantity: 1,
+                      },
+                    },
+                  ],
+                  // Orders ที่มีสถานะ suspended
+                  suspended: [
+                    { $match: { suspended_count: { $gt: 0 } } },
+                    {
+                      $project: {
+                        _id: 1,
+                        order_id: 1,
+                        material_number: 1,
+                        target_quantity: 1,
+                        suspended_orders: 1,
+                      },
+                    },
+                  ],
+                  // สรุปจำนวน orders ตามสถานะ
+                  summary: [
+                    {
+                      $group: {
+                        total_orders: { $sum: 1 },
+                        waiting_sync_count: {
+                          $sum: { $cond: ['$is_waiting_sync', 1, 0] },
+                        },
+                        suspended_count: { $sum: '$suspended_count' },
+                      },
+                    },
+                  ],
                 },
               },
             ],
-            as: 'production_orders',
+            as: 'order_status',
           },
         },
+        // แปลงผลลัพธ์จาก facet ให้ใช้งานง่ายขึ้น
         {
           $addFields: {
-            filtered_production_orders: {
-              $filter: {
-                input: '$production_orders',
-                as: 'order',
-                cond: { $eq: ['$$order.has_assign_orders', true] },
-              },
+            waiting_sync_orders: {
+              $arrayElemAt: ['$order_status.waiting_sync', 0],
             },
+            suspended_order_details: {
+              $arrayElemAt: ['$order_status.suspended', 0],
+            },
+            order_summary: { $arrayElemAt: ['$order_status.summary', 0] },
           },
         },
+        // เพิ่มฟิลด์สำหรับนับจำนวน
         {
-          $project: {
-            _id: 0,
-            machine_info: {
-              machine_name: '$machine_name',
-              work_center: '$work_center',
-              machine_number: '$machine_number',
-              line: '$line',
-              status: '$status',
-              counter: '$counter',
-              is_counter_paused: '$is_counter_paused',
-              cycle_time: '$cycletime',
-              tonnage: '$tonnage',
-              active_orders: '$filtered_production_orders',
-              orders_count: { $size: '$filtered_production_orders' },
-            },
+          $addFields: {
+            waiting_sync_count: { $size: '$waiting_sync_orders' },
+            suspended_orders_count: { $sum: '$order_summary.suspended_count' },
           },
         },
-      ]);
+      ];
+
+      // Pipeline สำหรับ active assign orders
+      const activeAssignOrdersPipeline = [
+        {
+          $lookup: {
+            from: collectionNames.assignOrder,
+            let: { machineNumber: '$machine_number' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$machine_number', '$$machineNumber'] },
+                  status: 'active',
+                },
+              },
+              ...orderPipeline,
+              ...productionRecordPipeline,
+              ...assignEmployeePipeline,
+              {
+                $project: {
+                  order: '$orders',
+                  assign_employees: '$assign_employees.user',
+                  daily_summary: '$daily_summary',
+                },
+              },
+            ],
+            as: 'assign_orders',
+          },
+        },
+      ];
+
+      // Pipeline หลักที่รวมทุก pipeline เข้าด้วยกัน
+      const mainPipeline = [
+        ...activeAssignOrdersPipeline,
+        ...orderStatusPipeline,
+      ];
+
+      const machines = await this.machineInfoModel.aggregate(mainPipeline);
 
       this.createOptimalIndexes();
+
+      // จัดรูปแบบข้อมูลใหม่ตามที่คุณต้องการ
+      const formattedMachines = machines.map((machine) => {
+        // ดึงข้อมูลเกี่ยวกับ active orders และ production orders
+        let activeOrders: any[] = [];
+        let completedOrders = 0;
+        let suspendedOrders = 0;
+        let waitingAssignOrders = 0;
+
+        // หา cavity count จากข้อมูล part ถ้ามี
+        let cavityCount = 1; // ค่าเริ่มต้น
+        let runner = 0;
+        let partInfo = {
+          material_number: '',
+          part_number: '',
+          part_name: '',
+          weight: 0,
+        };
+
+        // ตรวจสอบข้อมูล cavity และ part จาก assign orders
+        if (machine.assign_orders && machine.assign_orders.length > 0) {
+          machine.assign_orders.forEach((assignOrder) => {
+            // จัดสถานะตาม status
+            if (assignOrder.status === 'completed') {
+              completedOrders++;
+            } else if (assignOrder.status === 'suspended') {
+              suspendedOrders++;
+            } else if (assignOrder.status === 'pending') {
+              waitingAssignOrders++;
+            } else if (assignOrder.status === 'active') {
+              // ดึงข้อมูลจาก order
+              const order = assignOrder.order?.[0];
+              const part = order?.part?.[0];
+
+              if (part) {
+                // ถ้ามีข้อมูล part และเป็น active order
+                partInfo = {
+                  material_number: part.material_number || '',
+                  part_number: part.part_number || '',
+                  part_name: part.part_name || part.part_number || '', // ใช้ part_number เป็น fallback
+                  weight: part.weight || 0,
+                };
+
+                // หา cavity count และ runner จาก part
+                if (part.cavities && part.cavities.length > 0) {
+                  cavityCount = part.cavities.length;
+                  runner = part.cavities[0]?.runner_weight || 25.5; // ใช้ค่าเริ่มต้น 25.5 ถ้าไม่มี
+                }
+              }
+
+              // สร้าง active order object
+              const employees =
+                assignOrder.assign_employees?.map((employee) => ({
+                  id: employee._id,
+                  employee_id: employee.employee_id,
+                  name: `${employee.first_name || ''} ${employee.last_name || ''}`.trim(),
+                })) || [];
+
+              // คำนวณ target daily
+              const targetDaily = order?.target_quantity
+                ? order.target_quantity / 7 // เหมือนจะแบ่งเป็น 7 วัน (ปรับตามความเหมาะสม)
+                : 0;
+
+              // คำนวณ achievement rate
+              const achievementRate =
+                order?.target_quantity &&
+                assignOrder.current_summary?.total_good_quantity
+                  ? (
+                      (assignOrder.current_summary.total_good_quantity /
+                        order.target_quantity) *
+                      100
+                    ).toFixed(2)
+                  : '0';
+
+              activeOrders.push({
+                order_id: assignOrder._id.toString(),
+                production_order: {
+                  id: order?._id.toString() || '',
+                  order_number: order?.order_number || '',
+                  material_number: order?.material_number || '',
+                  material_description: `${order?.material_number || ''} ${partInfo.part_name}`,
+                  target_quantity: order?.target_quantity || 0,
+                  target_daily: targetDaily,
+                  plan_cycle_time: machine.cycletime / cavityCount || 17.4996, // cycle_time ต่อ cavity
+                  part_info: {
+                    weight: partInfo.weight,
+                    weight_runner: runner,
+                  },
+                },
+                production_summary: {
+                  total_good_quantity:
+                    assignOrder.current_summary?.total_good_quantity || 0,
+                  total_not_good_quantity:
+                    assignOrder.current_summary?.total_not_good_quantity || 0,
+                  last_update:
+                    assignOrder.current_summary?.last_update || new Date(),
+                  achievement_rate: parseFloat(achievementRate),
+                },
+                datetime_open_order: assignOrder.createdAt || new Date(),
+                daily_summary: assignOrder.daily_summary || {
+                  total_quantity: 0,
+                  good_quantity: 0,
+                  not_good_quantity: 0,
+                },
+                employees: employees,
+              });
+            }
+          });
+        }
+
+        // คำนวณ available_counter โดยใช้ฟังก์ชัน calculateAvailableCounter
+        const availableCounter = calculateAvailableCounter(
+          machine.counter || 0,
+          machine.recorded_counter || 0,
+          cavityCount,
+          machine.is_counter_paused || false,
+          machine.pause_start_counter || null,
+        );
+
+        // ส่งคืนข้อมูลในรูปแบบที่ต้องการ
+        return {};
+      });
 
       return {
         status: 'success',
