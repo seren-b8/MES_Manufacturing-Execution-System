@@ -13,6 +13,10 @@ export class SerialCounter extends Document {
   @Prop({ required: true, index: true })
   machine_number: string;
 
+  // เพิ่ม material_number เพื่อรองรับการแยกลำดับตาม part
+  @Prop({ required: false, index: true, default: 'default' })
+  material_number: string;
+
   @Prop({ required: true, index: true })
   date: string;
 
@@ -22,8 +26,17 @@ export class SerialCounter extends Document {
 
 export const SerialCounterSchema = SchemaFactory.createForClass(SerialCounter);
 
-// สร้าง compound index เพื่อความรวดเร็วในการค้นหาและป้องกันการซ้ำ
+// ปรับปรุง compound index ให้รวม material_number
 SerialCounterSchema.index(
-  { prefix: 1, machine_number: 1, date: 1 },
+  { prefix: 1, machine_number: 1, material_number: 1, date: 1 },
   { unique: true },
 );
+
+// Index สำหรับการค้นหาตามวันที่
+SerialCounterSchema.index({ date: 1 });
+
+// Index สำหรับการค้นหาตามเครื่องจักรและวันที่
+SerialCounterSchema.index({ machine_number: 1, date: 1 });
+
+// Index สำหรับการค้นหาตาม material และวันที่
+SerialCounterSchema.index({ material_number: 1, date: 1 });

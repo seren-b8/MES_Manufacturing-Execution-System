@@ -64,9 +64,6 @@ export class ProductionRecordService {
 
     @InjectModel(User.name) private userModel: Model<User>,
 
-    @InjectModel(SerialCounter.name)
-    private serialCounterModel: Model<SerialCounter>,
-
     private AssignEmployeeService: AssignEmployeeService,
 
     private readonly machineInfoService: MachineInfoService, // เพิ่ม service ของ machine-info
@@ -277,9 +274,10 @@ export class ProductionRecordService {
   }
 
   private async validateAssignOrder(assignOrderId: string) {
-    const assignOrder = await this.assignOrderModel.findById(
-      toObjectId(assignOrderId),
-    );
+    const assignOrder = await this.assignOrderModel
+      .findById(toObjectId(assignOrderId))
+      .populate('production_order_id')
+      .exec();
 
     if (!assignOrder || assignOrder.status !== 'active') {
       throw new HttpException(
@@ -416,8 +414,9 @@ export class ProductionRecordService {
       }
 
       // สร้าง serial code
-      const serial = await this.serialCodeService.generateSerialCode(
+      const serial = await this.serialCodeService.generateHexSerialCode(
         assignOrder.machine_number,
+        (assignOrder.production_order_id as any).material_number,
       );
 
       // บันทึกข้อมูล
