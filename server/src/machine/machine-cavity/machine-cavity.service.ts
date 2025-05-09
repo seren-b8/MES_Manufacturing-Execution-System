@@ -2,13 +2,13 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
-import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
+import { MasterCavity } from 'src/schema/master-cavity.schema';
 import {
   CreateMasterCavityDto,
   UpdateMasterCavityDto,
 } from '../dto/master-cavity.dto';
-import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
-import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
+import { MasterPart } from 'src/schema/master_parts.schema';
+import { TimelineMachine } from 'src/schema/timeline-machine.schema';
 
 @Injectable()
 export class MachineCavityService {

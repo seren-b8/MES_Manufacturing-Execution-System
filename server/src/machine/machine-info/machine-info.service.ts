@@ -1,4 +1,4 @@
-import { User } from 'src/shared/modules/schema/user.schema';
+import { User } from 'src/schema/user.schema';
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -11,23 +11,23 @@ import {
   IUser,
   TMachineInfo,
 } from 'src/shared/interface/machine-info';
-import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
-import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
-import { Employee } from 'src/shared/modules/schema/employee.schema';
-import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
-import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
-import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
+import { AssignEmployee } from 'src/schema/assign-employee.schema';
+import { AssignOrder } from 'src/schema/assign-order.schema';
+import { Employee } from 'src/schema/employee.schema';
+import { MachineInfo } from 'src/schema/machine-info.schema';
+import { ProductionOrder } from 'src/schema/production-order.schema';
+import { MasterCavity } from 'src/schema/master-cavity.schema';
 import { CreateMachineInfoDto } from '../dto/machine-info.dto';
 import {
   calculateAvailableCounter,
   setMachineCounter,
 } from 'src/shared/utils/counter.utils';
-import { TimelineMachine } from 'src/shared/modules/schema/timeline-machine.schema';
+import { TimelineMachine } from 'src/schema/timeline-machine.schema';
 import * as _ from 'lodash';
-import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
+import { MasterPart } from 'src/schema/master_parts.schema';
 import * as moment from 'moment-timezone';
-import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
-import { PrinterDevice } from 'src/shared/modules/schema/printer-device.schema';
+import { ProductionRecord } from 'src/schema/production-record.schema';
+import { PrinterDevice } from 'src/schema/printer-device.schema';
 import { count, error } from 'console';
 import { toObjectId } from 'src/shared/utils/type.utils';
 import { stat } from 'fs';
@@ -521,6 +521,7 @@ export class MachineInfoService {
                   summary: [
                     {
                       $group: {
+                        _id: null,
                         total_orders: { $sum: 1 },
                         waiting_sync_count: {
                           $sum: { $cond: ['$is_waiting_sync', 1, 0] },
@@ -589,6 +590,25 @@ export class MachineInfoService {
       const mainPipeline = [
         ...activeAssignOrdersPipeline,
         ...orderStatusPipeline,
+        {
+          $project: {
+            _id: 1,
+            machine_number: 1,
+            work_center: 1,
+            line: 1,
+            status: 1,
+            counter: 1,
+            recorded_counter: 1,
+            assign_orders: 1,
+            waiting_sync_count: 1, // เก็บเฉพาะจำนวน
+            suspended_orders_count: 1, // เก็บเฉพาะจำนวน
+            // ลบ fields เหล่านี้โดยไม่ระบุ
+            // waiting_sync_orders: 0,
+            // suspended_order_details: 0,
+            // order_summary: 0,
+            // order_status: 0
+          },
+        },
       ];
 
       const machines = await this.machineInfoModel.aggregate(mainPipeline);

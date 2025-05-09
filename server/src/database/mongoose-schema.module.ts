@@ -5,47 +5,38 @@ import { MongooseModule } from '@nestjs/mongoose';
 import {
   ProductionOrder,
   ProductionOrderSchema,
-} from 'src/shared/modules/schema/production-order.schema';
+} from 'src/schema/production-order.schema';
 import {
   ProductionRecord,
   ProductionRecordSchema,
-} from 'src/shared/modules/schema/production-record.schema';
-import {
-  AssignOrder,
-  AssignOrderSchema,
-} from 'src/shared/modules/schema/assign-order.schema';
+} from 'src/schema/production-record.schema';
+import { AssignOrder, AssignOrderSchema } from 'src/schema/assign-order.schema';
 import {
   AssignEmployee,
   AssignEmployeeSchema,
-} from 'src/shared/modules/schema/assign-employee.schema';
+} from 'src/schema/assign-employee.schema';
 
 // Machine Management
-import {
-  MachineInfo,
-  MachineInfoSchema,
-} from 'src/shared/modules/schema/machine-info.schema';
+import { MachineInfo, MachineInfoSchema } from 'src/schema/machine-info.schema';
 import {
   TimelineMachine,
   TimelineMachineSchema,
-} from 'src/shared/modules/schema/timeline-machine.schema';
+} from 'src/schema/timeline-machine.schema';
 
 // Master Data
 import {
   MasterCavity,
   MasterCavitySchema,
-} from 'src/shared/modules/schema/master-cavity.schema';
+} from 'src/schema/master-cavity.schema';
 import {
   MasterNotGood,
   MasterNotGoodSchema,
-} from 'src/shared/modules/schema/master-not-good.schema';
+} from 'src/schema/master-not-good.schema';
 import { MasterPart, MasterPartSchema } from '../schema/master_parts.schema';
 
 // User Management
-import {
-  Employee,
-  EmployeeSchema,
-} from 'src/shared/modules/schema/employee.schema';
-import { User, UserSchema } from 'src/shared/modules/schema/user.schema';
+import { Employee, EmployeeSchema } from 'src/schema/employee.schema';
+import { User, UserSchema } from 'src/schema/user.schema';
 
 // SAP Integration
 import { SAPSyncLog, SAPSyncLogSchema } from '../schema/sap_sync_log.schema';

@@ -3,8 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import moment from 'moment';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
-import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
-import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
+import { AssignOrder } from 'src/schema/assign-order.schema';
+import { ProductionOrder } from 'src/schema/production-order.schema';
 
 @Injectable()
 export class ProductionOrderService {

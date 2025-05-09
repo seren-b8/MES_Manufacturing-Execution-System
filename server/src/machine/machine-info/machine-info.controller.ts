@@ -17,7 +17,7 @@ import { MachineInfoService } from './machine-info.service';
 
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { CreateMachineInfoDto, SetCounterDto } from '../dto/machine-info.dto';
-import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
+import { MachineInfo } from 'src/schema/machine-info.schema';
 import { ResponseFormat } from 'src/shared/interface';
 import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { Roles } from 'src/auth/decorator/roles.decorator';

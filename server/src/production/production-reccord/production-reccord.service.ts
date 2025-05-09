@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
-import { MasterNotGood } from 'src/shared/modules/schema/master-not-good.schema';
-import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
+import { AssignEmployee } from 'src/schema/assign-employee.schema';
+import { MasterNotGood } from 'src/schema/master-not-good.schema';
+import { ProductionRecord } from 'src/schema/production-record.schema';
 import {
   CreateProductionRecordDto,
   PrintDto,
@@ -16,24 +16,26 @@ import {
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
 import { ResponseFormat } from 'src/shared/interface';
-import { AssignOrder } from 'src/shared/modules/schema/assign-order.schema';
-import { MachineInfo } from 'src/shared/modules/schema/machine-info.schema';
+import { AssignOrder } from 'src/schema/assign-order.schema';
+import { MachineInfo } from 'src/schema/machine-info.schema';
 import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
 import {
   DailySummaryData,
   PopulatedMachineInfo,
 } from 'src/shared/interface/machine-info';
-import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
-import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
-import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
-import { User } from 'src/shared/modules/schema/user.schema';
+import { ProductionOrder } from 'src/schema/production-order.schema';
+import { MasterCavity } from 'src/schema/master-cavity.schema';
+import { MasterPart } from 'src/schema/master_parts.schema';
+import { User } from 'src/schema/user.schema';
 import * as moment from 'moment-timezone';
 import axios from 'axios';
 import { AssignEmployeeService } from 'src/assign/assign-employee/assign-employee.service';
 import { DateRangeSummaryData } from 'src/shared/interface/product';
 import { MachineInfoService } from 'src/machine/machine-info/machine-info.service';
 import { response } from 'express';
-import { SerialCounter } from 'src/shared/modules/schema/serial-counter.schema';
+import { SerialCounter } from 'src/schema/serial-counter.schema';
+import { toObjectId } from '../../shared/utils/type.utils';
+import { SerialCodeService } from '../serial-code/serialcode.service';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -68,6 +70,8 @@ export class ProductionRecordService {
     private AssignEmployeeService: AssignEmployeeService,
 
     private readonly machineInfoService: MachineInfoService, // เพิ่ม service ของ machine-info
+
+    private readonly serialCodeService: SerialCodeService,
   ) {}
 
   private calculateProductionDate(date?: Date): Date {
@@ -274,7 +278,7 @@ export class ProductionRecordService {
 
   private async validateAssignOrder(assignOrderId: string) {
     const assignOrder = await this.assignOrderModel.findById(
-      new Types.ObjectId(assignOrderId),
+      toObjectId(assignOrderId),
     );
 
     if (!assignOrder || assignOrder.status !== 'active') {
@@ -293,7 +297,7 @@ export class ProductionRecordService {
 
   private async validateAssignEmployees(assignOrderId: Types.ObjectId) {
     const assignEmployees = await this.assignEmployeeModel.find({
-      assign_order_id: assignOrderId.toString(),
+      assign_order_id: toObjectId(assignOrderId),
       status: 'active',
     });
 
@@ -308,7 +312,7 @@ export class ProductionRecordService {
       );
     }
 
-    return assignEmployees.map((emp) => new Types.ObjectId(emp._id.toString()));
+    return assignEmployees.map((emp) => toObjectId(emp._id.toString()));
   }
 
   private async createProductionRecord(
@@ -321,12 +325,12 @@ export class ProductionRecordService {
 
     const newRecord = new this.productionRecordModel({
       ...createDto,
-      assign_order_id: new Types.ObjectId(assignOrder._id.toString()),
-      assign_employee_ids: assignEmployeeIds.map(
-        (id) => new Types.ObjectId(id.toString()),
+      assign_order_id: toObjectId(assignOrder._id.toString()),
+      assign_employee_ids: assignEmployeeIds.map((id) =>
+        toObjectId(id.toString()),
       ),
       master_not_good_id: createDto.master_not_good_id
-        ? new Types.ObjectId(createDto.master_not_good_id)
+        ? toObjectId(createDto.master_not_good_id)
         : undefined,
       serial_code: serialCode,
       production_date: productionDate, // เพิ่ม production_date
@@ -412,7 +416,9 @@ export class ProductionRecordService {
       }
 
       // สร้าง serial code
-      const serial = await this.generateSerialCode(assignOrder.machine_number);
+      const serial = await this.serialCodeService.generateSerialCode(
+        assignOrder.machine_number,
+      );
 
       // บันทึกข้อมูล
       const newRecord = await this.createProductionRecord(
@@ -737,57 +743,6 @@ export class ProductionRecordService {
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
-    }
-  }
-
-  async generateSerialCode(machine_number: string): Promise<string> {
-    const session = await this.productionRecordModel.db.startSession();
-    try {
-      let serialCode = '';
-
-      await session.withTransaction(async () => {
-        // โค้ดเหมือนข้างบน แต่เพิ่ม { session } ในทุก operation
-        const thaiTime = moment().tz('Asia/Bangkok');
-        const dateStr = thaiTime.format('YYYY-MM-DD');
-        const prefix = `PR${thaiTime.format('YYMMDD')}`;
-
-        const counterDoc = await this.serialCounterModel.findOneAndUpdate(
-          { prefix: prefix, machine_number: machine_number, date: dateStr },
-          { $inc: { sequence: 1 } },
-          { upsert: true, new: true, session },
-        );
-
-        const sequence = counterDoc.sequence;
-        const timestamp = Date.now().toString();
-        const processId = process.pid % 10000;
-        const randomComponent = Math.floor(Math.random() * 1000)
-          .toString()
-          .padStart(3, '0');
-
-        serialCode = `B8MES|${prefix}-${machine_number}-${sequence.toString().padStart(4, '0')}-${timestamp.slice(-6)}-${processId}-${randomComponent}`;
-
-        // ตรวจสอบการซ้ำ (อยู่ในธุรกรรมเดียวกัน)
-        const existingRecord = await this.productionRecordModel
-          .findOne({ serial_code: serialCode }, null, { session })
-          .exec();
-
-        if (existingRecord) {
-          throw new Error('Duplicate serial code detected');
-        }
-      });
-
-      session.endSession();
-      return serialCode;
-    } catch (error) {
-      session.endSession();
-      console.error('Error generating serial code:', error);
-
-      // ถ้าเจอข้อผิดพลาดเกี่ยวกับ duplicate ให้ลองใหม่
-      if ((error as Error).message === 'Duplicate serial code detected') {
-        return this.generateSerialCode(machine_number);
-      }
-
-      throw new Error('Failed to generate serial code');
     }
   }
 

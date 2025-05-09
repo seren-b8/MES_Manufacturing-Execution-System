@@ -8,12 +8,12 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
-import { Employee } from 'src/shared/modules/schema/employee.schema';
+import { Employee } from 'src/schema/employee.schema';
 import { SqlService } from 'src/shared/services/sql.service';
 import e from 'express';
 import { formatDate } from 'src/shared/utils/date.utils';
 import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
-import { User } from 'src/shared/modules/schema/user.schema';
+import { User } from 'src/schema/user.schema';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';
 import * as moment from 'moment-timezone';
 

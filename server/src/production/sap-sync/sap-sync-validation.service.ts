@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
-import { SAPSyncLog } from 'src/shared/modules/schema/sap_sync_log.schema';
+import { ProductionRecord } from 'src/schema/production-record.schema';
+import { SAPSyncLog } from 'src/schema/sap_sync_log.schema';
 
 @Injectable()
 export class SapSyncValidationService {

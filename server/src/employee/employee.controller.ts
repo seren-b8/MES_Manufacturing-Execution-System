@@ -12,7 +12,7 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Roles } from 'src/auth/decorator/roles.decorator';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
 import { ResponseFormat } from 'src/shared/interface';
-import { Employee } from 'src/shared/modules/schema/employee.schema';
+import { Employee } from 'src/schema/employee.schema';
 import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
 import { Role } from 'src/auth/enum/roles.enum';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';

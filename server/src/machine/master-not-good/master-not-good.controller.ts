@@ -15,7 +15,7 @@ import {
   UpdateMasterNotGoodDto,
 } from '../dto/master-not-good.dto';
 import { ResponseFormat } from 'src/shared/interface';
-import { MasterNotGood } from 'src/shared/modules/schema/master-not-good.schema';
+import { MasterNotGood } from 'src/schema/master-not-good.schema';
 
 @Controller('master-not-good')
 export class MasterNotGoodController {

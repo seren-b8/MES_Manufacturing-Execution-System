@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { DatabaseModule } from './shared/modules/database/database.module';
-import { MongooseSchemaModule } from './shared/modules/database/mongoose-schema.module';
+import { DatabaseModule } from './database/database.module';
+import { MongooseSchemaModule } from './database/mongoose-schema.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AssignModule } from './assign/assign.module';
@@ -13,7 +13,7 @@ import { databaseConfig } from './shared/config/database.config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from './auth/guard/custom-throttler.guard';
-import { MesCacheModule } from './shared/modules/cache/cache.module';
+import { MesCacheModule } from './shared/cache/cache.module';
 import { FileClientModule } from './shared/services/file-client/file-client.module';
 
 const validateConfig = (config: Record<string, unknown>) => {

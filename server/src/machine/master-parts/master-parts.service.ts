@@ -3,7 +3,7 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
-import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
+import { MasterPart } from 'src/schema/master_parts.schema';
 import {
   CreateMasterPartDto,
   UpdateMasterPartDto,

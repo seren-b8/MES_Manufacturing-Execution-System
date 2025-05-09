@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { MasterNotGood } from 'src/shared/modules/schema/master-not-good.schema';
+import { MasterNotGood } from 'src/schema/master-not-good.schema';
 import {
   CreateMasterNotGoodDto,
   UpdateMasterNotGoodDto,

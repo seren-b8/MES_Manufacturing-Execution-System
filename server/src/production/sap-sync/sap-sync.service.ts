@@ -2,13 +2,13 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { SqlService } from 'src/shared/services/sql.service';
-import { ProductionRecord } from 'src/shared/modules/schema/production-record.schema';
-import { SAPSyncLog } from 'src/shared/modules/schema/sap_sync_log.schema';
+import { ProductionRecord } from 'src/schema/production-record.schema';
+import { SAPSyncLog } from 'src/schema/sap_sync_log.schema';
 import { GroupedProductionData } from 'src/shared/interface/sap';
 import { SapSyncValidationService } from './sap-sync-validation.service';
 import * as moment from 'moment-timezone';
 import * as _ from 'lodash';
-import { ProductionOrder } from 'src/shared/modules/schema/production-order.schema';
+import { ProductionOrder } from 'src/schema/production-order.schema';
 
 @Injectable()
 export class SapProductionSyncService {

@@ -20,7 +20,7 @@ import {
   UpdateAssignEmployeeDto,
 } from '../dto/assign-employee.dto';
 import { ResponseFormat } from 'src/shared/interface';
-import { AssignEmployee } from 'src/shared/modules/schema/assign-employee.schema';
+import { AssignEmployee } from 'src/schema/assign-employee.schema';
 import mongoose from 'mongoose';
 import { toObjectId } from '../../shared/utils/type.utils';
 import { promises } from 'dns';

@@ -20,7 +20,7 @@ import {
 import { MasterPartsService } from './master-parts.service';
 import { ResponseFormat } from 'src/shared/interface';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
-import { MasterPart } from 'src/shared/modules/schema/master_parts.schema';
+import { MasterPart } from 'src/schema/master_parts.schema';
 import {
   CreateMasterPartDto,
   UpdateMasterPartDto,

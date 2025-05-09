@@ -1,9 +1,9 @@
-import { Employee } from '../shared/modules/schema/employee.schema';
+import { Employee } from '../schema/employee.schema';
 import { Injectable, HttpStatus, HttpException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { User } from 'src/shared/modules/schema/user.schema';
+import { User } from 'src/schema/user.schema';
 import * as bcrypt from 'bcryptjs';
 import { LoginDto } from './dto/login.dto';
 import { catchError, firstValueFrom, timeout } from 'rxjs';

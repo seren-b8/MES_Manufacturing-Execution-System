@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { MachineCavityService } from './machine-cavity.service';
 import { ResponseFormat } from 'src/shared/interface';
-import { MasterCavity } from 'src/shared/modules/schema/master-cavity.schema';
+import { MasterCavity } from 'src/schema/master-cavity.schema';
 import {
   CreateFromPartsDto,
   CreateMasterCavityDto,

@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { SqlOrderController } from './sap-order/sap-order.controller';
-import { MongooseSchemaModule } from 'src/shared/modules/database/mongoose-schema.module';
+import { MongooseSchemaModule } from 'src/database/mongoose-schema.module';
 import { SapOrderService } from './sap-order/sap-order.service';
-import { DatabaseModule } from 'src/shared/modules/database/database.module';
+import { DatabaseModule } from 'src/database/database.module';
 import { ProductionOrderController } from './production-order/production-order.controller';
 import { ProductionOrderService } from './production-order/production-order.service';
 import { ProductionRecordService } from './production-reccord/production-reccord.service';
@@ -13,6 +13,7 @@ import { SapSyncValidationService } from './sap-sync/sap-sync-validation.service
 import { AssignModule } from 'src/assign/assign.module';
 import { MachineModule } from 'src/machine/machine.module';
 import { SapSyncLogService } from './sap-sync/sap-sync-log.service';
+import { SerialCodeService } from './serial-code/serialcode.service';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule, AssignModule, MachineModule],
@@ -29,6 +30,7 @@ import { SapSyncLogService } from './sap-sync/sap-sync-log.service';
     SapProductionSyncService,
     SapSyncValidationService,
     SapSyncLogService,
+    SerialCodeService,
   ],
   exports: [
     SapOrderService,
@@ -37,6 +39,7 @@ import { SapSyncLogService } from './sap-sync/sap-sync-log.service';
     SapProductionSyncService,
     SapSyncValidationService,
     SapSyncLogService,
+    SerialCodeService,
   ],
 })
 export class ProductionModule {}
