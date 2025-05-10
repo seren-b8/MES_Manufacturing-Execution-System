@@ -5,19 +5,9 @@ export function calculateAvailableCounter(
   isCounterPaused: boolean,
   pauseStartCounter: number | null | undefined,
 ): number {
-  // ใช้ nullish coalescing operator (??) และ Math.max เพื่อป้องกันค่า null และค่าลบ
   counter = Math.max(0, counter ?? 0);
   recordedCounter = Math.max(0, recordedCounter ?? 0);
-  currentCavityCount = Math.max(1, currentCavityCount ?? 1); // ค่าน้อยสุดควรเป็น 1
-
-  // เพิ่ม console.log เพื่อตรวจสอบค่า
-  console.log('Inputs:', {
-    counter,
-    recordedCounter,
-    currentCavityCount,
-    isCounterPaused,
-    pauseStartCounter,
-  });
+  currentCavityCount = Math.max(1, currentCavityCount ?? 1);
 
   let totalCounter: number;
 
@@ -34,15 +24,11 @@ export function calculateAvailableCounter(
       totalCounter,
     });
   } else {
-    // ใช้ counter ปัจจุบันในกรณีอื่นๆ
     totalCounter = counter * currentCavityCount;
-    console.log('Using current counter:', { counter, totalCounter });
   }
 
   const availableCounter = Math.max(0, totalCounter - recordedCounter);
-  console.log('Result:', { totalCounter, recordedCounter, availableCounter });
 
-  // ป้องกันไม่ให้ผลลัพธ์เป็นค่าลบ
   return availableCounter;
 }
 
