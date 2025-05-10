@@ -31,6 +31,7 @@ import { PrinterDevice } from 'src/schema/printer-device.schema';
 import { count, error } from 'console';
 import { toObjectId } from 'src/shared/utils/type.utils';
 import { stat } from 'fs';
+import path from 'path';
 
 @Injectable()
 export class MachineInfoService {
@@ -71,6 +72,27 @@ export class MachineInfoService {
   ): number {
     if (!targetQuantity) return 0;
     return Math.round((totalGood / targetQuantity) * 10000) / 100; // Round to 2 decimal places
+  }
+
+  private calculateProductionDate(date?: Date): Date {
+    // ใช้ moment.tz กับเขตเวลาประเทศไทย
+    const thaiTime = date
+      ? moment(date).tz('Asia/Bangkok')
+      : moment().tz('Asia/Bangkok');
+
+    const cutoffHour = 8; // 8:00 AM
+
+    // ตรวจสอบว่าเวลาปัจจุบันอยู่ก่อน 8:00 น. หรือไม่
+    if (thaiTime.hour() < cutoffHour) {
+      // ถ้าก่อน 8:00 น. ให้ใช้วันที่ของวันก่อนหน้า
+      thaiTime.subtract(1, 'days');
+    }
+
+    // ตั้งเวลาเป็น 00:00:00 เพื่อให้มีแค่วันที่
+    thaiTime.startOf('day');
+
+    // แปลงกลับเป็น JavaScript Date object
+    return thaiTime.toDate();
   }
 
   private analyzeMachineData(
@@ -229,6 +251,8 @@ export class MachineInfoService {
         part: this.masterPartModel.collection.collectionName,
       };
 
+      const productionDateNow = this.calculateProductionDate();
+
       const userLookupPipeline = [
         {
           $lookup: {
@@ -313,9 +337,7 @@ export class MachineInfoService {
               {
                 $match: {
                   production_date: {
-                    $gte: {
-                      $dateToString: { format: '%Y-%m-%d', date: new Date() },
-                    },
+                    $gte: productionDateNow,
                   },
                 },
               },
@@ -578,6 +600,7 @@ export class MachineInfoService {
                   order: '$orders',
                   assign_employees: '$assign_employees.user',
                   daily_summary: '$daily_summary',
+                  current_summary: 1,
                 },
               },
             ],
@@ -593,12 +616,18 @@ export class MachineInfoService {
         {
           $project: {
             _id: 1,
-            machine_number: 1,
+            machine_name: 1,
             work_center: 1,
+            machine_number: 1,
+            tonnage: 1,
             line: 1,
             status: 1,
             counter: 1,
             recorded_counter: 1,
+            is_counter_paused: 1,
+            pause_start_counter: 1,
+            cycle_time: 1,
+
             assign_orders: 1,
             waiting_sync_count: 1, // เก็บเฉพาะจำนวน
             suspended_orders_count: 1, // เก็บเฉพาะจำนวน
@@ -617,130 +646,83 @@ export class MachineInfoService {
 
       // จัดรูปแบบข้อมูลใหม่ตามที่คุณต้องการ
       const formattedMachines = machines.map((machine) => {
-        // ดึงข้อมูลเกี่ยวกับ active orders และ production orders
-        let activeOrders: any[] = [];
-        let completedOrders = 0;
-        let suspendedOrders = 0;
-        let waitingAssignOrders = 0;
+        const cavity =
+          machine.assign_orders?.[0]?.order?.[0]?.part?.[0]?.cavities?.[0]
+            ?.cavity ?? 1;
 
-        // หา cavity count จากข้อมูล part ถ้ามี
-        let cavityCount = 1; // ค่าเริ่มต้น
-        let runner = 0;
-        let partInfo = {
-          material_number: '',
-          part_number: '',
-          part_name: '',
-          weight: 0,
-        };
-
-        // ตรวจสอบข้อมูล cavity และ part จาก assign orders
-        if (machine.assign_orders && machine.assign_orders.length > 0) {
-          machine.assign_orders.forEach((assignOrder) => {
-            // จัดสถานะตาม status
-            if (assignOrder.status === 'completed') {
-              completedOrders++;
-            } else if (assignOrder.status === 'suspended') {
-              suspendedOrders++;
-            } else if (assignOrder.status === 'pending') {
-              waitingAssignOrders++;
-            } else if (assignOrder.status === 'active') {
-              // ดึงข้อมูลจาก order
-              const order = assignOrder.order?.[0];
-              const part = order?.part?.[0];
-
-              if (part) {
-                // ถ้ามีข้อมูล part และเป็น active order
-                partInfo = {
-                  material_number: part.material_number || '',
-                  part_number: part.part_number || '',
-                  part_name: part.part_name || part.part_number || '', // ใช้ part_number เป็น fallback
-                  weight: part.weight || 0,
-                };
-
-                // หา cavity count และ runner จาก part
-                if (part.cavities && part.cavities.length > 0) {
-                  cavityCount = part.cavities.length;
-                  runner = part.cavities[0]?.runner_weight || 25.5; // ใช้ค่าเริ่มต้น 25.5 ถ้าไม่มี
-                }
-              }
-
-              // สร้าง active order object
-              const employees =
-                assignOrder.assign_employees?.map((employee) => ({
-                  id: employee._id,
-                  employee_id: employee.employee_id,
-                  name: `${employee.first_name || ''} ${employee.last_name || ''}`.trim(),
-                })) || [];
-
-              // คำนวณ target daily
-              const targetDaily = order?.target_quantity
-                ? order.target_quantity / 7 // เหมือนจะแบ่งเป็น 7 วัน (ปรับตามความเหมาะสม)
-                : 0;
-
-              // คำนวณ achievement rate
-              const achievementRate =
-                order?.target_quantity &&
-                assignOrder.current_summary?.total_good_quantity
-                  ? (
-                      (assignOrder.current_summary.total_good_quantity /
-                        order.target_quantity) *
-                      100
-                    ).toFixed(2)
-                  : '0';
-
-              activeOrders.push({
-                order_id: assignOrder._id.toString(),
-                production_order: {
-                  id: order?._id.toString() || '',
-                  order_number: order?.order_number || '',
-                  material_number: order?.material_number || '',
-                  material_description: `${order?.material_number || ''} ${partInfo.part_name}`,
-                  target_quantity: order?.target_quantity || 0,
-                  target_daily: targetDaily,
-                  plan_cycle_time: machine.cycletime / cavityCount || 17.4996, // cycle_time ต่อ cavity
-                  part_info: {
-                    weight: partInfo.weight,
-                    weight_runner: runner,
-                  },
-                },
-                production_summary: {
-                  total_good_quantity:
-                    assignOrder.current_summary?.total_good_quantity || 0,
-                  total_not_good_quantity:
-                    assignOrder.current_summary?.total_not_good_quantity || 0,
-                  last_update:
-                    assignOrder.current_summary?.last_update || new Date(),
-                  achievement_rate: parseFloat(achievementRate),
-                },
-                datetime_open_order: assignOrder.createdAt || new Date(),
-                daily_summary: assignOrder.daily_summary || {
-                  total_quantity: 0,
-                  good_quantity: 0,
-                  not_good_quantity: 0,
-                },
-                employees: employees,
-              });
-            }
-          });
-        }
-
-        // คำนวณ available_counter โดยใช้ฟังก์ชัน calculateAvailableCounter
         const availableCounter = calculateAvailableCounter(
-          machine.counter || 0,
-          machine.recorded_counter || 0,
-          cavityCount,
+          machine.counter,
+          machine.recorded_counter,
+          cavity,
           machine.is_counter_paused || false,
           machine.pause_start_counter || null,
         );
+        const machineInfo = {
+          machine_name: machine.machine_name,
+          work_center: machine.work_center,
+          machine_number: machine.machine_number,
+          line: machine.line,
+          status: machine.status,
+          counter: machine.counter,
+          available_counter: availableCounter,
+          tonnage: machine.tonnage,
+          cycle_time: machine.cycle_time,
+          is_counter_paused: machine.is_counter_paused || false,
+        };
 
-        // ส่งคืนข้อมูลในรูปแบบที่ต้องการ
-        return {};
+        const orderSummary = {
+          suspended_orders: machine.suspended_orders_count,
+          waiting_assign_orders: machine.waiting_sync_count,
+          total_orders:
+            machine.suspended_orders_count + machine.waiting_sync_count,
+        };
+
+        let formatActiveOrders = [];
+        if (machine.assign_orders.length > 0) {
+          formatActiveOrders = machine.assign_orders.map((activeOrder) => {
+            const productionOrder = activeOrder.order[0];
+            const activeOrderData = {
+              order_id: activeOrder._id,
+              production_order: {
+                id: productionOrder._id,
+                order_number: productionOrder.order_id,
+                material_number: productionOrder.material_number,
+                material_description: productionOrder.material_description,
+                target_quantity: productionOrder.target_quantity,
+                target_daily: productionOrder.plan_target_day,
+                plan_cycle_time: productionOrder.plan_cycle_time,
+                part_info: {
+                  weight: productionOrder.part?.[0]?.weight ?? 0,
+                  weight_runner:
+                    productionOrder.part?.[0]?.cavities?.[0]?.runner ?? 0,
+                },
+              },
+              production_summary: activeOrder.current_summary ?? {},
+              daily_summary: activeOrder.daily_summary ?? {},
+              employees: activeOrder.assign_employees.map((emp) => {
+                const employeeData = {
+                  id: emp._id,
+                  employee_id: emp.employee_id,
+                  name: emp.first_name + ' ' + emp.last_name,
+                };
+                return employeeData;
+              }),
+            };
+            return activeOrderData;
+          });
+        }
+
+        return {
+          machine_info: machineInfo,
+          orders_summary: orderSummary,
+          active_orders: formatActiveOrders,
+        };
       });
 
       return {
         status: 'success',
         message: 'All machine info retrieved successfully',
-        data: machines,
+        data: formattedMachines,
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
