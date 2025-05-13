@@ -1463,7 +1463,7 @@ export class MachineInfoService {
 
       // ค้นหาข้อมูล cavity
       const cavity = await this.masterCavityModel.findOne({
-        parts: { $in: [product._id.toString()] },
+        parts: { $in: [toObjectId(product._id.toString())] },
       });
 
       // กำหนดค่า cavity (ถ้าไม่มีให้ใช้ค่า default คือ 1)

@@ -5,7 +5,7 @@ import {
   ConsoleLogger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { AssignEmployee } from 'src/schema/assign-employee.schema';
 import { MasterNotGood } from 'src/schema/master-not-good.schema';
 import { ProductionRecord } from 'src/schema/production-record.schema';
@@ -203,12 +203,10 @@ export class ProductionRecordService {
       }
 
       // 2. ค้นหา cavity ที่มี part นี้ - ทั้งในรูปแบบ ObjectId และ String
-      const partIdString = part._id.toString();
 
       const cavity = await this.masterCavityModel.findOne({
         $or: [
-          { parts: { $in: [part._id] } }, // ค้นหาแบบ ObjectId
-          { parts: { $in: [partIdString] } }, // ค้นหาแบบ String
+          { parts: { $in: [toObjectId(part._id as mongoose.Types.ObjectId)] } }, // ค้นหาแบบ ObjectId
         ],
       });
 
@@ -340,7 +338,7 @@ export class ProductionRecordService {
   private async updateAssignOrderSummary(assignOrderId: string) {
     try {
       const records = await this.productionRecordModel.find({
-        assign_order_id: new Types.ObjectId(assignOrderId),
+        assign_order_id: toObjectId(assignOrderId),
       });
 
       const summary = records.reduce(
@@ -356,7 +354,7 @@ export class ProductionRecordService {
       );
 
       // Update assign order summary
-      await this.assignOrderModel.findByIdAndUpdate(assignOrderId, {
+      await this.assignOrderModel.findByIdAndUpdate(toObjectId(assignOrderId), {
         $set: {
           current_summary: {
             ...summary,
