@@ -2094,7 +2094,6 @@ export class ProductionRecordService {
 
       const labelData = masterPart[0];
 
-      // สร้าง payload โดยใช้ข้อมูลจาก labelData ถ้ามี
       const printPayload: PrintDto = {
         tag_no: data.serial_number
           ? parseInt(data.serial_number.split('-')[2] || '0000')
