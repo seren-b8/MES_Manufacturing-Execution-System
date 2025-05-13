@@ -36,4 +36,9 @@ export class ProductionOrderController {
   async findById(@Param('id') id: string) {
     return this.productionOrderService.findById(id);
   }
+
+  @Get('job-waiting')
+  async getjobWaiting(@Query('workCenter') workCenter: string) {
+    return this.productionOrderService.getJobWaiting(workCenter);
+  }
 }

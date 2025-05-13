@@ -2079,7 +2079,7 @@ export class ProductionRecordService {
         {
           $lookup: {
             from: 'master_cavity',
-            let: { part_id: { $toString: '$_id' } }, // แปลง ObjectId เป็น String
+            let: { part_id: '$_id' },
             pipeline: [
               {
                 $match: {
