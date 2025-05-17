@@ -39,6 +39,7 @@ export class ProductionOrderController {
 
   @Get('job-waiting')
   async getjobWaiting(@Query('workCenter') workCenter: string) {
+    console.log('workCenter: ' + workCenter);
     return this.productionOrderService.getJobWaiting(workCenter);
   }
 }

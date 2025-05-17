@@ -217,15 +217,14 @@ export class ProductionOrderService {
         data: jobWaiting,
       };
     } catch (error) {
+      console.error((error as Error).message);
       if (error instanceof HttpException) {
         throw error;
       }
       throw new HttpException(
         {
           status: 'error',
-          message:
-            'Failed to retrieve available assign orders: ' +
-            (error as Error).message,
+          message: 'Failed to get job waiting : ' + (error as Error).message,
           data: [],
         } as ResponseFormat<never>,
         HttpStatus.INTERNAL_SERVER_ERROR,
