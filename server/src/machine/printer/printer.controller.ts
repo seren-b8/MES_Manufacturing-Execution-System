@@ -26,22 +26,16 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 export class PrinterDevicesController {
   constructor(private readonly printerDevicesService: PrinterDevicesService) {}
 
-  @Post()
-  @Roles(Role.ADMIN)
-  create(@Body() createPrinterDeviceDto: CreatePrinterDeviceDto) {
-    return this.printerDevicesService.create(createPrinterDeviceDto);
-  }
-
-  @Get()
-  @Roles(Role.ADMIN)
-  findAll() {
-    return this.printerDevicesService.findAll();
-  }
-
   @Get('type/:type')
   @Roles(Role.ADMIN, Role.USER)
   findByType(@Param('type') type: string) {
     return this.printerDevicesService.findByType(type);
+  }
+
+  @Get(':id/status')
+  @Roles(Role.ADMIN, Role.USER)
+  checkStatus(@Param('id') id: string) {
+    return this.printerDevicesService.checkPrinterStatus(id);
   }
 
   @Get(':id')
@@ -65,10 +59,16 @@ export class PrinterDevicesController {
     return this.printerDevicesService.remove(id);
   }
 
-  @Get(':id/status')
-  @Roles(Role.ADMIN, Role.USER)
-  checkStatus(@Param('id') id: string) {
-    return this.printerDevicesService.checkPrinterStatus(id);
+  @Post()
+  @Roles(Role.ADMIN)
+  create(@Body() createPrinterDeviceDto: CreatePrinterDeviceDto) {
+    return this.printerDevicesService.create(createPrinterDeviceDto);
+  }
+
+  @Get()
+  @Roles(Role.ADMIN)
+  findAll() {
+    return this.printerDevicesService.findAll();
   }
 
   // @Cron(CronExpression.EVERY_10_SECONDS)

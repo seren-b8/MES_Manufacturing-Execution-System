@@ -26,19 +26,6 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 export class AssignOrderController {
   constructor(private readonly assignOrderService: AssignOrderService) {}
 
-  @Post()
-  async create(@Body() createDto: CreateAssignOrderDto) {
-    return await this.assignOrderService.create(createDto);
-  }
-
-  @Get()
-  async findAll(
-    @Query('machine_number') machine_number?: string,
-    @Query('status') status?: string,
-  ) {
-    return await this.assignOrderService.findAll(machine_number, status);
-  }
-
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return await this.assignOrderService.findOne(id);
@@ -50,5 +37,18 @@ export class AssignOrderController {
     @Body() updateDto: UpdateAssignOrderDto,
   ) {
     return await this.assignOrderService.update(id, updateDto);
+  }
+
+  @Post()
+  async create(@Body() createDto: CreateAssignOrderDto) {
+    return await this.assignOrderService.create(createDto);
+  }
+
+  @Get()
+  async findAll(
+    @Query('machine_number') machine_number?: string,
+    @Query('status') status?: string,
+  ) {
+    return await this.assignOrderService.findAll(machine_number, status);
   }
 }

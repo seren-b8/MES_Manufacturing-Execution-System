@@ -30,12 +30,13 @@ import { promises } from 'dns';
 export class AssignEmployeeController {
   constructor(private readonly assignEmployeeService: AssignEmployeeService) {}
 
-  @Post()
-  async create(
-    @Body() createDto: CreateAssignEmployeeDto,
+  @Put('close-by-user')
+  @HttpCode(200)
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async closeByUser(
+    @Body() closeByUserDto: CloseByUserDto,
   ): Promise<ResponseFormat<AssignEmployee>> {
-    const data = await this.assignEmployeeService.create(createDto);
-    return data;
+    return await this.assignEmployeeService.closeByUser(closeByUserDto);
   }
 
   @Get('order/:assignOrderId')
@@ -50,12 +51,11 @@ export class AssignEmployeeController {
     return await this.assignEmployeeService.findActiveByUser(userId);
   }
 
-  @Put('close-by-user')
-  @HttpCode(200)
-  @UsePipes(new ValidationPipe({ transform: true }))
-  async closeByUser(
-    @Body() closeByUserDto: CloseByUserDto,
+  @Post()
+  async create(
+    @Body() createDto: CreateAssignEmployeeDto,
   ): Promise<ResponseFormat<AssignEmployee>> {
-    return await this.assignEmployeeService.closeByUser(closeByUserDto);
+    const data = await this.assignEmployeeService.create(createDto);
+    return data;
   }
 }

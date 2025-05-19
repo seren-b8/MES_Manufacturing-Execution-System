@@ -34,19 +34,6 @@ import { SimpleCacheInterceptor } from '../interceptors/simple-cache.interceptor
 export class MachineInfoController {
   constructor(private readonly machineInfoService: MachineInfoService) {}
 
-  @Post()
-  async createMachineInfo(
-    @Body() createDto: CreateMachineInfoDto,
-  ): Promise<ResponseFormat<MachineInfo>> {
-    return await this.machineInfoService.createMachineInfo(createDto);
-  }
-
-  @Get()
-  @CacheTTL(3)
-  async getAllMachinesDetails() {
-    return await this.machineInfoService.getAllMachinesDetails();
-  }
-
   // @Get('work-center/:work_center')
   // async findByWorkCenter(@Param('work_center') work_center: string) {
   //   return await this.machineInfoService.findByWorkCenter(work_center);
@@ -158,5 +145,18 @@ export class MachineInfoController {
       machineNumber,
       setCounterDto.counter,
     );
+  }
+
+  @Post()
+  async createMachineInfo(
+    @Body() createDto: CreateMachineInfoDto,
+  ): Promise<ResponseFormat<MachineInfo>> {
+    return await this.machineInfoService.createMachineInfo(createDto);
+  }
+
+  @Get()
+  @CacheTTL(3)
+  async getAllMachinesDetails() {
+    return await this.machineInfoService.getAllMachinesDetails();
   }
 }

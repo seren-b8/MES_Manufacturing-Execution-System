@@ -9,11 +9,6 @@ export class ProductionOrderController {
     private readonly productionOrderService: ProductionOrderService,
   ) {}
 
-  @Get()
-  async findAll(@Query() query: any) {
-    return this.productionOrderService.findAll(query);
-  }
-
   @Get('active')
   async findActiveOrders() {
     return this.productionOrderService.findActiveOrders();
@@ -32,14 +27,19 @@ export class ProductionOrderController {
     return this.productionOrderService.findByDateRange(startDate, endDate);
   }
 
-  // @Get(':id')
-  // async findById(@Param('id') id: string) {
-  //   return this.productionOrderService.findById(id);
-  // }
-
   @Get('job-waiting')
   async getjobWaiting(@Query('workCenter') workCenter: string) {
     console.log('workCenter: ' + workCenter);
     return this.productionOrderService.getJobWaiting(workCenter);
+  }
+
+  @Get(':id')
+  async findById(@Param('id') id: string) {
+    return this.productionOrderService.findById(id);
+  }
+
+  @Get()
+  async findAll(@Query() query: any) {
+    return this.productionOrderService.findAll(query);
   }
 }

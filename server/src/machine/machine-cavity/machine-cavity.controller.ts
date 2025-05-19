@@ -24,6 +24,14 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 export class MachineCavityController {
   constructor(private readonly machineCavityService: MachineCavityService) {}
 
+  @Put(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateMasterCavityDto,
+  ): Promise<ResponseFormat<MasterCavity>> {
+    return this.machineCavityService.update(id, updateDto);
+  }
+
   @Get()
   async findAll(@Query() query: any): Promise<ResponseFormat<MasterCavity>> {
     return this.machineCavityService.findAll(query);
@@ -34,14 +42,6 @@ export class MachineCavityController {
     @Body() createDto: CreateMasterCavityDto,
   ): Promise<ResponseFormat<MasterCavity>> {
     return this.machineCavityService.create(createDto);
-  }
-
-  @Put(':id')
-  async update(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateMasterCavityDto,
-  ): Promise<ResponseFormat<MasterCavity>> {
-    return this.machineCavityService.update(id, updateDto);
   }
 
   // @Delete(':id')

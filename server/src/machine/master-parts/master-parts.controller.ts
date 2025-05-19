@@ -32,9 +32,38 @@ import { FileInterceptor } from '@nestjs/platform-express';
 export class MasterPartsController {
   constructor(private readonly masterPartsService: MasterPartsService) {}
 
-  @Get()
-  async findAll(@Query() query: any): Promise<ResponseFormat<MasterPart>> {
-    return this.masterPartsService.findAll(query);
+  @Get('material/:materialNumber')
+  async findByMaterialNumber(
+    @Param('materialNumber') materialNumber: string,
+  ): Promise<ResponseFormat<MasterPart>> {
+    return this.masterPartsService.findByMaterialNumber(materialNumber);
+  }
+
+  @Post('update-all-part-info')
+  async updateAllPartInfo(): Promise<
+    ResponseFormat<{
+      totalCount: number;
+      updatedCount: number;
+      errors: Array<{ materialNumber: string; error: string }>;
+    }>
+  > {
+    try {
+      const result = await this.masterPartsService.updateAllPartNumberAndName();
+      return {
+        status: 'success',
+        message: `อัพเดทสำเร็จ ${result.updatedCount} จาก ${result.totalCount} รายการ`,
+        data: [result],
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: (error as Error).message,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   @Get(':id')
@@ -42,11 +71,14 @@ export class MasterPartsController {
     return this.masterPartsService.findOne(id);
   }
 
-  @Get('material/:materialNumber')
-  async findByMaterialNumber(
-    @Param('materialNumber') materialNumber: string,
-  ): Promise<ResponseFormat<MasterPart>> {
-    return this.masterPartsService.findByMaterialNumber(materialNumber);
+  @Delete(':id')
+  async remove(@Param('id') id: string): Promise<ResponseFormat<MasterPart>> {
+    return this.masterPartsService.remove(id);
+  }
+
+  @Get()
+  async findAll(@Query() query: any): Promise<ResponseFormat<MasterPart>> {
+    return this.masterPartsService.findAll(query);
   }
 
   @Post()
@@ -86,37 +118,5 @@ export class MasterPartsController {
     file?: Express.Multer.File,
   ): Promise<ResponseFormat<MasterPart>> {
     return this.masterPartsService.update(updateDto, file);
-  }
-
-  @Delete(':id')
-  async remove(@Param('id') id: string): Promise<ResponseFormat<MasterPart>> {
-    return this.masterPartsService.remove(id);
-  }
-
-  @Post('update-all-part-info')
-  async updateAllPartInfo(): Promise<
-    ResponseFormat<{
-      totalCount: number;
-      updatedCount: number;
-      errors: Array<{ materialNumber: string; error: string }>;
-    }>
-  > {
-    try {
-      const result = await this.masterPartsService.updateAllPartNumberAndName();
-      return {
-        status: 'success',
-        message: `อัพเดทสำเร็จ ${result.updatedCount} จาก ${result.totalCount} รายการ`,
-        data: [result],
-      };
-    } catch (error) {
-      throw new HttpException(
-        {
-          status: 'error',
-          message: (error as Error).message,
-          data: [],
-        },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
   }
 }

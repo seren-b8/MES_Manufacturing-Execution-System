@@ -34,6 +34,81 @@ export class ProductionRecordController {
     private readonly sapSyncService: SapProductionSyncService,
   ) {}
 
+  @Get('daily')
+  @UseGuards(JwtAuthGuard)
+  async getdaily() {
+    const date = new Date();
+    return await this.productionRecordService.getDailySummary(date);
+  }
+
+  @Post('confirm-by-serial')
+  async confirmBySerial(
+    @Body('serial_code') serialCode: string,
+    @Body('employee_id') employeeId: string,
+  ) {
+    return await this.productionRecordService.confirmBySerial(
+      serialCode,
+      employeeId,
+    );
+  }
+
+  //!print-label
+  @Post('print-label')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR) // Adjust roles as needed
+  async printLabel(@Body() data: PrintRequestDto) {
+    return this.productionRecordService.printLabel(data);
+  }
+  //!print-label
+
+  @Get('daily-summary')
+  async getDailySummary(
+    @Body('assign_order_id') assignOrderId: string,
+    @Body('shift_type') shiftType: 'morning' | 'night' | 'all',
+  ) {
+    return await this.productionRecordService.findSummaryByOrderId(
+      assignOrderId,
+      shiftType,
+    );
+  }
+
+  // รายงานสรุปการผลิตทั้งโรงงาน
+  @Get('factory-summary')
+  @Roles(Role.ADMIN)
+  async getFactorySummary(
+    @Query('shift_type') shiftType: 'morning' | 'night' | 'all' = 'all',
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ): Promise<ResponseFormat<any>> {
+    return this.productionRecordService.findSummaryAllMachines(
+      shiftType,
+      startDate,
+      endDate,
+    );
+  }
+
+  @Put(':id')
+  @UseGuards(JwtAuthGuard)
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateProductionRecordDto,
+  ) {
+    const result = await this.productionRecordService.update(id, updateDto);
+
+    // // Check if confirmation_status is 'confirmed'
+    // if (updateDto.confirmation_status === 'confirmed') {
+    //   // Call syncPendingRecords if confirmation_status is 'confirmed'
+    //   await this.sapSyncService.syncPendingRecords();
+    // }
+
+    return result;
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async remove(@Param('id') id: string) {
+    return await this.productionRecordService.delete(id);
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard)
   async create(
@@ -89,81 +164,6 @@ export class ProductionRecordController {
     }
 
     return await this.productionRecordService.findAll(query, page, limit);
-  }
-
-  @Put(':id')
-  @UseGuards(JwtAuthGuard)
-  async update(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateProductionRecordDto,
-  ) {
-    const result = await this.productionRecordService.update(id, updateDto);
-
-    // // Check if confirmation_status is 'confirmed'
-    // if (updateDto.confirmation_status === 'confirmed') {
-    //   // Call syncPendingRecords if confirmation_status is 'confirmed'
-    //   await this.sapSyncService.syncPendingRecords();
-    // }
-
-    return result;
-  }
-
-  @Get('daily')
-  @UseGuards(JwtAuthGuard)
-  async getdaily() {
-    const date = new Date();
-    return await this.productionRecordService.getDailySummary(date);
-  }
-
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard)
-  async remove(@Param('id') id: string) {
-    return await this.productionRecordService.delete(id);
-  }
-
-  @Post('confirm-by-serial')
-  async confirmBySerial(
-    @Body('serial_code') serialCode: string,
-    @Body('employee_id') employeeId: string,
-  ) {
-    return await this.productionRecordService.confirmBySerial(
-      serialCode,
-      employeeId,
-    );
-  }
-
-  //!print-label
-  @Post('print-label')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR) // Adjust roles as needed
-  async printLabel(@Body() data: PrintRequestDto) {
-    return this.productionRecordService.printLabel(data);
-  }
-  //!print-label
-
-  @Get('daily-summary')
-  async getDailySummary(
-    @Body('assign_order_id') assignOrderId: string,
-    @Body('shift_type') shiftType: 'morning' | 'night' | 'all',
-  ) {
-    return await this.productionRecordService.findSummaryByOrderId(
-      assignOrderId,
-      shiftType,
-    );
-  }
-
-  // รายงานสรุปการผลิตทั้งโรงงาน
-  @Get('factory-summary')
-  @Roles(Role.ADMIN)
-  async getFactorySummary(
-    @Query('shift_type') shiftType: 'morning' | 'night' | 'all' = 'all',
-    @Query('start_date') startDate?: string,
-    @Query('end_date') endDate?: string,
-  ): Promise<ResponseFormat<any>> {
-    return this.productionRecordService.findSummaryAllMachines(
-      shiftType,
-      startDate,
-      endDate,
-    );
   }
 
   @Cron(CronExpression.EVERY_4_HOURS)
