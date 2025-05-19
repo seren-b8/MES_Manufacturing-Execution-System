@@ -745,26 +745,25 @@ export class ProductionRecordService {
 
   async getDailySummary(date?: Date): Promise<ResponseFormat<any>> {
     try {
-      const targetDate = date || new Date();
+      const targetDate = date ? moment(date) : moment(); // ใช้ moment จาก date หรือปัจจุบัน
 
-      // Convert to Bangkok timezone and set time range
-      const bangkokOffset = 7 * 60;
-      const startDate = new Date(targetDate);
-      startDate.setMinutes(startDate.getMinutes() + bangkokOffset);
-      startDate.setHours(8, 0, 0, 0);
-      startDate.setMinutes(startDate.getMinutes() - bangkokOffset);
+      const startDate = targetDate
+        .clone()
+        .tz('Asia/Bangkok') // เปลี่ยน timezone เป็น Bangkok
+        .startOf('day') // ไปที่ 00:00 ของวัน
+        .add(8, 'hours'); // ขยับไปที่ 08:00 AM
 
-      const endDate = new Date(targetDate);
-      endDate.setMinutes(endDate.getMinutes() + bangkokOffset);
-      endDate.setDate(endDate.getDate() + 1);
-      endDate.setHours(8, 0, 0, 0);
-      endDate.setMinutes(endDate.getMinutes() - bangkokOffset);
+      const endDate = startDate.clone().add(1, 'day'); // วันถัดไป 08:00 AM
+
+      // ถ้าต้องการแปลงกลับเป็น JS Date
+      const startDateJS = startDate.toDate();
+      const endDateJS = endDate.toDate();
 
       const matchStage = {
         $match: {
           createdAt: {
-            $gte: startDate,
-            $lt: endDate,
+            $gte: startDateJS,
+            $lt: endDateJS,
           },
           confirmation_status: {
             $in: ['pending', 'confirmed'],

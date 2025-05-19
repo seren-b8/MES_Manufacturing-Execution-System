@@ -15,17 +15,34 @@ export class SerialCodeService {
     private productionRecordModel: Model<ProductionRecord>,
   ) {}
 
-  /**
-   * สร้าง serial code รูปแบบใหม่ แบบฐาน 16 และรวม material_number
-   * ลำดับจะอยู่ท้ายสุด
-   */
+  private calculateProductionDate(date?: Date): moment.Moment {
+    // ใช้ moment.tz กับเขตเวลาประเทศไทย
+    const thaiTime = date
+      ? moment(date).tz('Asia/Bangkok')
+      : moment().tz('Asia/Bangkok');
+
+    const cutoffHour = 8; // 8:00 AM
+
+    // ตรวจสอบว่าเวลาปัจจุบันอยู่ก่อน 8:00 น. หรือไม่
+    if (thaiTime.hour() < cutoffHour) {
+      // ถ้าก่อน 8:00 น. ให้ใช้วันที่ของวันก่อนหน้า
+      thaiTime.subtract(1, 'days');
+    }
+
+    // ตั้งเวลาเป็น 00:00:00 เพื่อให้มีแค่วันที่
+    thaiTime.startOf('day');
+
+    // แปลงกลับเป็น JavaScript Date object
+    return thaiTime;
+  }
+
   async generateHexSerialCode(
     machine_number: string,
     material_number: string,
   ): Promise<string> {
     try {
       // 1. สร้างข้อมูลวันที่
-      const thaiTime = moment().tz('Asia/Bangkok');
+      const thaiTime = this.calculateProductionDate();
       const dateStr = thaiTime.format('YYYY-MM-DD');
       const dateYMD = thaiTime.format('YYMMDD');
 
@@ -49,15 +66,15 @@ export class SerialCodeService {
 
       // 4. สร้างรหัสเฉพาะแบบกระชับ
       // ใช้เทคนิค bitwise operation เพื่อรวมค่าวันที่, timestamp, process และ random
-      const timestamp = Date.now() % 16777216; // 24 bits (0 - 16777215)
+      const dateValue = parseInt(thaiTime.format('YYYYMMDD')); // 8 หลัก เช่น 20250518
       const processId = process.pid % 4096; // 12 bits (0 - 4095)
       const randomNum = Math.floor(Math.random() * 4096); // 12 bits (0 - 4095)
 
       // คำนวณแบบแยกส่วนชัดเจน ไม่ทับซ้อน
       // ใช้ bitwise operations
       const encodedValue =
-        (BigInt(timestamp) << 32n) |
-        (BigInt(processId) << 16n) |
+        (BigInt(dateValue) << 32n) |
+        (BigInt(processId) << 12n) |
         BigInt(randomNum);
       const uniqueHex = this.toBase62BigInt(encodedValue);
 

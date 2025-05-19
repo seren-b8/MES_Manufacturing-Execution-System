@@ -7,7 +7,6 @@ import { ProductionOrder } from './production-order.schema';
   timestamps: true,
 })
 export class AssignOrder extends Document {
-  // Core Assignment Fields
   @Prop({
     required: true,
     index: true,
@@ -44,5 +43,4 @@ export class AssignOrder extends Document {
 }
 
 export const AssignOrderSchema = SchemaFactory.createForClass(AssignOrder);
-
 // Indexes for better query performance

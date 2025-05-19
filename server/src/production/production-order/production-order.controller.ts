@@ -32,10 +32,10 @@ export class ProductionOrderController {
     return this.productionOrderService.findByDateRange(startDate, endDate);
   }
 
-  @Get(':id')
-  async findById(@Param('id') id: string) {
-    return this.productionOrderService.findById(id);
-  }
+  // @Get(':id')
+  // async findById(@Param('id') id: string) {
+  //   return this.productionOrderService.findById(id);
+  // }
 
   @Get('job-waiting')
   async getjobWaiting(@Query('workCenter') workCenter: string) {

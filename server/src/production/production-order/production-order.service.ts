@@ -71,7 +71,8 @@ export class ProductionOrderService {
       throw new HttpException(
         {
           status: 'error',
-          message: 'Failed to retrieve production order',
+          message:
+            'Failed to retrieve production order' + (error as Error).message,
           data: [],
         } as ResponseFormat<never>,
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -197,11 +198,11 @@ export class ProductionOrderService {
         {
           $lookup: {
             from: collectionNames.assignOrder,
-            let: { machineNumber: '$machine_number' },
+            let: { orderId: '$_id' },
             pipeline: [
               {
                 $match: {
-                  $expr: { $eq: ['$machine_number', '$$machineNumber'] },
+                  $expr: { $eq: ['$production_order_id', '$$orderId'] },
                   status: 'suspended',
                 },
               },
@@ -213,7 +214,7 @@ export class ProductionOrderService {
 
       return {
         status: 'success',
-        message: 'get job waiting success',
+        message: `get job waiting on ${workCenter} success`,
         data: jobWaiting,
       };
     } catch (error) {
