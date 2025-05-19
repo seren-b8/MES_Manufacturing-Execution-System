@@ -203,11 +203,51 @@ export class ProductionOrderService {
               {
                 $match: {
                   $expr: { $eq: ['$production_order_id', '$$orderId'] },
+                },
+              },
+            ],
+            as: 'all_assign_orders',
+          },
+        },
+        {
+          $lookup: {
+            from: collectionNames.assignOrder,
+            let: { orderId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$production_order_id', '$$orderId'] },
+                  status: 'active',
+                },
+              },
+            ],
+            as: 'active_assign_orders',
+          },
+        },
+        {
+          $match: {
+            active_assign_orders: { $size: 0 },
+          },
+        },
+        {
+          $lookup: {
+            from: collectionNames.assignOrder,
+            let: { orderId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ['$production_order_id', '$$orderId'] },
                   status: 'suspended',
                 },
               },
             ],
             as: 'assign_orders',
+          },
+        },
+        {
+          $project: {
+            all_assign_orders: 0,
+            active_assign_orders: 0,
           },
         },
       ]);
