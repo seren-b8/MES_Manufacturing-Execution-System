@@ -20,6 +20,13 @@ export class SerialCounter extends Document {
   @Prop({ required: true, index: true })
   date: string;
 
+  @Prop({
+    required: true,
+    enum: ['day', 'night'],
+    default: 'day',
+  })
+  shift: string;
+
   @Prop({ required: true, default: 0 })
   sequence: number;
 }

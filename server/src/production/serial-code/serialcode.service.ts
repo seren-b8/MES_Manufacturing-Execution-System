@@ -36,15 +36,38 @@ export class SerialCodeService {
     return thaiTime;
   }
 
+  /**
+   * ฟังก์ชันใหม่สำหรับตรวจสอบกะการทำงาน
+   * Morning shift: 08:00 - 20:00
+   * Night shift: 20:00 - 08:00
+   */
+  private determineShift(date?: Date): 'day' | 'night' {
+    const thaiTime = date
+      ? moment(date).tz('Asia/Bangkok')
+      : moment().tz('Asia/Bangkok');
+
+    const hour = thaiTime.hour();
+
+    // กะเช้า: 08:00 - 19:59, กะดึก: 20:00 - 07:59
+    if (hour >= 8 && hour < 20) {
+      return 'day';
+    } else {
+      return 'night';
+    }
+  }
+
   async generateHexSerialCode(
     machine_number: string,
     material_number: string,
   ): Promise<string> {
     try {
       // 1. สร้างข้อมูลวันที่
-      const thaiTime = this.calculateProductionDate();
+      const now = moment().tz('Asia/Bangkok');
+      const thaiTime = this.calculateProductionDate(now.toDate());
       const dateStr = thaiTime.format('YYYY-MM-DD');
       const dateYMD = thaiTime.format('YYMMDD');
+
+      const shift = this.determineShift(now.toDate());
 
       // 2. แปลงเลขเครื่องเป็นฐาน 16
       const machineNum = parseInt(machine_number.replace(/\D/g, ''), 10);
@@ -64,14 +87,10 @@ export class SerialCodeService {
           .toUpperCase();
       }
 
-      // 4. สร้างรหัสเฉพาะแบบกระชับ
-      // ใช้เทคนิค bitwise operation เพื่อรวมค่าวันที่, timestamp, process และ random
       const dateValue = parseInt(thaiTime.format('YYYYMMDD')); // 8 หลัก เช่น 20250518
       const processId = process.pid % 4096; // 12 bits (0 - 4095)
       const randomNum = Math.floor(Math.random() * 4096); // 12 bits (0 - 4095)
 
-      // คำนวณแบบแยกส่วนชัดเจน ไม่ทับซ้อน
-      // ใช้ bitwise operations
       const encodedValue =
         (BigInt(dateValue) << 32n) |
         (BigInt(processId) << 12n) |
@@ -91,6 +110,7 @@ export class SerialCodeService {
               machine_number: machine_number,
               material_number: material_number,
               date: dateStr,
+              shift: shift,
             },
             { $inc: { sequence: 1 } },
             { upsert: true, new: true },
@@ -105,12 +125,8 @@ export class SerialCodeService {
 
       const sequence = counterDoc.sequence;
 
-      // 6. สร้าง serial code ตามรูปแบบที่ต้องการ
-      // ตามที่คุณต้องการ material และ machine รวมกัน
-      // แต่เพิ่ม prefix เล็กๆ เพื่อให้อ่านง่ายขึ้น
       const serialCode = `B8MES|M${materialHex}${machineHex}-${uniqueHex}-${sequence}`;
 
-      // 7. ตรวจสอบการซ้ำ
       const existingRecord = await this.productionRecordModel
         .findOne({ serial_code: serialCode })
         .exec();
@@ -127,7 +143,7 @@ export class SerialCodeService {
         .toString(16)
         .substring(2, 6)
         .toUpperCase();
-      return `B8MES|FALLBACK-${machine_number}-${material_number}-${fallbackHex}-${randomHex}`;
+      return `B8MES|FALLBACK${machine_number}-${material_number}-${fallbackHex}${randomHex}`;
     }
   }
 
