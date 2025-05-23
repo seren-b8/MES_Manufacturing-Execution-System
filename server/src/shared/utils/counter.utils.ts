@@ -19,10 +19,6 @@ export function calculateAvailableCounter(
     // ใช้ pauseStartCounter เมื่อมีการหยุดนับงาน
     pauseStartCounter = Math.max(0, pauseStartCounter);
     totalCounter = pauseStartCounter * currentCavityCount;
-    console.log('Using pauseStartCounter:', {
-      pauseStartCounter,
-      totalCounter,
-    });
   } else {
     totalCounter = counter * currentCavityCount;
   }

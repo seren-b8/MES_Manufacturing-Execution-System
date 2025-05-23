@@ -60,7 +60,7 @@ export class AssignOrderService {
         // กรณีมี active order - ใช้สำหรับเปิด order หรือกลับมาทำงานต่อ
         const currentCounter = machine.counter || 0;
         updateData.recorded_counter = currentCounter;
-        updateData.is_counter_paused = true;
+        updateData.is_counter_paused = false;
         updateData.pause_start_counter = currentCounter;
       } else {
         // กรณีไม่มี active order - ใช้สำหรับปิด order หรือระงับงาน
@@ -192,10 +192,6 @@ export class AssignOrderService {
         assign_stage: true,
       });
 
-      console.log('activeOrdersCount:', activeOrdersCount);
-
-      // NEW CODE: Check for active employee assignments on the same machine
-      // and create matching assignments for the new order
       if (activeOrdersCount > 0) {
         // Find active assign orders for this machine
         const activeOrders = await this.assignOrderModel.find({

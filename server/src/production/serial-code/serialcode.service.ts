@@ -37,7 +37,7 @@ export class SerialCodeService {
   }
 
   /**
-   * ฟังก์ชันใหม่สำหรับตรวจสอบกะการทำงาน
+   * ตรวจสอบกะการทำงาน
    * Morning shift: 08:00 - 20:00
    * Night shift: 20:00 - 08:00
    */

@@ -117,6 +117,41 @@ export class ProductionRecordService {
     return `${day}/${month}/${year}`;
   }
 
+  private async resetMachineCounter(
+    machineNumber: string,
+    machineCounter: number,
+  ): Promise<void> {
+    try {
+      const currentCounter = machineCounter || 0;
+
+      await this.machineInfoModel.findOneAndUpdate(
+        { machine_number: machineNumber },
+        {
+          recorded_counter: currentCounter,
+          is_counter_paused: false,
+          pause_start_counter: currentCounter,
+        },
+      );
+    } catch (error) {
+      console.error(
+        `Failed to reset counter for machine ${machineNumber}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  private async updateMachineCounter(
+    machineNumber: string,
+    quantity: number,
+    increment: boolean = true,
+  ) {
+    await this.machineInfoModel.findOneAndUpdate(
+      { machine_number: machineNumber },
+      { $inc: { recorded_counter: increment ? quantity : -quantity } },
+    );
+  }
+
   private async validateMachineCounter(assignOrder: any, quantity: number) {
     try {
       const machine = await this.machineInfoModel.findOne({
@@ -156,25 +191,9 @@ export class ProductionRecordService {
       );
 
       if (quantity > availableCounter) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: `Cannot record ${quantity} pieces. Available counter is ${availableCounter} (Cavity: ${cavityCount})`,
-            data: [
-              {
-                machine_number: assignOrder.machine_number,
-                material_number: productionOrder.material_number,
-                requested_quantity: quantity,
-                available_counter: availableCounter,
-                cavity_count: cavityCount,
-                current_counter: machine.counter,
-                recorded_counter: machine.recorded_counter,
-                is_counter_paused: machine.is_counter_paused,
-              },
-            ],
-          },
-          HttpStatus.BAD_REQUEST,
-        );
+        this.resetMachineCounter(machine.machine_number, machine.counter);
+      } else {
+        this.updateMachineCounter(machine.machine_number, quantity);
       }
 
       return {
@@ -189,7 +208,6 @@ export class ProductionRecordService {
     }
   }
 
-  // แยกฟังก์ชันสำหรับดึงข้อมูล cavity
   private async getCavityData(materialNumber: string) {
     try {
       // ค้นหา cavity ที่มี part ที่ตรงกับ material number
@@ -231,19 +249,6 @@ export class ProductionRecordService {
     }
   }
 
-  // 2. แยกฟังก์ชันสำหรับอัพเดทเครื่องจักร
-  private async updateMachineCounter(
-    machineNumber: string,
-    quantity: number,
-    increment: boolean = true,
-  ) {
-    await this.machineInfoModel.findOneAndUpdate(
-      { machine_number: machineNumber },
-      { $inc: { recorded_counter: increment ? quantity : -quantity } },
-    );
-  }
-
-  // 3. แยกฟังก์ชันสำหรับการตรวจสอบ not good record
   private async validateNotGoodRecord(dto: CreateProductionRecordDto) {
     if (!dto.master_not_good_id) {
       throw new HttpException(
@@ -403,12 +408,8 @@ export class ProductionRecordService {
         );
       }
 
-      // ตรวจสอบ counter สำหรับงานดี
-      if (!createDto.is_not_good) {
-        await this.validateMachineCounter(assignOrder, createDto.quantity);
-      } else {
+      if (createDto.is_not_good) {
         await this.validateNotGoodRecord(createDto);
-        await this.validateMachineCounter(assignOrder, createDto.quantity);
       }
 
       // สร้าง serial code
@@ -426,10 +427,7 @@ export class ProductionRecordService {
       );
 
       // อัพเดท counter
-      await this.updateMachineCounter(
-        assignOrder.machine_number,
-        createDto.quantity,
-      );
+      await this.validateMachineCounter(assignOrder, createDto.quantity);
 
       // อัพเดทสรุปการผลิต
       await this.updateAssignOrderSummary(createDto.assign_order_id);
