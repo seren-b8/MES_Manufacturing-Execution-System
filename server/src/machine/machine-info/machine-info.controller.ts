@@ -12,6 +12,7 @@ import {
   Query,
   UseGuards,
   UseInterceptors,
+  Logger,
 } from '@nestjs/common';
 import { MachineInfoService } from './machine-info.service';
 
@@ -26,12 +27,15 @@ import * as moment from 'moment-timezone';
 import { MachineAnalysisCacheInterceptor } from '../interceptors/machine-analysis-cache.interceptor';
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 import { SimpleCacheInterceptor } from '../interceptors/simple-cache.interceptor';
+import { Cron } from '@nestjs/schedule';
 
 // Controller
 @Controller('machine-info')
 @UseInterceptors(CacheInterceptor)
 @UseGuards(JwtAuthGuard)
 export class MachineInfoController {
+  private readonly logger = new Logger(MachineInfoController.name);
+
   constructor(private readonly machineInfoService: MachineInfoService) {}
 
   // @Get('work-center/:work_center')
@@ -158,5 +162,57 @@ export class MachineInfoController {
   @CacheTTL(3)
   async getAllMachinesDetails() {
     return await this.machineInfoService.getAllMachinesDetails();
+  }
+
+  @Cron('0 1 * * *', {
+    name: 'resetMachineCounterDaily',
+    timeZone: 'UTC', // UTC time to match Thailand timezone (UTC+7)
+  })
+  async handleDailyMachineCounterReset() {
+    const thaiTime = moment().tz('Asia/Bangkok');
+    this.logger.log(
+      `Starting daily machine counter reset at ${thaiTime.format('YYYY-MM-DD HH:mm:ss')} (Thailand Time)`,
+    );
+
+    try {
+      // รีเซ็ต counter ของเครื่องจักรทั้งหมด
+      const result =
+        await this.machineInfoService.resetAllMachineCounter('all');
+
+      if (result.status === 'success' && result.data.length > 0) {
+        const summary = result.data[0];
+        this.logger.log(
+          `Daily machine counter reset completed successfully: ` +
+            `${summary.success_count} success, ${summary.failure_count} failed, ${summary.skipped_count} skipped`,
+        );
+
+        // Log รายละเอียดของเครื่องที่รีเซ็ตไม่สำเร็จ
+        if (summary.failure_count > 0) {
+          const failedMachines = summary.details
+            .filter((detail) => detail.status === 'failed')
+            .map((detail) => `${detail.machine_number}: ${detail.error}`)
+            .join(', ');
+
+          this.logger.warn(
+            `Failed to reset counters for machines: ${failedMachines}`,
+          );
+        }
+
+        // สร้าง log สำหรับการติดตาม
+        await this.createResetLog(summary);
+      } else {
+        this.logger.error(
+          `Daily machine counter reset failed: ${result.message}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Error during daily machine counter reset: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+    }
+  }
+  createResetLog(summary: any) {
+    throw new Error('Method not implemented.');
   }
 }
