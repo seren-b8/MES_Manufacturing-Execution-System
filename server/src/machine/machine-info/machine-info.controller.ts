@@ -50,7 +50,7 @@ export class MachineInfoController {
 
   @Get('analysis')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  @UseInterceptors(SimpleCacheInterceptor, new TimeoutInterceptor(20000)) // ใช้ custom interceptor เป็นคลาส reference ไม่ใช่อินสแตนซ์
+  @UseInterceptors(SimpleCacheInterceptor, new TimeoutInterceptor(20000))
   async getMachineAnalysis(
     @Query('start_date') start_date: string,
     @Query('end_date') end_date: string,
