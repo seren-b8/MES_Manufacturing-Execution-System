@@ -1,7 +1,7 @@
 import * as moment from 'moment-timezone';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Injectable } from '@nestjs/common';
+import mongoose, { Model } from 'mongoose';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { SerialCounter } from 'src/schema/serial-counter.schema';
 
@@ -59,7 +59,8 @@ export class SerialCodeService {
   async generateHexSerialCode(
     machine_number: string,
     material_number: string,
-  ): Promise<string> {
+    type: 'OK' | 'NG',
+  ): Promise<{ _id: mongoose.Types.ObjectId; serial: string }> {
     try {
       // 1. สร้างข้อมูลวันที่
       const now = moment().tz('Asia/Bangkok');
@@ -111,6 +112,7 @@ export class SerialCodeService {
               material_number: material_number,
               date: dateStr,
               shift: shift,
+              type: type,
             },
             { $inc: { sequence: 1 } },
             { upsert: true, new: true },
@@ -125,25 +127,30 @@ export class SerialCodeService {
 
       const sequence = counterDoc.sequence;
 
-      const serialCode = `B8MES|M${materialHex}${machineHex}-${uniqueHex}-${sequence}`;
+      const serialCode = `B8MES|${type}${materialHex}${machineHex}-${uniqueHex}-${sequence}`;
 
       const existingRecord = await this.productionRecordModel
         .findOne({ serial_code: serialCode })
         .exec();
 
       if (existingRecord) {
-        return this.generateHexSerialCode(machine_number, material_number);
+        return this.generateHexSerialCode(
+          machine_number,
+          material_number,
+          type,
+        );
       }
-      return serialCode;
+      return { _id: counterDoc._id, serial: serialCode };
     } catch (error) {
       console.error('Error generating hex serial code:', error);
-
-      const fallbackHex = Date.now().toString(16).toUpperCase();
-      const randomHex = Math.random()
-        .toString(16)
-        .substring(2, 6)
-        .toUpperCase();
-      return `B8MES|FALLBACK${machine_number}-${material_number}-${fallbackHex}${randomHex}`;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Cannot create serial code',
+          data: [],
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
   }
 

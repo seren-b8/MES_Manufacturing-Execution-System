@@ -27,6 +27,13 @@ export class SerialCounter extends Document {
   })
   shift: string;
 
+  @Prop({
+    required: true,
+    eum: ['OK', 'NG'],
+    default: 'OK',
+  })
+  type: string;
+
   @Prop({ required: true, default: 0 })
   sequence: number;
 }

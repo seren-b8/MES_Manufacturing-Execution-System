@@ -64,9 +64,12 @@ export class ProductionRecordService {
 
     @InjectModel(User.name) private userModel: Model<User>,
 
+    @InjectModel(SerialCounter.name)
+    private serialCounterModel: Model<SerialCounter>,
+
     private AssignEmployeeService: AssignEmployeeService,
 
-    private readonly machineInfoService: MachineInfoService, // เพิ่ม service ของ machine-info
+    private readonly machineInfoService: MachineInfoService,
 
     private readonly serialCodeService: SerialCodeService,
   ) {}
@@ -321,6 +324,7 @@ export class ProductionRecordService {
     assignOrder: any,
     assignEmployeeIds: Types.ObjectId[],
     serialCode: string,
+    serialCounterId: mongoose.Types.ObjectId,
   ) {
     const productionDate = this.calculateProductionDate();
 
@@ -334,6 +338,7 @@ export class ProductionRecordService {
         ? toObjectId(createDto.master_not_good_id)
         : undefined,
       serial_code: serialCode,
+      serial_counter_id: toObjectId(serialCounterId),
       production_date: productionDate, // เพิ่ม production_date
     });
 
@@ -416,6 +421,7 @@ export class ProductionRecordService {
       const serial = await this.serialCodeService.generateHexSerialCode(
         assignOrder.machine_number,
         (assignOrder.production_order_id as any).material_number,
+        createDto.is_not_good ? 'NG' : 'OK',
       );
 
       // บันทึกข้อมูล
@@ -423,7 +429,8 @@ export class ProductionRecordService {
         createDto,
         assignOrder,
         assignEmployeeIds,
-        serial,
+        serial.serial,
+        serial._id,
       );
 
       // อัพเดท counter

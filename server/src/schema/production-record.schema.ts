@@ -1,10 +1,11 @@
 import { Prop, SchemaFactory, Schema } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import mongoose, { Document, Types } from 'mongoose';
 import * as moment from 'moment-timezone';
 import { User, UserSchema } from './user.schema';
 import { AssignOrder } from './assign-order.schema';
 import { AssignEmployee } from './assign-employee.schema';
 import { MasterNotGood } from './master-not-good.schema';
+import { SerialCounter } from './serial-counter.schema';
 
 @Schema({
   collection: 'production_records',
@@ -30,13 +31,13 @@ export class ProductionRecord extends Document {
   quantity: number;
 
   @Prop({
-    type: Types.ObjectId,
+    type: mongoose.Types.ObjectId,
     ref: MasterNotGood.name,
     required: function (this: ProductionRecord) {
       return this.is_not_good;
     },
   })
-  master_not_good_id: Types.ObjectId;
+  master_not_good_id: mongoose.Types.ObjectId;
 
   @Prop({ type: String })
   remark: string;
@@ -47,7 +48,13 @@ export class ProductionRecord extends Document {
   })
   serial_code: string;
 
-  // Production date field (based on Thai time with 8:00 AM cutoff)
+  @Prop({
+    type: mongoose.Types.ObjectId,
+    ref: SerialCounter.name,
+    required: true,
+  })
+  serial_counter_id: mongoose.Types.ObjectId;
+
   @Prop({
     type: Date,
     required: true,
