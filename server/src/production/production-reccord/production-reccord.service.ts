@@ -5,7 +5,7 @@ import {
   ConsoleLogger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model, Types } from 'mongoose';
+import mongoose, { ClientSession, Model, Types } from 'mongoose';
 import { AssignEmployee } from 'src/schema/assign-employee.schema';
 import { MasterNotGood } from 'src/schema/master-not-good.schema';
 import { ProductionRecord } from 'src/schema/production-record.schema';
@@ -347,9 +347,11 @@ export class ProductionRecordService {
 
   private async updateAssignOrderSummary(assignOrderId: string) {
     try {
-      const records = await this.productionRecordModel.find({
-        assign_order_id: toObjectId(assignOrderId),
-      });
+      const records = await this.productionRecordModel
+        .find({
+          assign_order_id: toObjectId(assignOrderId),
+        })
+        .exec(); // เพิ่ม .exec()
 
       const summary = records.reduce(
         (acc, record) => {
@@ -364,16 +366,19 @@ export class ProductionRecordService {
       );
 
       // Update assign order summary
-      await this.assignOrderModel.findByIdAndUpdate(toObjectId(assignOrderId), {
-        $set: {
-          current_summary: {
-            ...summary,
-            last_update: moment().toDate(),
+      await this.assignOrderModel
+        .findByIdAndUpdate(toObjectId(assignOrderId), {
+          $set: {
+            current_summary: {
+              ...summary,
+              last_update: moment().tz('Asia/Bangkok').toDate(), // เพิ่ม timezone
+            },
           },
-        },
-      });
+        })
+        .exec(); // เพิ่ม .exec()
     } catch (error) {
       console.error('Failed to update assign order summary:', error);
+      throw error; // throw error เพื่อให้ parent method จัดการ
     }
   }
 
@@ -676,10 +681,16 @@ export class ProductionRecordService {
   }
 
   async delete(id: string): Promise<ResponseFormat<ProductionRecord>> {
+    let deletedRecord: any = null; // เก็บข้อมูลก่อนลบ
+
     try {
+      // 1. ค้นหา Production Record พร้อมข้อมูลที่เกี่ยวข้อง
       const record = await this.productionRecordModel
         .findById(id)
-        .populate('assign_order_id');
+        .populate('assign_order_id')
+        .populate('serial_counter_id')
+        .exec(); // เพิ่ม .exec()
+
       if (!record) {
         throw new HttpException(
           {
@@ -691,7 +702,10 @@ export class ProductionRecordService {
         );
       }
 
-      // Check if the record is confirmed
+      // เก็บข้อมูลก่อนลบ
+      deletedRecord = record.toObject();
+
+      // 2. ตรวจสอบสถานะการยืนยัน
       if (record.confirmation_status === 'confirmed') {
         throw new HttpException(
           {
@@ -703,10 +717,36 @@ export class ProductionRecordService {
         );
       }
 
-      const machine = await this.machineInfoModel.findOne({
-        machine_number: record.assign_order_id['machine_number'],
-      });
-      // ลบ populate ออกก่อนเนื่องจากมีปัญหากับ schema
+      // 3. ตรวจสอบการ sync ไป SAP
+      if (record.is_synced_to_sap) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Cannot delete record that has been synced to SAP',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      // 4. ตรวจสอบ Assign Order
+      if (!record.assign_order_id) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Invalid production record: missing assign order',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const assignOrder = record.assign_order_id as any;
+
+      // 5. ค้นหาข้อมูลเครื่องจักร
+      const machine = await this.machineInfoModel
+        .findOne({ machine_number: assignOrder.machine_number })
+        .exec(); // เพิ่ม .exec()
 
       if (!machine) {
         throw new HttpException(
@@ -719,24 +759,72 @@ export class ProductionRecordService {
         );
       }
 
-      await this.machineInfoModel.findOneAndUpdate(
-        { machine_number: record.assign_order_id['machine_number'] },
-        { $inc: { recorded_counter: -record.quantity } },
-      );
+      // 6. จัดการ Serial Counter (ถ้ามี)
+      if (record.serial_counter_id && record.serial_code) {
+        try {
+          // แยก sequence จาก serial code
+          const serialParts = record.serial_code.split('-');
+          const sequence = Number(serialParts.at(-1));
 
-      await this.productionRecordModel.findByIdAndDelete(id);
-      // Update assign order summary
-      await this.updateAssignOrderSummary(
-        record.assign_order_id._id.toString(),
-      );
+          if (!isNaN(sequence) && sequence > 0) {
+            // ตรวจสอบว่า serial counter ยังมีอยู่และ sequence ตรงกัน
+            const serialCounter = await this.serialCounterModel
+              .findById(record.serial_counter_id)
+              .exec(); // เพิ่ม .exec()
 
+            if (serialCounter && serialCounter.sequence == sequence) {
+              await this.serialCounterModel
+                .findByIdAndUpdate(record.serial_counter_id, {
+                  $inc: { sequence: -1 },
+                })
+                .exec(); // เพิ่ม .exec()
+            }
+          }
+        } catch (serialError) {
+          console.warn('Error updating serial counter:', serialError);
+        }
+      }
+
+      // 7. อัพเดท Machine Counter (เฉพาะงานดี)
+      if (!record.is_not_good && record.quantity > 0) {
+        // ตรวจสอบว่า recorded_counter เพียงพอ
+        if (machine.recorded_counter >= record.quantity) {
+          await this.machineInfoModel
+            .findOneAndUpdate(
+              { machine_number: assignOrder.machine_number },
+              { $inc: { recorded_counter: -record.quantity } },
+            )
+            .exec(); // เพิ่ม .exec()
+        } else {
+          console.warn(
+            `Insufficient recorded_counter for machine ${assignOrder.machine_number}`,
+          );
+          // Reset recorded_counter to 0 if it would go negative
+          await this.machineInfoModel
+            .findOneAndUpdate(
+              { machine_number: assignOrder.machine_number },
+              { recorded_counter: 0 },
+            )
+            .exec(); // เพิ่ม .exec()
+        }
+      }
+
+      // 8. ลบ Production Record
+      await this.productionRecordModel.findByIdAndDelete(id).exec(); // เพิ่ม .exec()
+
+      // 9. อัพเดท Assign Order Summary
+      await this.updateAssignOrderSummary(assignOrder._id.toString());
+
+      // Return ข้อมูลที่เก็บไว้
       return {
         status: 'success',
         message: 'Production record deleted successfully',
-        data: [record],
+        data: [deletedRecord], // ใช้ข้อมูลที่เก็บไว้แทน
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
+
+      console.error('Error deleting production record:', error);
       throw new HttpException(
         {
           status: 'error',

@@ -29,7 +29,7 @@ export class SerialCounter extends Document {
 
   @Prop({
     required: true,
-    eum: ['OK', 'NG'],
+    enum: ['OK', 'NG'],
     default: 'OK',
   })
   type: string;
@@ -40,17 +40,70 @@ export class SerialCounter extends Document {
 
 export const SerialCounterSchema = SchemaFactory.createForClass(SerialCounter);
 
-// ปรับปรุง compound index ให้รวม material_number
 SerialCounterSchema.index(
-  { prefix: 1, machine_number: 1, material_number: 1, date: 1 },
-  { unique: true },
+  {
+    prefix: 1,
+    machine_number: 1,
+    material_number: 1,
+    date: 1,
+    shift: 1,
+    type: 1,
+  },
+  {
+    unique: true,
+    name: 'unique_serial_counter_full', // ตั้งชื่อ index ให้ชัดเจน
+  },
 );
 
-// Index สำหรับการค้นหาตามวันที่
-SerialCounterSchema.index({ date: 1 });
+SerialCounterSchema.index(
+  {
+    date: 1,
+    type: 1,
+  },
+  {
+    name: 'date_type_index',
+  },
+);
 
-// Index สำหรับการค้นหาตามเครื่องจักรและวันที่
-SerialCounterSchema.index({ machine_number: 1, date: 1 });
+SerialCounterSchema.index(
+  {
+    machine_number: 1,
+    date: 1,
+    type: 1,
+  },
+  {
+    name: 'machine_date_type_index',
+  },
+);
 
-// Index สำหรับการค้นหาตาม material และวันที่
-SerialCounterSchema.index({ material_number: 1, date: 1 });
+SerialCounterSchema.index(
+  {
+    material_number: 1,
+    date: 1,
+    type: 1,
+  },
+  {
+    name: 'material_date_type_index',
+  },
+);
+
+SerialCounterSchema.index(
+  {
+    prefix: 1,
+    type: 1,
+  },
+  {
+    name: 'prefix_type_index',
+  },
+);
+
+SerialCounterSchema.index(
+  {
+    machine_number: 1,
+    type: 1,
+    createdAt: -1,
+  },
+  {
+    name: 'machine_type_recent_index',
+  },
+);
