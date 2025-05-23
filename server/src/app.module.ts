@@ -15,6 +15,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CustomThrottlerGuard } from './auth/guard/custom-throttler.guard';
 import { MesCacheModule } from './shared/cache/cache.module';
 import { FileClientModule } from './shared/services/file-client/file-client.module';
+import { ExcelModule } from './excel/excel.module';
 
 const validateConfig = (config: Record<string, unknown>) => {
   const requiredKeys = ['SECRET_KEY'];
@@ -54,6 +55,7 @@ const validateConfig = (config: Record<string, unknown>) => {
     AuthModule,
     MesCacheModule,
     FileClientModule,
+    ExcelModule,
   ],
   controllers: [AppController],
   providers: [

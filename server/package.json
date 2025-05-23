@@ -31,7 +31,7 @@
     "@nestjs/mapped-types": "^2.0.6",
     "@nestjs/mongoose": "^10.1.0",
     "@nestjs/passport": "^10.0.3",
-    "@nestjs/platform-express": "^10.4.15",
+    "@nestjs/platform-express": "^10.4.17",
     "@nestjs/schedule": "^5.0.1",
     "@nestjs/throttler": "^6.4.0",
     "@types/moment": "^2.11.29",
@@ -51,7 +51,8 @@
     "ping": "^0.4.4",
     "redis": "^4.7.0",
     "reflect-metadata": "^0.2.0",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",
