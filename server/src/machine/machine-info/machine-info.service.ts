@@ -257,10 +257,8 @@ export class MachineInfoService {
 
       if (isActive) {
         // กรณีมี active order - ใช้สำหรับเปิด order หรือกลับมาทำงานต่อ
-        const currentCounter = machine.counter || 0;
-        updateData.recorded_counter = currentCounter;
         updateData.is_counter_paused = false;
-        updateData.pause_start_counter = currentCounter;
+        this.setMachineCounter(machineNumber, 0);
       } else {
         // กรณีไม่มี active order - ใช้สำหรับปิด order หรือระงับงาน
         updateData.recorded_counter = 0;
@@ -1427,7 +1425,7 @@ export class MachineInfoService {
   ): Promise<ResponseFormat<any>> {
     try {
       // ตรวจสอบค่า counter
-      if (counter <= 0) {
+      if (counter < 0) {
         throw new HttpException(
           {
             status: 'error',
@@ -1438,88 +1436,197 @@ export class MachineInfoService {
         );
       }
 
-      // ค้นหาข้อมูลเครื่องจักร
-      const machine = await this.machineInfoModel
-        .findOne({
-          machine_number: machineNumber,
-        })
-        .lean();
+      const collectionNames = {
+        machine: this.machineInfoModel.collection.collectionName,
+        order: this.productionOrderModel.collection.collectionName,
+        assignOrder: this.assignOrderModel.collection.collectionName,
+        productionRecord: this.productionRecordModel.collection.collectionName,
+        assignEmployee: this.assignEmployeeModel.collection.collectionName,
+        employee: this.employeeModel.collection.collectionName,
+        user: this.userModel.collection.collectionName,
+        cavity: this.masterCavityModel.collection.collectionName,
+        part: this.masterPartModel.collection.collectionName,
+      };
 
-      if (!machine) {
+      // ใช้ Aggregation Pipeline เพื่อรวบรวมข้อมูลทั้งหมดในครั้งเดียว
+      const aggregationResult = await this.machineInfoModel.aggregate([
+        // Stage 1: Match machine by machine_number
+        {
+          $match: {
+            machine_number: machineNumber,
+          },
+        },
+
+        // Stage 2: Lookup active assign_order
+        {
+          $lookup: {
+            from: collectionNames.assignOrder,
+            let: { machineNumber: '$machine_number' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$machine_number', '$$machineNumber'] },
+                      { $eq: ['$status', 'active'] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'assignOrders',
+          },
+        },
+
+        // Stage 3: Unwind assign orders (should be only one active)
+        {
+          $unwind: {
+            path: '$assignOrders',
+            preserveNullAndEmptyArrays: false,
+          },
+        },
+
+        // Stage 4: Lookup production order
+        {
+          $lookup: {
+            from: collectionNames.order,
+            localField: 'assignOrders.production_order_id',
+            foreignField: '_id',
+            as: 'productionOrders',
+          },
+        },
+
+        // Stage 5: Unwind production orders
+        {
+          $unwind: {
+            path: '$productionOrders',
+            preserveNullAndEmptyArrays: false,
+          },
+        },
+
+        // Stage 6: Lookup master parts
+        {
+          $lookup: {
+            from: collectionNames.part, //'master_parts'
+            localField: 'productionOrders.material_number',
+            foreignField: 'material_number',
+            as: 'masterParts',
+          },
+        },
+
+        // Stage 7: Unwind master parts
+        {
+          $unwind: {
+            path: '$masterParts',
+            preserveNullAndEmptyArrays: false,
+          },
+        },
+
+        // Stage 8: Lookup master cavity
+        {
+          $lookup: {
+            from: collectionNames.cavity,
+            let: { partId: '$masterParts._id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $in: ['$$partId', '$parts'],
+                  },
+                },
+              },
+            ],
+            as: 'masterCavities',
+          },
+        },
+
+        // Stage 9: Project final result with cavity calculation
+        {
+          $project: {
+            machine_number: 1,
+            machine_name: 1,
+            work_center: 1,
+            line: 1,
+            tonnage: 1,
+            status: 1,
+            is_counter_paused: 1,
+            counter: 1,
+            recorded_counter: 1,
+            pause_start_counter: 1,
+            assignOrder: '$assignOrders',
+            productionOrder: '$productionOrders',
+            masterPart: '$masterParts',
+            cavity: {
+              $ifNull: [
+                { $arrayElemAt: ['$masterCavities.cavity', 0] },
+                1, // default cavity value
+              ],
+            },
+          },
+        },
+      ]);
+
+      // ตรวจสอบผลลัพธ์จาก aggregation
+      if (!aggregationResult || aggregationResult.length === 0) {
+        // ตรวจสอบว่าเครื่องจักรมีอยู่จริงหรือไม่
+        const machineExists = await this.machineInfoModel
+          .findOne({
+            machine_number: machineNumber,
+          })
+          .select('machine_number')
+          .lean();
+
+        if (!machineExists) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'invalid machine',
+              data: [],
+            },
+            HttpStatus.NOT_FOUND,
+          );
+        }
+
+        // ถ้าเครื่องจักรมีอยู่แต่ไม่มี active assignment
+        const hasActiveAssignment = await this.assignOrderModel
+          .findOne({
+            machine_number: machineNumber,
+            status: 'active',
+          })
+          .select('_id')
+          .lean();
+
+        if (!hasActiveAssignment) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'no active assignment found',
+              data: [],
+            },
+            HttpStatus.NOT_FOUND,
+          );
+        }
+
+        // ถ้ามี assignment แต่ไม่มี production order หรือ master part
         throw new HttpException(
           {
             status: 'error',
-            message: 'invalid machine',
+            message: 'production order or product not found',
             data: [],
           },
           HttpStatus.NOT_FOUND,
         );
       }
 
-      // ค้นหา active assignment
-      const assignOrder = await this.assignOrderModel.findOne({
-        machine_number: machine.machine_number,
-        status: 'active',
-      });
-
-      if (!assignOrder) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'no active assignment found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      // ค้นหา production order
-      const productionOrder = await this.productionOrderModel.findById(
-        assignOrder.production_order_id,
-      );
-
-      if (!productionOrder) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'production order not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      // ค้นหาข้อมูลสินค้า
-      const product = await this.masterPartModel.findOne({
-        material_number: productionOrder.material_number,
-      });
-
-      if (!product) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'product not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      // ค้นหาข้อมูล cavity
-      const cavity = await this.masterCavityModel.findOne({
-        parts: { $in: [toObjectId(product._id.toString())] },
-      });
-
-      // กำหนดค่า cavity (ถ้าไม่มีให้ใช้ค่า default คือ 1)
-      const cavityValue = cavity?.cavity || 1;
+      const machineData = aggregationResult[0];
+      const cavityValue = machineData.cavity;
 
       // คำนวณค่า counter
-
       const { counter: cycleCount, recorded_counter: remainderCount } =
         setMachineCounter(counter, cavityValue);
 
       // กำหนดข้อมูลที่จะอัปเดต
-      const updateData = machine.is_counter_paused
+      const updateData = machineData.is_counter_paused
         ? {
             counter: cycleCount,
             recorded_counter: remainderCount,
