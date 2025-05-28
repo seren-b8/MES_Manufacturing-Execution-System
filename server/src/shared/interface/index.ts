@@ -67,3 +67,7 @@ export interface ISapProductionData {
   is_not_good: boolean;
   case_ng?: string;
 }
+
+export * from './product-record';
+export * from './product';
+export * from './sap';

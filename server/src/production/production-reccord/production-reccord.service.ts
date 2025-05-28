@@ -15,7 +15,7 @@ import {
   PrintRequestDto,
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
-import { ResponseFormat } from 'src/shared/interface';
+import { ProductionSummaryRecord, ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/schema/assign-order.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
@@ -1634,188 +1634,102 @@ export class ProductionRecordService {
 
   async findSummaryAllMachines(
     shiftType?: 'morning' | 'night' | 'all',
-    startDateParam?: string, // พารามิเตอร์วันที่เริ่มต้น
-    endDateParam?: string, // พารามิเตอร์วันที่สิ้นสุด
-  ): Promise<ResponseFormat<DateRangeSummaryData>> {
+    startDateParam?: string,
+    endDateParam?: string,
+  ): Promise<ResponseFormat<ProductionSummaryRecord>> {
     try {
       // กำหนดวันที่เริ่มต้นและสิ้นสุด
       const startDate = startDateParam
-        ? moment(startDateParam, 'YYYY-MM-DD') // กำหนดรูปแบบให้ชัดเจน
+        ? moment(startDateParam, 'YYYY-MM-DD').tz('Asia/Bangkok')
         : moment().tz('Asia/Bangkok').startOf('day');
 
       const endDate = endDateParam
-        ? moment(endDateParam, 'YYYY-MM-DD') // กำหนดรูปแบบให้ชัดเจน
+        ? moment(endDateParam, 'YYYY-MM-DD').tz('Asia/Bangkok')
         : startDateParam
-          ? moment(startDateParam, 'YYYY-MM-DD').endOf('day') // กำหนดรูปแบบให้ชัดเจน
-          : moment().tz('Asia/Bangkok').endOf('day'); // ค่าเริ่มต้นคือวันนี้
+          ? moment(startDateParam, 'YYYY-MM-DD').tz('Asia/Bangkok')
+          : moment().tz('Asia/Bangkok').endOf('day');
 
-      // ตั้งค่า timezone ให้กับ startDate และ endDate หลังจากสร้างแล้ว
-      startDate.tz('Asia/Bangkok').startOf('day');
-      endDate.tz('Asia/Bangkok').endOf('day');
+      startDate.startOf('day');
+      endDate.endOf('day');
 
-      // ตรวจสอบว่าวันที่สิ้นสุดต้องไม่มาก่อนวันที่เริ่มต้น
+      // ตรวจสอบวันที่
       if (endDate.isBefore(startDate)) {
         throw new Error('End date must be after start date');
       }
 
-      // Define shift timings
+      // กำหนดเวลากะ
       const SHIFT_TIMINGS = {
         morning: { startHour: 8, duration: 12 }, // 08:00 - 20:00
-        night: { startHour: 20, duration: 12 }, // 20:00 - 08:00 (next day)
+        night: { startHour: 20, duration: 12 }, // 20:00 - 08:00 (วันถัดไป)
       };
 
-      // Default to all shifts if not specified
       const selectedShift = shiftType || 'all';
 
-      // ดึงข้อมูลเครื่องจักรทั้งหมด
+      // ดึงข้อมูลเครื่องจักร
       const machines = await this.machineInfoModel.find().exec();
 
-      // จัดกลุ่มเครื่องจักรตามไลน์การผลิต
-      // แก้ไขโดยระบุประเภทข้อมูลที่ชัดเจนให้กับ machinesByLine
-      const machinesByLine: Record<string, MachineInfo[]> = machines.reduce(
-        (acc, machine) => {
-          const line = machine.line || 'Unknown';
-          if (!acc[line]) {
-            acc[line] = [];
+      const results = [];
+
+      // วนลูปแต่ละเครื่องจักร
+      for (const machine of machines) {
+        // ค้นหา AssignOrder ที่เกี่ยวข้อง
+        const assignOrders = await this.assignOrderModel
+          .find({
+            machine_number: machine.machine_number,
+            status: { $in: ['active', 'completed'] },
+            $or: [
+              { datetime_open_order: { $lte: endDate.toDate() } },
+              { datetime_close_order: { $gte: startDate.toDate() } },
+            ],
+          })
+          .populate('production_order_id')
+          .exec();
+
+        // วนลูปแต่ละ AssignOrder
+        for (const assignOrder of assignOrders) {
+          const productionOrder = assignOrder.production_order_id as any;
+          if (!productionOrder) continue;
+
+          // กำหนดกะที่จะประมวลผล
+          const shiftsToProcess =
+            selectedShift === 'all' ? ['morning', 'night'] : [selectedShift];
+
+          // สร้างช่วงวันที่
+          const dateRange = [];
+          let currentDate = startDate.clone();
+          while (currentDate.isSameOrBefore(endDate, 'day')) {
+            dateRange.push(currentDate.clone());
+            currentDate.add(1, 'day');
           }
-          acc[line].push(machine);
-          return acc;
-        },
-        {} as Record<string, MachineInfo[]>,
-      );
 
-      // สร้างช่วงวันที่ทั้งหมดที่ต้องการดึงข้อมูล
-      const dateRange = [];
-      let currentDate = startDate.clone();
-      while (currentDate.isSameOrBefore(endDate, 'day')) {
-        dateRange.push(currentDate.clone());
-        currentDate.add(1, 'day');
-      }
-
-      // สร้างผลลัพธ์สำหรับแต่ละไลน์และเครื่องจักร
-      const lineResults = [];
-
-      // สร้างผลลัพธ์แยกตามวันที่
-      const dailyResults = [];
-
-      // วนลูปสำหรับแต่ละวัน
-      for (const date of dateRange) {
-        const dayStart = date.clone().startOf('day');
-        const dayEnd = date.clone().endOf('day');
-
-        const dailyLineResults = [];
-
-        for (const [line, lineMachines] of Object.entries(machinesByLine)) {
-          const machineResults = [];
-
-          // ประมวลผลแต่ละเครื่องจักร
-          for (const machine of lineMachines) {
-            // ค้นหา AssignOrder ที่กำลังทำงานหรือสำเร็จแล้วของเครื่องจักรนี้
-            const activeAssignOrders = await this.assignOrderModel
-              .find({
-                machine_number: machine.machine_number,
-                status: { $in: ['active', 'completed'] },
-                // จำกัดเฉพาะ order ที่มีอยู่ในช่วงวันที่
-                $or: [
-                  {
-                    datetime_open_order: {
-                      $lte: dayEnd.toDate(),
-                    },
-                  },
-                  {
-                    datetime_close_order: {
-                      $gte: dayStart.toDate(),
-                    },
-                  },
-                ],
-              })
-              .exec();
-
-            // ดึง Production Order IDs จาก Assign Orders
-            const productionOrderIds = activeAssignOrders.map(
-              (order) => order.production_order_id,
-            );
-
-            // ดึงข้อมูล Production Orders
-            const productionOrders = await this.productionOrderModel
-              .find({
-                _id: { $in: productionOrderIds },
-              })
-              .exec();
-
-            // สร้าง Map ของ Production Orders ตาม ID
-            const productionOrdersMap = {};
-            for (const order of productionOrders) {
-              productionOrdersMap[order._id.toString()] = order;
-            }
-
-            // รวบรวมข้อมูล order เพื่อเพิ่มลงในผลลัพธ์
-            const ordersData = [];
-            for (const assignOrder of activeAssignOrders) {
-              const productionOrder =
-                productionOrdersMap[assignOrder.production_order_id.toString()];
-              if (productionOrder) {
-                ordersData.push({
-                  assign_order_id: assignOrder._id,
-                  production_order_id: productionOrder._id,
-                  order_id: productionOrder.order_id,
-                  material_number: productionOrder.material_number,
-                  status: assignOrder.status,
-                  current_summary: assignOrder.current_summary,
-                });
-              }
-            }
-
-            const machineData = {
-              machine_id: machine._id,
-              machine_number: machine.machine_number,
-              machine_name: machine.machine_name || machine.machine_number,
-              status: machine.status,
-              line: machine.line || 'Unknown',
-              work_center: machine.work_center,
-              shifts: [],
-              total_good: 0,
-              total_not_good: 0,
-              overall_total: 0,
-              active_orders: activeAssignOrders.length,
-              orders: ordersData, // เพิ่มข้อมูล orders
-            };
-
-            // Determine which shifts to process
-            const shiftsToProcess =
-              selectedShift === 'all' ? ['morning', 'night'] : [selectedShift];
-
-            // ประมวลผลแต่ละกะทำงาน
+          // วนลูปแต่ละวัน
+          for (const date of dateRange) {
+            // วนลูปแต่ละกะ
             for (const shift of shiftsToProcess) {
               const { startHour, duration } = SHIFT_TIMINGS[shift];
-              const queryStartTime = dayStart.clone().add(startHour, 'hours');
-              let queryEndTime = queryStartTime.clone().add(duration, 'hours');
+              const shiftStart = date.clone().add(startHour, 'hours');
+              let shiftEnd = shiftStart.clone().add(duration, 'hours');
 
               // สำหรับกะกลางคืนที่ข้ามวัน
               if (shift === 'night') {
-                queryEndTime = queryEndTime.add(1, 'days');
+                shiftEnd = shiftEnd.add(1, 'days');
               }
 
-              // ถ้ากะยังไม่จบ ใช้เวลาปัจจุบันเป็นเวลาสิ้นสุด
+              // จำกัดเวลาสิ้นสุดไม่เกินปัจจุบัน
               const now = moment().tz('Asia/Bangkok');
-              if (queryEndTime.isAfter(now)) {
-                queryEndTime = now;
+              if (shiftEnd.isAfter(now)) {
+                shiftEnd = now;
               }
 
-              let totalQuantity = 0;
-              let goodQuantity = 0;
-              let notGoodQuantity = 0;
-
-              // ประมวลผลสำหรับทุก AssignOrder ที่เกี่ยวข้องกับเครื่องจักรนี้
-              for (const assignOrder of activeAssignOrders) {
-                // ใช้ aggregation สำหรับประสิทธิภาพที่ดีขึ้น
-                const result = await this.productionRecordModel.aggregate([
+              // ดึงข้อมูลการผลิตในช่วงเวลานี้
+              const productionData = await this.productionRecordModel.aggregate(
+                [
                   {
                     $match: {
                       assign_order_id: assignOrder._id,
                       createdAt: {
-                        $gte: queryStartTime.toDate(),
-                        $lt: queryEndTime.toDate(),
+                        $gte: shiftStart.toDate(),
+                        $lt: shiftEnd.toDate(),
                       },
                     },
                   },
@@ -1843,260 +1757,55 @@ export class ProductionRecordService {
                       },
                     },
                   },
-                ]);
-
-                if (result.length > 0) {
-                  totalQuantity += result[0].total_quantity || 0;
-                  goodQuantity += result[0].good_quantity || 0;
-                  notGoodQuantity += result[0].not_good_quantity || 0;
-                }
-              }
-
-              // เพิ่มข้อมูลกะลงในผลลัพธ์ของเครื่องจักรเฉพาะเมื่อมีการผลิตในกะนั้น
-              if (totalQuantity > 0) {
-                machineData.shifts.push({
-                  shift,
-                  shift_start: queryStartTime.format('HH:mm'),
-                  shift_end: queryEndTime.format('HH:mm'),
-                  total_quantity: totalQuantity,
-                  good_quantity: goodQuantity,
-                  not_good_quantity: notGoodQuantity,
-                });
-
-                // อัพเดทยอดรวมของเครื่องจักร
-                machineData.total_good += goodQuantity;
-                machineData.total_not_good += notGoodQuantity;
-                machineData.overall_total += totalQuantity;
-              }
-            }
-
-            // เพิ่มข้อมูลเครื่องจักรลงในผลลัพธ์ถ้ามีการผลิต
-            if (machineData.overall_total > 0) {
-              machineResults.push(machineData);
-            }
-          }
-
-          // เพิ่มข้อมูลไลน์ลงในผลลัพธ์ถ้ามีเครื่องจักรที่มีการผลิต
-          if (machineResults.length > 0) {
-            // คำนวณยอดรวมของไลน์
-            const lineTotal = machineResults.reduce(
-              (sum, machine) => sum + machine.overall_total,
-              0,
-            );
-            const lineGoodTotal = machineResults.reduce(
-              (sum, machine) => sum + machine.total_good,
-              0,
-            );
-            const lineNotGoodTotal = machineResults.reduce(
-              (sum, machine) => sum + machine.total_not_good,
-              0,
-            );
-
-            // หาจำนวน orders ทั้งหมดในไลน์
-            const totalOrdersInLine = machineResults.reduce(
-              (sum, machine) => sum + machine.orders.length,
-              0,
-            );
-
-            dailyLineResults.push({
-              line,
-              machines: machineResults,
-              line_total: lineTotal,
-              line_good_total: lineGoodTotal,
-              line_not_good_total: lineNotGoodTotal,
-              machine_count: machineResults.length,
-              order_count: totalOrdersInLine,
-            });
-          }
-        }
-
-        // คำนวณยอดรวมของวันนี้
-        if (dailyLineResults.length > 0) {
-          const dailyTotal = dailyLineResults.reduce(
-            (sum, line) => sum + line.line_total,
-            0,
-          );
-          const dailyGoodTotal = dailyLineResults.reduce(
-            (sum, line) => sum + line.line_good_total,
-            0,
-          );
-          const dailyNotGoodTotal = dailyLineResults.reduce(
-            (sum, line) => sum + line.line_not_good_total,
-            0,
-          );
-
-          const dailyOrderCount = dailyLineResults.reduce(
-            (sum, line) => sum + (line.order_count || 0),
-            0,
-          );
-
-          dailyResults.push({
-            date: date.format('YYYY-MM-DD'),
-            lines: dailyLineResults,
-            daily_total: dailyTotal,
-            daily_good_total: dailyGoodTotal,
-            daily_not_good_total: dailyNotGoodTotal,
-            line_count: dailyLineResults.length,
-            active_machine_count: dailyLineResults.reduce(
-              (sum, line) => sum + line.machine_count,
-              0,
-            ),
-            order_count: dailyOrderCount,
-          });
-
-          // รวบรวมข้อมูลไลน์จากทุกวันสำหรับสรุปรวม
-          for (const lineResult of dailyLineResults) {
-            const existingLineResult = lineResults.find(
-              (l) => l.line === lineResult.line,
-            );
-            if (existingLineResult) {
-              // รวมข้อมูลเครื่องจักร
-              for (const machine of lineResult.machines) {
-                const existingMachine = existingLineResult.machines.find(
-                  (m) => m.machine_number === machine.machine_number,
-                );
-
-                if (existingMachine) {
-                  // รวมข้อมูลของเครื่องจักรที่มีอยู่แล้ว
-                  existingMachine.total_good += machine.total_good;
-                  existingMachine.total_not_good += machine.total_not_good;
-                  existingMachine.overall_total += machine.overall_total;
-
-                  // รวมข้อมูลกะ
-                  for (const shift of machine.shifts) {
-                    const existingShift = existingMachine.shifts.find(
-                      (s) => s.shift === shift.shift,
-                    );
-
-                    if (existingShift) {
-                      existingShift.total_quantity += shift.total_quantity;
-                      existingShift.good_quantity += shift.good_quantity;
-                      existingShift.not_good_quantity +=
-                        shift.not_good_quantity;
-                    } else {
-                      // เพิ่มกะใหม่
-                      existingMachine.shifts.push({
-                        ...shift,
-                        shift_start: `${date.format('YYYY-MM-DD')} ${shift.shift_start}`,
-                        shift_end: `${date.format('YYYY-MM-DD')} ${shift.shift_end}`,
-                      });
-                    }
-                  }
-
-                  // รวม order IDs ไม่ให้ซ้ำกัน
-                  for (const order of machine.orders) {
-                    const existingOrder = existingMachine.orders.find(
-                      (o) =>
-                        o.assign_order_id.toString() ===
-                        order.assign_order_id.toString(),
-                    );
-
-                    if (!existingOrder) {
-                      existingMachine.orders.push(order);
-                    }
-                  }
-                } else {
-                  // เพิ่มเครื่องจักรใหม่
-                  const newMachine = { ...machine };
-                  newMachine.shifts = machine.shifts.map((shift) => ({
-                    ...shift,
-                    shift_start: `${date.format('YYYY-MM-DD')} ${shift.shift_start}`,
-                    shift_end: `${date.format('YYYY-MM-DD')} ${shift.shift_end}`,
-                  }));
-                  existingLineResult.machines.push(newMachine);
-                }
-              }
-
-              // อัพเดทยอดรวมของไลน์
-              existingLineResult.line_total += lineResult.line_total;
-              existingLineResult.line_good_total += lineResult.line_good_total;
-              existingLineResult.line_not_good_total +=
-                lineResult.line_not_good_total;
-
-              // อัพเดทจำนวน orders (รวมไม่ซ้ำกัน)
-              if (lineResult.order_count) {
-                if (!existingLineResult.order_count) {
-                  existingLineResult.order_count = 0;
-                }
-                existingLineResult.order_count += lineResult.order_count;
-              }
-
-              // อัพเดทจำนวนเครื่องจักร (ใช้ค่ามากที่สุด)
-              existingLineResult.machine_count = Math.max(
-                existingLineResult.machine_count,
-                lineResult.machine_count,
+                ],
               );
-            } else {
-              // เพิ่มไลน์ใหม่
-              const newLineResult = { ...lineResult };
-              // ปรับรูปแบบข้อมูลกะให้มีวันที่
-              newLineResult.machines = lineResult.machines.map((machine) => {
-                const newMachine = { ...machine };
-                newMachine.shifts = machine.shifts.map((shift) => ({
-                  ...shift,
-                  shift_start: `${date.format('YYYY-MM-DD')} ${shift.shift_start}`,
-                  shift_end: `${date.format('YYYY-MM-DD')} ${shift.shift_end}`,
-                }));
-                return newMachine;
-              });
-              lineResults.push(newLineResult);
+
+              // ถ้ามีการผลิตในช่วงเวลานี้
+              if (
+                productionData.length > 0 &&
+                productionData[0].total_quantity > 0
+              ) {
+                const data = productionData[0];
+
+                results.push({
+                  date: date.format('YYYY-MM-DD'),
+                  machine_number: machine.machine_number,
+                  machine_name: machine.machine_name || machine.machine_number,
+                  line: machine.line || 'Unknown',
+                  work_center: machine.work_center,
+                  order_id: productionOrder.order_id,
+                  material_number: productionOrder.material_number,
+                  part_description: productionOrder.part_description || '',
+                  shift: shift,
+                  shift_start: shiftStart.format('HH:mm'),
+                  shift_end: shiftEnd.format('HH:mm'),
+                  shift_date_time: `${date.format('YYYY-MM-DD')} ${shiftStart.format('HH:mm')}-${shiftEnd.format('HH:mm')}`,
+                  total_quantity: data.total_quantity,
+                  good_quantity: data.good_quantity,
+                  not_good_quantity: data.not_good_quantity,
+                  good_percentage:
+                    data.total_quantity > 0
+                      ? Math.round(
+                          (data.good_quantity / data.total_quantity) *
+                            100 *
+                            100,
+                        ) / 100
+                      : 0,
+                  assign_order_id: assignOrder._id.toString(),
+                  production_order_id: productionOrder._id.toString(),
+                  target_quantity: productionOrder.target_quantity || 0,
+                  order_status: assignOrder.status,
+                });
+              }
             }
           }
         }
       }
-
-      // คำนวณยอดรวมทั้งหมด
-      const factoryTotal = lineResults.reduce(
-        (sum, line) => sum + line.line_total,
-        0,
-      );
-      const factoryGoodTotal = lineResults.reduce(
-        (sum, line) => sum + line.line_good_total,
-        0,
-      );
-      const factoryNotGoodTotal = lineResults.reduce(
-        (sum, line) => sum + line.line_not_good_total,
-        0,
-      );
-
-      // นับจำนวน orders ทั้งหมดแบบไม่ซ้ำกัน
-      const orderIdsSet = new Set();
-      for (const lineResult of lineResults) {
-        for (const machine of lineResult.machines) {
-          for (const order of machine.orders) {
-            orderIdsSet.add(order.production_order_id.toString());
-          }
-        }
-      }
-      const totalOrders = orderIdsSet.size;
-
-      // สร้างผลลัพธ์สุดท้าย
-      const summary: DateRangeSummaryData = {
-        date_range: {
-          start_date: startDate.format('YYYY-MM-DD'),
-          end_date: endDate.format('YYYY-MM-DD'),
-          days: dateRange.length,
-        },
-        shift_type: selectedShift,
-        daily_summaries: dailyResults,
-        lines: lineResults,
-        total_summary: {
-          // ตัดออก order_count เนื่องจากไม่มีใน interface
-          factory_total: factoryTotal,
-          factory_good_total: factoryGoodTotal,
-          factory_not_good_total: factoryNotGoodTotal,
-          line_count: lineResults.length,
-          active_machine_count: lineResults.reduce(
-            (sum, line) => sum + line.machine_count,
-            0,
-          ),
-        },
-      };
 
       return {
         status: 'success',
-        message: `Production summaries for all machines from ${startDate.format('YYYY-MM-DD')} to ${endDate.format('YYYY-MM-DD')} retrieved successfully`,
-        data: [summary],
+        message: `Found ${results.length} production records from ${startDate.format('YYYY-MM-DD')} to ${endDate.format('YYYY-MM-DD')}`,
+        data: results,
       };
     } catch (error) {
       return {
@@ -2162,6 +1871,138 @@ export class ProductionRecordService {
       }
 
       // สร้าง URL สำหรับการส่งคำขอพิมพ์
+      const printServiceUrl = `http://${printerIp}:8000/api/print`;
+
+      const masterPart = await this.masterPartModel.aggregate([
+        {
+          $match: { material_number: data.matNo },
+        },
+        {
+          $lookup: {
+            from: 'master_cavity',
+            let: { part_id: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $in: ['$$part_id', '$parts'] }, // ตรวจสอบว่ามีอยู่ใน array parts
+                },
+              },
+            ],
+            as: 'cavity_info',
+          },
+        },
+      ]);
+
+      const labelData = masterPart[0];
+
+      const printPayload: PrintDto = {
+        tag_no: data.serial_number
+          ? parseInt(data.serial_number.split('-')[2] || '0000')
+          : 0,
+        order_id: data?.jobOrder ?? '-',
+        sap_no: data?.matNo ?? '-',
+        customer_name: data?.customerName ?? '-',
+        model: labelData.part_model ?? '-',
+        supplier: 'Serenity',
+        part_code: labelData?.part_number ?? '-',
+        part_name: labelData?.part_name ?? '-',
+        mat: labelData?.cavity_info[0]?.mat ?? '-',
+        color: labelData?.cavity_info[0]?.color ?? '-',
+        producer: data?.producer ?? '-',
+        date: labelData?.date
+          ? this.formatDateForPrinter(
+              new Date(labelData.date).toISOString().split('T')[0],
+            )
+          : this.formatDateForPrinter(new Date().toISOString().split('T')[0]),
+        quantity: data?.quantityStd ?? 0,
+        number_of_tags: data?.number_of_tags ?? 1,
+        code: data?.serial_number ?? '-',
+        image_url: labelData?.image_url ?? '',
+      };
+      console.log('printPayload', printPayload);
+
+      // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
+      await axios.post(printServiceUrl, printPayload);
+
+      return {
+        status: 'success',
+        message: `Print request sent successfully to printer at ${printerIp}`,
+        data: [],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+
+      if (axios.isAxiosError(error)) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Failed to send print request: ${error.response?.data?.message}`,
+            data: [error.response?.data?.data || {}],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: (error as Error).message || 'Failed to send print request',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async printLabelForSale(data: PrintRequestDto): Promise<ResponseFormat<[]>> {
+    try {
+      let printerIp = '';
+
+      if (data.machine_number) {
+        // ดึงข้อมูลเครื่องพิมพ์ของเครื่องจักร
+        const machineResponse = await this.machineInfoService.getMachinePrinter(
+          data.machine_number,
+        );
+
+        if (
+          machineResponse.status === 'success' &&
+          machineResponse.data.length > 0
+        ) {
+          const printer = machineResponse.data[0];
+
+          // ถ้าเครื่องพิมพ์มีสถานะ active ให้ใช้ IP ของเครื่องพิมพ์นั้น
+          if (printer.status === 'active') {
+            printerIp = printer.ip_device;
+          } else {
+            console.warn(
+              `Printer ${printer.device_name} is not active, using default printer`,
+            );
+
+            throw new HttpException(
+              {
+                status: 'error',
+                message: `Printer ${printer.device_name} is not active`,
+                data: [],
+              },
+              HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }
+        } else {
+          // ถ้าไม่พบเครื่องพิมพ์สำหรับเครื่องจักรนี้
+          console.warn(
+            `No printer found for machine ${data.machine_number}, using default printer`,
+          );
+
+          throw new HttpException(
+            {
+              status: 'error',
+              message: `No printer found for machine ${data.machine_number}`,
+              data: [],
+            },
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
+        }
+      }
+
       const printServiceUrl = `http://${printerIp}:8000/api/print`;
 
       const masterPart = await this.masterPartModel.aggregate([

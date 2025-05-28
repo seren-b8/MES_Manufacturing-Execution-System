@@ -54,6 +54,7 @@ export class ProductionRecordController {
 
   //!print-label
   @Post('print-label')
+  @UseGuards(JwtAuthGuard)
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR) // Adjust roles as needed
   async printLabel(@Body() data: PrintRequestDto) {
     return this.productionRecordService.printLabel(data);
@@ -61,6 +62,7 @@ export class ProductionRecordController {
   //!print-label
 
   @Get('daily-summary')
+  @UseGuards(JwtAuthGuard)
   async getDailySummary(
     @Body('assign_order_id') assignOrderId: string,
     @Body('shift_type') shiftType: 'morning' | 'night' | 'all',
@@ -74,6 +76,7 @@ export class ProductionRecordController {
   // รายงานสรุปการผลิตทั้งโรงงาน
   @Get('factory-summary')
   @Roles(Role.ADMIN)
+  @UseGuards(JwtAuthGuard)
   async getFactorySummary(
     @Query('shift_type') shiftType: 'morning' | 'night' | 'all' = 'all',
     @Query('start_date') startDate?: string,
