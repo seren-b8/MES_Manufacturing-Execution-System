@@ -15,12 +15,18 @@ import {
 import {
   CreateProductionRecordDto,
   PrintRequestDto,
+  SalePrintDto,
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
 import { ProductionRecordService } from './production-reccord.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Types } from 'mongoose';
-import { ResponseFormat } from 'src/shared/interface';
+import {
+  ProductionDailySummary,
+  ProductionStageOverview,
+  ProductionStageSummary,
+  ResponseFormat,
+} from 'src/shared/interface';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
 import { SapProductionSyncService } from '../sap-sync/sap-sync.service';
@@ -41,6 +47,18 @@ export class ProductionRecordController {
     return await this.productionRecordService.getDailySummary(date);
   }
 
+  @Get('summary/by-stage')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  async getSummaryByStage(): Promise<ResponseFormat<ProductionStageSummary>> {
+    return this.productionRecordService.findSummaryByStage();
+  }
+
+  @Get('summary/stage-overview')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  async getStageOverview(): Promise<ResponseFormat<ProductionStageOverview>> {
+    return this.productionRecordService.getStageOverview();
+  }
+
   @Post('confirm-by-serial')
   async confirmBySerial(
     @Body('serial_code') serialCode: string,
@@ -59,6 +77,11 @@ export class ProductionRecordController {
   async printLabel(@Body() data: PrintRequestDto) {
     return this.productionRecordService.printLabel(data);
   }
+
+  @Post('sale-print')
+  async salePrint(@Body() data: SalePrintDto) {
+    return this.productionRecordService.printSaleLabel(data);
+  }
   //!print-label
 
   @Get('daily-summary')
@@ -73,17 +96,14 @@ export class ProductionRecordController {
     );
   }
 
-  // รายงานสรุปการผลิตทั้งโรงงาน
   @Get('factory-summary')
   @Roles(Role.ADMIN)
   @UseGuards(JwtAuthGuard)
   async getFactorySummary(
-    @Query('shift_type') shiftType: 'morning' | 'night' | 'all' = 'all',
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
-  ): Promise<ResponseFormat<any>> {
+  ): Promise<ResponseFormat<ProductionDailySummary>> {
     return this.productionRecordService.findSummaryAllMachines(
-      shiftType,
       startDate,
       endDate,
     );

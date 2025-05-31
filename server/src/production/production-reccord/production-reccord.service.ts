@@ -13,9 +13,15 @@ import {
   CreateProductionRecordDto,
   PrintDto,
   PrintRequestDto,
+  SalePrintDto,
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
-import { ProductionSummaryRecord, ResponseFormat } from 'src/shared/interface';
+import {
+  ProductionDailySummary,
+  ProductionStageOverview,
+  ProductionStageSummary,
+  ResponseFormat,
+} from 'src/shared/interface';
 import { AssignOrder } from 'src/schema/assign-order.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { calculateAvailableCounter } from 'src/shared/utils/counter.utils';
@@ -36,6 +42,10 @@ import { response } from 'express';
 import { SerialCounter } from 'src/schema/serial-counter.schema';
 import { toObjectId } from '../../shared/utils/type.utils';
 import { SerialCodeService } from '../serial-code/serialcode.service';
+import { string } from 'yargs';
+import { error } from 'console';
+import { Employee } from 'src/schema/employee.schema';
+import { PrinterDevice } from 'src/schema/printer-device.schema';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -64,8 +74,13 @@ export class ProductionRecordService {
 
     @InjectModel(User.name) private userModel: Model<User>,
 
+    @InjectModel(Employee.name) private employeeModel: Model<Employee>,
+
     @InjectModel(SerialCounter.name)
     private serialCounterModel: Model<SerialCounter>,
+
+    @InjectModel(PrinterDevice.name)
+    private printerDeviecModel: Model<PrinterDevice>,
 
     private AssignEmployeeService: AssignEmployeeService,
 
@@ -1633,10 +1648,9 @@ export class ProductionRecordService {
   }
 
   async findSummaryAllMachines(
-    shiftType?: 'morning' | 'night' | 'all',
     startDateParam?: string,
     endDateParam?: string,
-  ): Promise<ResponseFormat<ProductionSummaryRecord>> {
+  ): Promise<ResponseFormat<ProductionDailySummary>> {
     try {
       // กำหนดวันที่เริ่มต้นและสิ้นสุด
       const startDate = startDateParam
@@ -1657,161 +1671,187 @@ export class ProductionRecordService {
         throw new Error('End date must be after start date');
       }
 
-      // กำหนดเวลากะ
-      const SHIFT_TIMINGS = {
-        morning: { startHour: 8, duration: 12 }, // 08:00 - 20:00
-        night: { startHour: 20, duration: 12 }, // 20:00 - 08:00 (วันถัดไป)
+      const collectionNames = {
+        machine: this.machineInfoModel.collection.collectionName,
+        order: this.productionOrderModel.collection.collectionName,
+        assignOrder: this.assignOrderModel.collection.collectionName,
+        productionRecord: this.productionRecordModel.collection.collectionName,
+        assignEmployee: this.assignEmployeeModel.collection.collectionName,
+        user: this.userModel.collection.collectionName,
+        cavity: this.masterCavityModel.collection.collectionName,
+        part: this.masterPartModel.collection.collectionName,
+        serialCounter: this.serialCounterModel.collection.collectionName,
       };
 
-      const selectedShift = shiftType || 'all';
-
-      // ดึงข้อมูลเครื่องจักร
-      const machines = await this.machineInfoModel.find().exec();
-
-      const results = [];
-
-      // วนลูปแต่ละเครื่องจักร
-      for (const machine of machines) {
-        // ค้นหา AssignOrder ที่เกี่ยวข้อง
-        const assignOrders = await this.assignOrderModel
-          .find({
-            machine_number: machine.machine_number,
-            status: { $in: ['active', 'completed'] },
-            $or: [
-              { datetime_open_order: { $lte: endDate.toDate() } },
-              { datetime_close_order: { $gte: startDate.toDate() } },
-            ],
-          })
-          .populate('production_order_id')
-          .exec();
-
-        // วนลูปแต่ละ AssignOrder
-        for (const assignOrder of assignOrders) {
-          const productionOrder = assignOrder.production_order_id as any;
-          if (!productionOrder) continue;
-
-          // กำหนดกะที่จะประมวลผล
-          const shiftsToProcess =
-            selectedShift === 'all' ? ['morning', 'night'] : [selectedShift];
-
-          // สร้างช่วงวันที่
-          const dateRange = [];
-          let currentDate = startDate.clone();
-          while (currentDate.isSameOrBefore(endDate, 'day')) {
-            dateRange.push(currentDate.clone());
-            currentDate.add(1, 'day');
-          }
-
-          // วนลูปแต่ละวัน
-          for (const date of dateRange) {
-            // วนลูปแต่ละกะ
-            for (const shift of shiftsToProcess) {
-              const { startHour, duration } = SHIFT_TIMINGS[shift];
-              const shiftStart = date.clone().add(startHour, 'hours');
-              let shiftEnd = shiftStart.clone().add(duration, 'hours');
-
-              // สำหรับกะกลางคืนที่ข้ามวัน
-              if (shift === 'night') {
-                shiftEnd = shiftEnd.add(1, 'days');
-              }
-
-              // จำกัดเวลาสิ้นสุดไม่เกินปัจจุบัน
-              const now = moment().tz('Asia/Bangkok');
-              if (shiftEnd.isAfter(now)) {
-                shiftEnd = now;
-              }
-
-              // ดึงข้อมูลการผลิตในช่วงเวลานี้
-              const productionData = await this.productionRecordModel.aggregate(
-                [
+      const dailyData = await this.productionRecordModel.aggregate([
+        {
+          $match: {
+            production_date: {
+              $gte: startDate.toDate(),
+              $lte: endDate.toDate(),
+            },
+            confirmation_status: { $in: ['confirmed', 'pending'] },
+          },
+        },
+        {
+          $lookup: {
+            from: collectionNames.serialCounter,
+            localField: 'serial_counter_id',
+            foreignField: '_id',
+            as: 'serial_counter',
+          },
+        },
+        { $unwind: '$serial_counter' },
+        {
+          $lookup: {
+            from: collectionNames.assignOrder,
+            localField: 'assign_order_id',
+            foreignField: '_id',
+            as: 'assign_order',
+          },
+        },
+        { $unwind: '$assign_order' },
+        {
+          $lookup: {
+            from: collectionNames.order,
+            localField: 'assign_order.production_order_id',
+            foreignField: '_id',
+            as: 'order',
+          },
+        },
+        { $unwind: '$order' },
+        {
+          $project: {
+            quantity: 1,
+            machine_number: '$serial_counter.machine_number',
+            type: '$serial_counter.type',
+            shift: '$serial_counter.shift',
+            date: '$serial_counter.date',
+            order_id: '$order.order_id',
+            material_number: '$order.material_number',
+            material_description: '$order.material_description',
+            target_quantity: '$order.target_quantity',
+          },
+        },
+        // Group ตาม date, machine_number, order_id
+        {
+          $group: {
+            _id: {
+              date: '$date',
+              machine_number: '$machine_number',
+              order_id: '$order_id',
+            },
+            // แยกจำนวนตาม type (OK/NG)
+            good_quantity: {
+              $sum: { $cond: [{ $eq: ['$type', 'OK'] }, '$quantity', 0] },
+            },
+            ng_quantity: {
+              $sum: { $cond: [{ $eq: ['$type', 'NG'] }, '$quantity', 0] },
+            },
+            // แยกตาม shift
+            day_good: {
+              $sum: {
+                $cond: [
                   {
-                    $match: {
-                      assign_order_id: assignOrder._id,
-                      createdAt: {
-                        $gte: shiftStart.toDate(),
-                        $lt: shiftEnd.toDate(),
-                      },
-                    },
+                    $and: [
+                      { $eq: ['$type', 'OK'] },
+                      { $eq: ['$shift', 'day'] },
+                    ],
                   },
-                  {
-                    $group: {
-                      _id: null,
-                      total_quantity: { $sum: '$quantity' },
-                      good_quantity: {
-                        $sum: {
-                          $cond: [
-                            { $eq: ['$is_not_good', false] },
-                            '$quantity',
-                            0,
-                          ],
-                        },
-                      },
-                      not_good_quantity: {
-                        $sum: {
-                          $cond: [
-                            { $eq: ['$is_not_good', true] },
-                            '$quantity',
-                            0,
-                          ],
-                        },
-                      },
-                    },
-                  },
+                  '$quantity',
+                  0,
                 ],
-              );
-
-              // ถ้ามีการผลิตในช่วงเวลานี้
-              if (
-                productionData.length > 0 &&
-                productionData[0].total_quantity > 0
-              ) {
-                const data = productionData[0];
-
-                results.push({
-                  date: date.format('YYYY-MM-DD'),
-                  machine_number: machine.machine_number,
-                  machine_name: machine.machine_name || machine.machine_number,
-                  line: machine.line || 'Unknown',
-                  work_center: machine.work_center,
-                  order_id: productionOrder.order_id,
-                  material_number: productionOrder.material_number,
-                  part_description: productionOrder.part_description || '',
-                  shift: shift,
-                  shift_start: shiftStart.format('HH:mm'),
-                  shift_end: shiftEnd.format('HH:mm'),
-                  shift_date_time: `${date.format('YYYY-MM-DD')} ${shiftStart.format('HH:mm')}-${shiftEnd.format('HH:mm')}`,
-                  total_quantity: data.total_quantity,
-                  good_quantity: data.good_quantity,
-                  not_good_quantity: data.not_good_quantity,
-                  good_percentage:
-                    data.total_quantity > 0
-                      ? Math.round(
-                          (data.good_quantity / data.total_quantity) *
-                            100 *
-                            100,
-                        ) / 100
-                      : 0,
-                  assign_order_id: assignOrder._id.toString(),
-                  production_order_id: productionOrder._id.toString(),
-                  target_quantity: productionOrder.target_quantity || 0,
-                  order_status: assignOrder.status,
-                });
-              }
-            }
-          }
-        }
-      }
+              },
+            },
+            day_ng: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$type', 'NG'] },
+                      { $eq: ['$shift', 'day'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            night_good: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$type', 'OK'] },
+                      { $eq: ['$shift', 'night'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            night_ng: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$type', 'NG'] },
+                      { $eq: ['$shift', 'night'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            // ข้อมูลอื่นๆ
+            material_number: { $first: '$material_number' },
+            material_description: { $first: '$material_description' },
+            target_quantity: { $first: '$target_quantity' },
+            total_records: { $sum: 1 },
+          },
+        },
+        // Flatten ข้อมูล
+        {
+          $project: {
+            date: '$_id.date',
+            machine_number: '$_id.machine_number',
+            order_id: '$_id.order_id',
+            good_quantity: 1,
+            ng_quantity: 1,
+            total_quantity: { $add: ['$good_quantity', '$ng_quantity'] },
+            day_shift: {
+              good: '$day_good',
+              ng: '$day_ng',
+              total: { $add: ['$day_good', '$day_ng'] },
+            },
+            night_shift: {
+              good: '$night_good',
+              ng: '$night_ng',
+              total: { $add: ['$night_good', '$night_ng'] },
+            },
+            material_number: 1,
+            material_description: 1,
+            target_quantity: 1,
+            total_records: 1,
+            _id: 0,
+          },
+        },
+        { $sort: { date: 1, machine_number: 1, order_id: 1 } },
+      ]);
 
       return {
         status: 'success',
-        message: `Found ${results.length} production records from ${startDate.format('YYYY-MM-DD')} to ${endDate.format('YYYY-MM-DD')}`,
-        data: results,
+        message: `Daily production summary retrieved successfully`,
+        data: dailyData,
       };
     } catch (error) {
+      console.error('Error in findSummaryAllMachines:', error);
       return {
         status: 'error',
         message:
-          (error as Error).message || 'Failed to retrieve production summaries',
+          error instanceof Error ? error.message : 'Unknown error occurred',
         data: [],
       };
     }
@@ -1953,127 +1993,345 @@ export class ProductionRecordService {
     }
   }
 
-  async printLabelForSale(data: PrintRequestDto): Promise<ResponseFormat<[]>> {
+  async printSaleLabel(data: SalePrintDto): Promise<ResponseFormat<any>> {
     try {
-      let printerIp = '';
+      const collectionNames = {
+        machine: this.machineInfoModel.collection.collectionName,
+        order: this.productionOrderModel.collection.collectionName,
+        assignOrder: this.assignOrderModel.collection.collectionName,
+        productionRecord: this.productionRecordModel.collection.collectionName,
+        assignEmployee: this.assignEmployeeModel.collection.collectionName,
+        user: this.userModel.collection.collectionName,
+        cavity: this.masterCavityModel.collection.collectionName,
+        part: this.masterPartModel.collection.collectionName,
+        serialCounter: this.serialCounterModel.collection.collectionName,
+        employee: this.employeeModel.collection.collectionName,
+      };
 
-      if (data.machine_number) {
-        // ดึงข้อมูลเครื่องพิมพ์ของเครื่องจักร
-        const machineResponse = await this.machineInfoService.getMachinePrinter(
-          data.machine_number,
+      // Validate required fields
+      if (!data.material_no && !data.quantity) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'material_no or quantity not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
         );
+      }
 
-        if (
-          machineResponse.status === 'success' &&
-          machineResponse.data.length > 0
-        ) {
-          const printer = machineResponse.data[0];
+      if (!data.device_name) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'device_name not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
 
-          // ถ้าเครื่องพิมพ์มีสถานะ active ให้ใช้ IP ของเครื่องพิมพ์นั้น
-          if (printer.status === 'active') {
-            printerIp = printer.ip_device;
-          } else {
-            console.warn(
-              `Printer ${printer.device_name} is not active, using default printer`,
-            );
+      // Find printer device
+      const printer = await this.printerDeviecModel.findOne({
+        device_name: data.device_name,
+      });
 
-            throw new HttpException(
-              {
-                status: 'error',
-                message: `Printer ${printer.device_name} is not active`,
-                data: [],
+      if (!printer) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'printer not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const printerIp = printer.ip_device;
+      const printServiceUrl = `http://${printerIp}:8000/api/print`;
+
+      let printPayload: PrintDto = {
+        tag_no: 1,
+        order_id: '',
+        sap_no: data.material_no || '',
+        customer_name: '',
+        model: '',
+        supplier: 'Serenity',
+        part_code: '-',
+        part_name: '-',
+        mat: '-',
+        color: '-',
+        producer: '-',
+        date: moment().tz('Asia/Bangkok').format('YYYY-MM-DD'),
+        quantity: data.quantity || 0,
+        number_of_tags: data.number_of_tags || 1,
+        code: '-',
+        image_url: '',
+      };
+
+      // If serial_code_mes is provided, get data from production record
+      if (data.serial_code_mes) {
+        const records = await this.productionRecordModel.aggregate([
+          {
+            $match: {
+              serial_code: data.serial_code_mes,
+            },
+          },
+          {
+            $lookup: {
+              from: collectionNames.assignOrder,
+              localField: 'assign_order_id',
+              foreignField: '_id',
+              as: 'assign_order',
+              pipeline: [
+                {
+                  $lookup: {
+                    from: collectionNames.order,
+                    localField: 'production_order_id',
+                    foreignField: '_id',
+                    as: 'order',
+                    pipeline: [
+                      {
+                        $lookup: {
+                          from: collectionNames.part,
+                          localField: 'material_number',
+                          foreignField: 'material_number',
+                          as: 'part',
+                          pipeline: [
+                            {
+                              $lookup: {
+                                from: collectionNames.cavity,
+                                localField: '_id',
+                                foreignField: 'parts',
+                                as: 'cavity',
+                              },
+                            },
+                            {
+                              $unwind: {
+                                path: '$cavity',
+                                preserveNullAndEmptyArrays: true,
+                              },
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        $unwind: {
+                          path: '$part',
+                          preserveNullAndEmptyArrays: true,
+                        },
+                      },
+                    ],
+                  },
+                },
+                {
+                  $unwind: { path: '$order', preserveNullAndEmptyArrays: true },
+                },
+              ],
+            },
+          },
+          {
+            $lookup: {
+              from: collectionNames.assignEmployee,
+              localField: 'assign_employee_ids',
+              foreignField: '_id',
+              as: 'assign_employee',
+              pipeline: [
+                {
+                  $lookup: {
+                    from: collectionNames.user,
+                    localField: 'user_id',
+                    foreignField: '_id',
+                    as: 'user',
+                    pipeline: [
+                      {
+                        $lookup: {
+                          from: collectionNames.employee,
+                          localField: 'employee_id',
+                          foreignField: 'employee_id',
+                          as: 'employee',
+                        },
+                      },
+                      {
+                        $unwind: {
+                          path: '$employee',
+                          preserveNullAndEmptyArrays: true,
+                        },
+                      },
+                    ],
+                  },
+                },
+                {
+                  $unwind: { path: '$user', preserveNullAndEmptyArrays: true },
+                },
+              ],
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              serial_code: 1,
+              quantity: 1,
+              is_not_good: 1,
+              production_date: 1,
+              createdAt: 1,
+              // Order and Part Information
+              order_id: '$assign_order.order.order_id',
+              material_number: '$assign_order.order.material_number',
+              material_description: '$assign_order.order.material_description',
+              machine_number: '$assign_order.machine_number',
+              // Part Details
+              part_number: '$assign_order.order.part.part_number',
+              part_name: '$assign_order.order.part.part_name',
+              part_model: '$assign_order.order.part.part_model',
+              weight: '$assign_order.order.part.weight',
+              image_url: '$assign_order.order.part.image_url',
+              // Cavity Information
+              cavity_count: '$assign_order.order.part.cavity.cavity',
+              cavity_customer: '$assign_order.order.part.cavity.customer',
+              cavity_color: '$assign_order.order.part.cavity.color',
+              cavity_mat: '$assign_order.order.part.cavity.mat',
+              // Employee Information
+              employees: {
+                $map: {
+                  input: '$assign_employee',
+                  as: 'emp',
+                  in: {
+                    employee_id: '$$emp.user.employee.employee_id',
+                    first_name: '$$emp.user.employee.first_name',
+                    last_name: '$$emp.user.employee.last_name',
+                    department: '$$emp.user.employee.department',
+                  },
+                },
               },
-              HttpStatus.INTERNAL_SERVER_ERROR,
-            );
-          }
-        } else {
-          // ถ้าไม่พบเครื่องพิมพ์สำหรับเครื่องจักรนี้
-          console.warn(
-            `No printer found for machine ${data.machine_number}, using default printer`,
-          );
+            },
+          },
+        ]);
 
+        if (!records || records.length === 0) {
           throw new HttpException(
             {
               status: 'error',
-              message: `No printer found for machine ${data.machine_number}`,
+              message: 'Production record not found for the given serial code',
               data: [],
             },
-            HttpStatus.INTERNAL_SERVER_ERROR,
+            HttpStatus.NOT_FOUND,
           );
+        }
+
+        const record = records[0];
+
+        // Update printPayload with data from production record
+        printPayload = {
+          ...printPayload,
+          order_id: record.order_id?.[0] || '',
+          sap_no: record.material_number?.[0] || data.material_no || '',
+          customer_name: record.cavity_customer?.[0] || '',
+          model: record.part_model?.[0] || '',
+          part_code: record.part_number?.[0] || '',
+          part_name: record.part_name?.[0] || '',
+          mat: record.cavity_mat?.[0] || '',
+          color: record.cavity_color?.[0] || '',
+          producer:
+            record.employees?.length > 0
+              ? `${record.employees[0].first_name || ''} ${record.employees[0].last_name || ''}`.trim()
+              : '',
+          date: moment(record.production_date)
+            .tz('Asia/Bangkok')
+            .format('YYYY-MM-DD'),
+          quantity: record.quantity || data.quantity || 0,
+          code: record.serial_code || '',
+          image_url: record.image_url?.[0] || '',
+        };
+
+        // Add additional information for response
+        printPayload.tag_no = data.tag_no || 1;
+        printPayload.number_of_tags = data.number_of_tags || 1;
+      } else {
+        // If no serial_code_mes, try to get part information from material_number
+        if (data.material_no) {
+          const partInfo = await this.masterPartModel.aggregate([
+            {
+              $match: {
+                material_number: data.material_no,
+              },
+            },
+            {
+              $lookup: {
+                from: collectionNames.cavity,
+                localField: '_id',
+                foreignField: 'parts',
+                as: 'cavity',
+              },
+            },
+            {
+              $unwind: { path: '$cavity', preserveNullAndEmptyArrays: true },
+            },
+            {
+              $project: {
+                material_number: 1,
+                material_description: 1,
+                part_number: 1,
+                part_name: 1,
+                part_model: 1,
+                weight: 1,
+                image_url: 1,
+                cavity_customer: '$cavity.customer',
+                cavity_color: '$cavity.color',
+                cavity_mat: '$cavity.mat',
+              },
+            },
+          ]);
+
+          if (partInfo && partInfo.length > 0) {
+            const part = partInfo[0];
+            printPayload = {
+              ...printPayload,
+              sap_no: part.material_number || data.material_no,
+              customer_name: part.cavity_customer[0] || '',
+              model: part.part_model[0] || '',
+              part_code: part.part_number[0] || '',
+              part_name: part.part_name[0] || '',
+              mat: part.cavity_mat[0] || '',
+              color: part.cavity_color[0] || '',
+              image_url: part.image_url[0] || '',
+            };
+          }
         }
       }
 
-      const printServiceUrl = `http://${printerIp}:8000/api/print`;
-
-      const masterPart = await this.masterPartModel.aggregate([
-        {
-          $match: { material_number: data.matNo },
-        },
-        {
-          $lookup: {
-            from: 'master_cavity',
-            let: { part_id: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  $expr: { $in: ['$$part_id', '$parts'] }, // ตรวจสอบว่ามีอยู่ใน array parts
-                },
-              },
-            ],
-            as: 'cavity_info',
-          },
-        },
-      ]);
-
-      const labelData = masterPart[0];
-
-      const printPayload: PrintDto = {
-        tag_no: data.serial_number
-          ? parseInt(data.serial_number.split('-')[2] || '0000')
-          : 0,
-        order_id: data?.jobOrder ?? '-',
-        sap_no: data?.matNo ?? '-',
-        customer_name: data?.customerName ?? '-',
-        model: labelData.part_model ?? '-',
-        supplier: 'Serenity',
-        part_code: labelData?.part_number ?? '-',
-        part_name: labelData?.part_name ?? '-',
-        mat: labelData?.cavity_info[0]?.mat ?? '-',
-        color: labelData?.cavity_info[0]?.color ?? '-',
-        producer: data?.producer ?? '-',
-        date: labelData?.date
-          ? this.formatDateForPrinter(
-              new Date(labelData.date).toISOString().split('T')[0],
-            )
-          : this.formatDateForPrinter(new Date().toISOString().split('T')[0]),
-        quantity: data?.quantityStd ?? 0,
-        number_of_tags: data?.number_of_tags ?? 1,
-        code: data?.serial_number ?? '-',
-        image_url: labelData?.image_url ?? '',
-      };
-      console.log('printPayload', printPayload);
-
-      // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
-      await axios.post(printServiceUrl, printPayload);
+      // Log print activity (optional)
+      console.log(`Print request sent to ${printerIp}:`, {
+        serial_code: data.serial_code_mes,
+        material_no: printPayload.sap_no,
+        quantity: printPayload.quantity,
+        timestamp: new Date().toISOString(),
+      });
 
       return {
         status: 'success',
-        message: `Print request sent successfully to printer at ${printerIp}`,
-        data: [],
+        message: 'Print request sent successfully',
+        data: [
+          {
+            print_payload: printPayload,
+            // print_result: printResult,
+            printer_info: {
+              device_name: printer.device_name,
+              ip_address: printerIp,
+            },
+          },
+        ],
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
 
-      if (axios.isAxiosError(error)) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: `Failed to send print request: ${error.response?.data?.message}`,
-            data: [error.response?.data?.data || {}],
-          },
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
-      }
+      // Log error for debugging
+      console.error('Print service error:', {
+        error: (error as Error).message,
+        stack: (error as Error).stack,
+        data: data,
+      });
+
       throw new HttpException(
         {
           status: 'error',
@@ -2082,6 +2340,341 @@ export class ProductionRecordService {
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  async findSummaryByStage(): Promise<ResponseFormat<ProductionStageSummary>> {
+    try {
+      const collectionNames = {
+        order: this.productionOrderModel.collection.collectionName,
+        assignOrder: this.assignOrderModel.collection.collectionName,
+        serialCounter: this.serialCounterModel.collection.collectionName,
+      };
+
+      const stageData = await this.productionRecordModel.aggregate([
+        {
+          $match: {
+            // รวมทุก status
+            confirmation_status: { $in: ['confirmed', 'pending', 'rejected'] },
+          },
+        },
+        {
+          $lookup: {
+            from: collectionNames.serialCounter,
+            localField: 'serial_counter_id',
+            foreignField: '_id',
+            as: 'serial_counter',
+          },
+        },
+        { $unwind: '$serial_counter' },
+        {
+          $lookup: {
+            from: collectionNames.assignOrder,
+            localField: 'assign_order_id',
+            foreignField: '_id',
+            as: 'assign_order',
+          },
+        },
+        { $unwind: '$assign_order' },
+        {
+          $lookup: {
+            from: collectionNames.order,
+            localField: 'assign_order.production_order_id',
+            foreignField: '_id',
+            as: 'order',
+          },
+        },
+        { $unwind: '$order' },
+        {
+          $project: {
+            quantity: 1,
+            confirmation_status: 1,
+            is_not_good: 1,
+            machine_number: '$serial_counter.machine_number',
+            type: '$serial_counter.type',
+            date: '$serial_counter.date',
+            order_id: '$order.order_id',
+            material_number: '$order.material_number',
+            material_description: '$order.material_description',
+            target_quantity: '$order.target_quantity',
+          },
+        },
+        // Group ตาม date, machine_number, order_id
+        {
+          $group: {
+            _id: {
+              date: '$date',
+              machine_number: '$machine_number',
+              order_id: '$order_id',
+            },
+
+            // แยกจำนวนตาม confirmation_status
+            pending_quantity: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$confirmation_status', 'pending'] },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            confirmed_quantity: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$confirmation_status', 'confirmed'] },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            rejected_quantity: {
+              $sum: {
+                $cond: [
+                  { $eq: ['$confirmation_status', 'rejected'] },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+
+            // Stage Details - Pending
+            pending_good: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$confirmation_status', 'pending'] },
+                      { $eq: ['$type', 'OK'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            pending_ng: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$confirmation_status', 'pending'] },
+                      { $eq: ['$type', 'NG'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            pending_records: {
+              $sum: {
+                $cond: [{ $eq: ['$confirmation_status', 'pending'] }, 1, 0],
+              },
+            },
+
+            // Stage Details - Confirmed
+            confirmed_good: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$confirmation_status', 'confirmed'] },
+                      { $eq: ['$type', 'OK'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            confirmed_ng: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$confirmation_status', 'confirmed'] },
+                      { $eq: ['$type', 'NG'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            confirmed_records: {
+              $sum: {
+                $cond: [{ $eq: ['$confirmation_status', 'confirmed'] }, 1, 0],
+              },
+            },
+
+            // Stage Details - Rejected
+            rejected_good: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$confirmation_status', 'rejected'] },
+                      { $eq: ['$type', 'OK'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            rejected_ng: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$confirmation_status', 'rejected'] },
+                      { $eq: ['$type', 'NG'] },
+                    ],
+                  },
+                  '$quantity',
+                  0,
+                ],
+              },
+            },
+            rejected_records: {
+              $sum: {
+                $cond: [{ $eq: ['$confirmation_status', 'rejected'] }, 1, 0],
+              },
+            },
+
+            // ข้อมูลอื่นๆ
+            material_number: { $first: '$material_number' },
+            material_description: { $first: '$material_description' },
+            target_quantity: { $first: '$target_quantity' },
+            total_records: { $sum: 1 },
+          },
+        },
+        // Flatten ข้อมูล
+        {
+          $project: {
+            date: '$_id.date',
+            machine_number: '$_id.machine_number',
+            order_id: '$_id.order_id',
+
+            pending_quantity: 1,
+            confirmed_quantity: 1,
+            rejected_quantity: 1,
+            total_quantity: {
+              $add: [
+                '$pending_quantity',
+                '$confirmed_quantity',
+                '$rejected_quantity',
+              ],
+            },
+
+            stages: {
+              pending: {
+                good: '$pending_good',
+                ng: '$pending_ng',
+                total: { $add: ['$pending_good', '$pending_ng'] },
+                records: '$pending_records',
+              },
+              confirmed: {
+                good: '$confirmed_good',
+                ng: '$confirmed_ng',
+                total: { $add: ['$confirmed_good', '$confirmed_ng'] },
+                records: '$confirmed_records',
+              },
+              rejected: {
+                good: '$rejected_good',
+                ng: '$rejected_ng',
+                total: { $add: ['$rejected_good', '$rejected_ng'] },
+                records: '$rejected_records',
+              },
+            },
+
+            material_number: 1,
+            material_description: 1,
+            target_quantity: 1,
+            total_records: 1,
+            _id: 0,
+          },
+        },
+        {
+          $sort: {
+            pending_quantity: -1,
+            date: 1,
+            machine_number: 1,
+            order_id: 1,
+          },
+        },
+        { $limit: 1000 }, // ป้องกันข้อมูลมากเกินไป
+      ]);
+
+      return {
+        status: 'success',
+        message: 'Production stage summary retrieved successfully',
+        data: stageData as ProductionStageSummary[],
+      };
+    } catch (error) {
+      console.error('Error in findSummaryByStage:', error);
+      return {
+        status: 'error',
+        message:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+        data: [],
+      };
+    }
+  }
+
+  async getStageOverview(): Promise<ResponseFormat<ProductionStageOverview>> {
+    try {
+      const overview = await this.productionRecordModel.aggregate([
+        {
+          $match: {
+            confirmation_status: { $in: ['confirmed', 'pending', 'rejected'] },
+          },
+        },
+        {
+          $group: {
+            _id: '$confirmation_status',
+            total_quantity: { $sum: '$quantity' },
+            total_records: { $sum: 1 },
+            good_quantity: {
+              $sum: { $cond: ['$is_not_good', 0, '$quantity'] },
+            },
+            ng_quantity: {
+              $sum: { $cond: ['$is_not_good', '$quantity', 0] },
+            },
+          },
+        },
+        {
+          $project: {
+            stage: '$_id',
+            total_quantity: 1,
+            total_records: 1,
+            good_quantity: 1,
+            ng_quantity: 1,
+            defect_rate: {
+              $multiply: [
+                { $divide: ['$ng_quantity', '$total_quantity'] },
+                100,
+              ],
+            },
+            _id: 0,
+          },
+        },
+        { $sort: { stage: 1 } },
+      ]);
+
+      return {
+        status: 'success',
+        message: 'Production stage overview retrieved successfully',
+        data: overview,
+      };
+    } catch (error) {
+      console.error('Error in getStageOverview:', error);
+      return {
+        status: 'error',
+        message:
+          error instanceof Error ? error.message : 'Unknown error occurred',
+        data: [],
+      };
     }
   }
 }

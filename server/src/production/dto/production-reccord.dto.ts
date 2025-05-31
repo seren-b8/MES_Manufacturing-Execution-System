@@ -70,3 +70,13 @@ export class PrintDto {
   number_of_tags?: number; //มี number_of_tags
   code?: string; //มี serial_number
 }
+
+//sale_item_id, sale_round_id, inventery_id, material_no, description, created_at, quantity, cart_number, purchase_order, sale_date, serial_code_mes
+export class SalePrintDto {
+  material_no?: string;
+  quantity?: number;
+  device_name: string;
+  serial_code_mes?: string;
+  tag_no?: number;
+  number_of_tags?: number;
+}

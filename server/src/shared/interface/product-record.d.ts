@@ -1,22 +1,77 @@
-export interface ProductionSummaryRecord {
-  date: string; // วันที่ เช่น "2025-01-15"
-  machine_number: string; // หมายเลขเครื่อง เช่น "MC001"
-  machine_name: string; // ชื่อเครื่อง
-  line: string; // สายการผลิต เช่น "L1", "L2"
-  work_center: string; // ศูนย์งาน
-  order_id: string; // หมายเลขออเดอร์ เช่น "PO123456"
-  material_number: string; // หมายเลขวัสดุ/ชิ้นงาน
-  part_description: string; // รายละเอียดชิ้นงาน
-  shift: string; // กะทำงาน "morning" หรือ "night"
-  shift_start: string; // เวลาเริ่มกะ เช่น "08:00"
-  shift_end: string; // เวลาสิ้นสุดกะ เช่น "20:00"
-  shift_date_time: string; // วันที่และช่วงเวลากะ เช่น "2025-01-15 08:00-20:00"
-  total_quantity: number; // จำนวนผลิตรวม
-  good_quantity: number; // จำนวนผลิตดี
-  not_good_quantity: number; // จำนวนผลิตเสีย
-  good_percentage: number; // เปอร์เซ็นต์ผลิตดี
-  assign_order_id: string; // ID ของ AssignOrder
-  production_order_id: string; // ID ของ ProductionOrder
-  target_quantity: number; // เป้าหมายการผลิต
-  order_status: string; // สถานะออเดอร์ "active", "completed", etc.
+// Interface สำหรับข้อมูลการผลิตแต่ละกะ
+interface ShiftSummary {
+  good: number; // จำนวนงานดี
+  ng: number; // จำนวนงานเสีย
+  total: number; // รวมทั้งหมด
+}
+
+// Interface หลักสำหรับสรุปการผลิตรายวัน
+export interface ProductionDailySummary {
+  // ข้อมูลพื้นฐาน
+  date: string; // วันที่ผลิต
+  machine_number: string; // หมายเลขเครื่องจักร
+  order_id: string; // หมายเลขใบสั่งผลิต
+
+  // ข้อมูลวัสดุ
+  material_number: string; // หมายเลขวัสดุ
+  material_description: string; // รายละเอียดวัสดุ
+  target_quantity: number; // จำนวนเป้าหมาย
+
+  // สรุปการผลิต
+  good_quantity: number; // จำนวนงานดีรวม
+  ng_quantity: number; // จำนวนงานเสียรวม
+  total_quantity: number; // จำนวนรวมทั้งหมด
+  total_records: number; // จำนวน records ที่รวม
+
+  // ข้อมูลแยกตามกะ
+  day_shift: ShiftSummary; // ข้อมูลกะเช้า
+  night_shift: ShiftSummary; // ข้อมูลกะดึก
+}
+
+export interface ProductionStageSummary {
+  date: string;
+  machine_number: string;
+  order_id: string;
+  material_number: string;
+  material_description: string;
+  target_quantity: number;
+
+  // แยกตาม stage (confirmation_status)
+  pending_quantity: number; // รอการยืนยัน
+  confirmed_quantity: number; // ยืนยันแล้ว
+  rejected_quantity: number; // ปฏิเสธ
+  total_quantity: number; // รวมทั้งหมด
+
+  // รายละเอียดแต่ละ stage
+  stages: {
+    pending: {
+      good: number;
+      ng: number;
+      total: number;
+      records: number;
+    };
+    confirmed: {
+      good: number;
+      ng: number;
+      total: number;
+      records: number;
+    };
+    rejected: {
+      good: number;
+      ng: number;
+      total: number;
+      records: number;
+    };
+  };
+
+  total_records: number;
+}
+
+export interface ProductionStageOverview {
+  stage: 'confirmed' | 'pending' | 'rejected'; // สถานะการยืนยัน
+  total_quantity: number; // จำนวนรวมทั้งหมด
+  total_records: number; // จำนวน records ทั้งหมด
+  good_quantity: number; // จำนวนงานดี
+  ng_quantity: number; // จำนวนงานเสีย
+  defect_rate: number; // อัตราความเสียหาย (เปอร์เซ็นต์)
 }
