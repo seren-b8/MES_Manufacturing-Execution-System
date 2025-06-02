@@ -1993,8 +1993,20 @@ export class ProductionRecordService {
     }
   }
 
-  async printSaleLabel(data: SalePrintDto): Promise<ResponseFormat<any>> {
+  async printSaleLabel(data: SalePrintDto[]): Promise<ResponseFormat<any>> {
     try {
+      // Validate input array
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Data array is required and cannot be empty',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
       const collectionNames = {
         machine: this.machineInfoModel.collection.collectionName,
         order: this.productionOrderModel.collection.collectionName,
@@ -2008,317 +2020,358 @@ export class ProductionRecordService {
         employee: this.employeeModel.collection.collectionName,
       };
 
-      // Validate required fields
-      if (!data.material_no && !data.quantity) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'material_no or quantity not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
+      const results = [];
+      const errors = [];
 
-      if (!data.device_name) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'device_name not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
+      // Process each item in the array
+      for (let i = 0; i < data.length; i++) {
+        const item = data[i];
 
-      // Find printer device
-      const printer = await this.printerDeviecModel.findOne({
-        device_name: data.device_name,
-      });
+        try {
+          // Validate required fields for each item
+          if (!item.material_no || !item.quantity) {
+            throw new Error(
+              `Item ${i + 1}: material_no and quantity are required`,
+            );
+          }
 
-      if (!printer) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'printer not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
+          if (!item.device_name) {
+            throw new Error(`Item ${i + 1}: device_name is required`);
+          }
 
-      const printerIp = printer.ip_device;
-      const printServiceUrl = `http://${printerIp}:8000/api/print`;
+          // Find printer device for this item
+          const printer = await this.printerDeviecModel.findOne({
+            device_name: item.device_name,
+            status: 'active',
+          });
 
-      let printPayload: PrintDto = {
-        tag_no: 1,
-        order_id: '',
-        sap_no: data.material_no || '',
-        customer_name: '',
-        model: '',
-        supplier: 'Serenity',
-        part_code: '-',
-        part_name: '-',
-        mat: '-',
-        color: '-',
-        producer: '-',
-        date: moment().tz('Asia/Bangkok').format('YYYY-MM-DD'),
-        quantity: data.quantity || 0,
-        number_of_tags: data.number_of_tags || 1,
-        code: '-',
-        image_url: '',
-      };
+          if (!printer) {
+            throw new Error(
+              `Item ${i + 1}: Active printer device '${item.device_name}' not found`,
+            );
+          }
 
-      // If serial_code_mes is provided, get data from production record
-      if (data.serial_code_mes) {
-        const records = await this.productionRecordModel.aggregate([
-          {
-            $match: {
-              serial_code: data.serial_code_mes,
-            },
-          },
-          {
-            $lookup: {
-              from: collectionNames.assignOrder,
-              localField: 'assign_order_id',
-              foreignField: '_id',
-              as: 'assign_order',
-              pipeline: [
-                {
-                  $lookup: {
-                    from: collectionNames.order,
-                    localField: 'production_order_id',
-                    foreignField: '_id',
-                    as: 'order',
-                    pipeline: [
-                      {
-                        $lookup: {
-                          from: collectionNames.part,
-                          localField: 'material_number',
-                          foreignField: 'material_number',
-                          as: 'part',
-                          pipeline: [
-                            {
-                              $lookup: {
-                                from: collectionNames.cavity,
-                                localField: '_id',
-                                foreignField: 'parts',
-                                as: 'cavity',
-                              },
-                            },
-                            {
-                              $unwind: {
-                                path: '$cavity',
-                                preserveNullAndEmptyArrays: true,
-                              },
-                            },
-                          ],
-                        },
-                      },
-                      {
-                        $unwind: {
-                          path: '$part',
-                          preserveNullAndEmptyArrays: true,
-                        },
-                      },
-                    ],
-                  },
+          const printerIp = printer.ip_device;
+          const printServiceUrl = `http://${printerIp}:8000/api/print`;
+
+          // Initialize print payload with default values
+          let printPayload: PrintDto = {
+            tag_no: item.tag_no || 1,
+            order_id: '',
+            sap_no: item.material_no || '',
+            customer_name: '',
+            model: '',
+            supplier: 'Serenity',
+            part_code: '-',
+            part_name: '-',
+            mat: '-',
+            color: '-',
+            producer: '-',
+            date: moment().tz('Asia/Bangkok').format('YYYY-MM-DD'),
+            quantity: item.quantity || 0,
+            number_of_tags: item.number_of_tags || 1,
+            code: '-',
+            image_url: '',
+          };
+
+          // If serial_code_mes is provided, get data from production record
+          if (item.serial_code_mes) {
+            const records = await this.productionRecordModel.aggregate([
+              {
+                $match: {
+                  serial_code: item.serial_code_mes,
                 },
-                {
-                  $unwind: { path: '$order', preserveNullAndEmptyArrays: true },
+              },
+              {
+                $lookup: {
+                  from: collectionNames.assignOrder,
+                  localField: 'assign_order_id',
+                  foreignField: '_id',
+                  as: 'assign_order',
                 },
-              ],
-            },
-          },
-          {
-            $lookup: {
-              from: collectionNames.assignEmployee,
-              localField: 'assign_employee_ids',
-              foreignField: '_id',
-              as: 'assign_employee',
-              pipeline: [
-                {
-                  $lookup: {
-                    from: collectionNames.user,
-                    localField: 'user_id',
-                    foreignField: '_id',
-                    as: 'user',
-                    pipeline: [
-                      {
-                        $lookup: {
-                          from: collectionNames.employee,
-                          localField: 'employee_id',
-                          foreignField: 'employee_id',
-                          as: 'employee',
-                        },
+              },
+              {
+                $unwind: {
+                  path: '$assign_order',
+                  preserveNullAndEmptyArrays: true,
+                },
+              },
+              {
+                $lookup: {
+                  from: collectionNames.order,
+                  localField: 'assign_order.production_order_id',
+                  foreignField: '_id',
+                  as: 'production_order',
+                },
+              },
+              {
+                $unwind: {
+                  path: '$production_order',
+                  preserveNullAndEmptyArrays: true,
+                },
+              },
+              {
+                $lookup: {
+                  from: collectionNames.part,
+                  localField: 'production_order.material_number',
+                  foreignField: 'material_number',
+                  as: 'part_info',
+                },
+              },
+              {
+                $unwind: {
+                  path: '$part_info',
+                  preserveNullAndEmptyArrays: true,
+                },
+              },
+              {
+                $lookup: {
+                  from: collectionNames.cavity,
+                  localField: 'part_info._id',
+                  foreignField: 'parts',
+                  as: 'cavity_info',
+                },
+              },
+              {
+                $unwind: {
+                  path: '$cavity_info',
+                  preserveNullAndEmptyArrays: true,
+                },
+              },
+              {
+                $lookup: {
+                  from: collectionNames.assignEmployee,
+                  localField: 'assign_employee_ids',
+                  foreignField: '_id',
+                  as: 'assign_employees',
+                },
+              },
+              {
+                $lookup: {
+                  from: collectionNames.user,
+                  localField: 'assign_employees.user_id',
+                  foreignField: '_id',
+                  as: 'users',
+                },
+              },
+              {
+                $lookup: {
+                  from: collectionNames.employee,
+                  localField: 'users.employee_id',
+                  foreignField: 'employee_id',
+                  as: 'employees',
+                },
+              },
+              {
+                $project: {
+                  _id: 1,
+                  serial_code: 1,
+                  quantity: 1,
+                  is_not_good: 1,
+                  production_date: 1,
+                  createdAt: 1,
+                  // Order Information
+                  order_id: '$production_order.order_id',
+                  material_number: '$production_order.material_number',
+                  material_description:
+                    '$production_order.material_description',
+                  machine_number: '$assign_order.machine_number',
+                  // Part Information
+                  part_number: '$part_info.part_number',
+                  part_name: '$part_info.part_name',
+                  part_model: '$part_info.part_model',
+                  weight: '$part_info.weight',
+                  image_url: '$part_info.image_url',
+                  // Cavity Information
+                  cavity_customer: '$cavity_info.customer',
+                  cavity_color: '$cavity_info.color',
+                  cavity_mat: '$cavity_info.mat',
+                  // Employee Information
+                  employees: {
+                    $map: {
+                      input: '$employees',
+                      as: 'emp',
+                      in: {
+                        employee_id: '$$emp.employee_id',
+                        first_name: '$$emp.first_name',
+                        last_name: '$$emp.last_name',
+                        department: '$$emp.department',
                       },
-                      {
-                        $unwind: {
-                          path: '$employee',
-                          preserveNullAndEmptyArrays: true,
-                        },
-                      },
-                    ],
-                  },
-                },
-                {
-                  $unwind: { path: '$user', preserveNullAndEmptyArrays: true },
-                },
-              ],
-            },
-          },
-          {
-            $project: {
-              _id: 1,
-              serial_code: 1,
-              quantity: 1,
-              is_not_good: 1,
-              production_date: 1,
-              createdAt: 1,
-              // Order and Part Information
-              order_id: '$assign_order.order.order_id',
-              material_number: '$assign_order.order.material_number',
-              material_description: '$assign_order.order.material_description',
-              machine_number: '$assign_order.machine_number',
-              // Part Details
-              part_number: '$assign_order.order.part.part_number',
-              part_name: '$assign_order.order.part.part_name',
-              part_model: '$assign_order.order.part.part_model',
-              weight: '$assign_order.order.part.weight',
-              image_url: '$assign_order.order.part.image_url',
-              // Cavity Information
-              cavity_count: '$assign_order.order.part.cavity.cavity',
-              cavity_customer: '$assign_order.order.part.cavity.customer',
-              cavity_color: '$assign_order.order.part.cavity.color',
-              cavity_mat: '$assign_order.order.part.cavity.mat',
-              // Employee Information
-              employees: {
-                $map: {
-                  input: '$assign_employee',
-                  as: 'emp',
-                  in: {
-                    employee_id: '$$emp.user.employee.employee_id',
-                    first_name: '$$emp.user.employee.first_name',
-                    last_name: '$$emp.user.employee.last_name',
-                    department: '$$emp.user.employee.department',
+                    },
                   },
                 },
               },
-            },
-          },
-        ]);
+            ]);
 
-        if (!records || records.length === 0) {
-          throw new HttpException(
-            {
-              status: 'error',
-              message: 'Production record not found for the given serial code',
-              data: [],
-            },
-            HttpStatus.NOT_FOUND,
-          );
-        }
+            if (!records || records.length === 0) {
+              throw new Error(
+                `Item ${i + 1}: Production record not found for serial code '${item.serial_code_mes}'`,
+              );
+            }
 
-        const record = records[0];
+            const record = records[0];
 
-        // Update printPayload with data from production record
-        printPayload = {
-          ...printPayload,
-          order_id: record.order_id?.[0] || '',
-          sap_no: record.material_number?.[0] || data.material_no || '',
-          customer_name: record.cavity_customer?.[0] || '',
-          model: record.part_model?.[0] || '',
-          part_code: record.part_number?.[0] || '',
-          part_name: record.part_name?.[0] || '',
-          mat: record.cavity_mat?.[0] || '',
-          color: record.cavity_color?.[0] || '',
-          producer:
-            record.employees?.length > 0
-              ? `${record.employees[0].first_name || ''} ${record.employees[0].last_name || ''}`.trim()
-              : '',
-          date: moment(record.production_date)
-            .tz('Asia/Bangkok')
-            .format('YYYY-MM-DD'),
-          quantity: record.quantity || data.quantity || 0,
-          code: record.serial_code || '',
-          image_url: record.image_url?.[0] || '',
-        };
-
-        // Add additional information for response
-        printPayload.tag_no = data.tag_no || 1;
-        printPayload.number_of_tags = data.number_of_tags || 1;
-      } else {
-        // If no serial_code_mes, try to get part information from material_number
-        if (data.material_no) {
-          const partInfo = await this.masterPartModel.aggregate([
-            {
-              $match: {
-                material_number: data.material_no,
-              },
-            },
-            {
-              $lookup: {
-                from: collectionNames.cavity,
-                localField: '_id',
-                foreignField: 'parts',
-                as: 'cavity',
-              },
-            },
-            {
-              $unwind: { path: '$cavity', preserveNullAndEmptyArrays: true },
-            },
-            {
-              $project: {
-                material_number: 1,
-                material_description: 1,
-                part_number: 1,
-                part_name: 1,
-                part_model: 1,
-                weight: 1,
-                image_url: 1,
-                cavity_customer: '$cavity.customer',
-                cavity_color: '$cavity.color',
-                cavity_mat: '$cavity.mat',
-              },
-            },
-          ]);
-
-          if (partInfo && partInfo.length > 0) {
-            const part = partInfo[0];
+            // Update printPayload with data from production record
             printPayload = {
               ...printPayload,
-              sap_no: part.material_number || data.material_no,
-              customer_name: part.cavity_customer[0] || '',
-              model: part.part_model[0] || '',
-              part_code: part.part_number[0] || '',
-              part_name: part.part_name[0] || '',
-              mat: part.cavity_mat[0] || '',
-              color: part.cavity_color[0] || '',
-              image_url: part.image_url[0] || '',
+              order_id: record.order_id || '',
+              sap_no: record.material_number || item.material_no || '',
+              customer_name: record.cavity_customer || '',
+              model: record.part_model || '',
+              part_code: record.part_number || '',
+              part_name: record.part_name || '',
+              mat: record.cavity_mat || '',
+              color: record.cavity_color || '',
+              producer: this.getEmployeeIds(record.employees),
+              date: moment(record.production_date)
+                .tz('Asia/Bangkok')
+                .format('YYYY-MM-DD'),
+              quantity: item.quantity || 0,
+              code: record.serial_code || '',
+              image_url: record.image_url || '',
             };
+          } else {
+            // If no serial_code_mes, try to get part information from material_number
+            if (item.material_no) {
+              const partInfo = await this.masterPartModel.aggregate([
+                {
+                  $match: {
+                    material_number: item.material_no,
+                  },
+                },
+                {
+                  $lookup: {
+                    from: collectionNames.cavity,
+                    localField: '_id',
+                    foreignField: 'parts',
+                    as: 'cavity_info',
+                  },
+                },
+                {
+                  $unwind: {
+                    path: '$cavity_info',
+                    preserveNullAndEmptyArrays: true,
+                  },
+                },
+                {
+                  $project: {
+                    material_number: 1,
+                    material_description: 1,
+                    part_number: 1,
+                    part_name: 1,
+                    part_model: 1,
+                    weight: 1,
+                    image_url: 1,
+                    cavity_customer: '$cavity_info.customer',
+                    cavity_color: '$cavity_info.color',
+                    cavity_mat: '$cavity_info.mat',
+                  },
+                },
+              ]);
+
+              if (partInfo && partInfo.length > 0) {
+                const part = partInfo[0];
+                printPayload = {
+                  ...printPayload,
+                  sap_no: part.material_number || item.material_no,
+                  customer_name: part.cavity_customer || '',
+                  model: part.part_model || '',
+                  part_code: part.part_number || '',
+                  part_name: part.part_name || '',
+                  mat: part.cavity_mat || '',
+                  color: part.cavity_color || '',
+                  image_url: part.image_url || '',
+                };
+              }
+            }
           }
-        }
-      }
 
-      // Log print activity (optional)
-      console.log(`Print request sent to ${printerIp}:`, {
-        serial_code: data.serial_code_mes,
-        material_no: printPayload.sap_no,
-        quantity: printPayload.quantity,
-        timestamp: new Date().toISOString(),
-      });
+          // Validate print payload before adding to results
+          this.validatePrintPayload(printPayload);
 
-      return {
-        status: 'success',
-        message: 'Print request sent successfully',
-        data: [
-          {
+          // ส่ง request ไปยัง print service (ถ้าต้องการ)
+          const printResult = await this.sendToPrintService(
+            printServiceUrl,
+            printPayload,
+          );
+
+          // Add successful result
+          results.push({
+            index: i + 1,
+            item_id: item.serial_code_mes || item.material_no,
             print_payload: printPayload,
-            // print_result: printResult,
             printer_info: {
               device_name: printer.device_name,
               ip_address: printerIp,
+              status: printer.status,
             },
+            processed_at: moment().tz('Asia/Bangkok').toISOString(),
+            status: 'success',
+          });
+
+          // Log successful processing
+          console.log(`Print request ${i + 1} prepared successfully:`, {
+            serial_code: item.serial_code_mes,
+            material_no: printPayload.sap_no,
+            quantity: printPayload.quantity,
+            printer: printer.device_name,
+            timestamp: moment()
+              .tz('Asia/Bangkok')
+              .format('YYYY-MM-DD HH:mm:ss'),
+          });
+        } catch (itemError) {
+          // Collect errors for individual items
+          const errorInfo = {
+            index: i + 1,
+            item_id: item.serial_code_mes || item.material_no || 'unknown',
+            error: (itemError as Error).message,
+            processed_at: moment().tz('Asia/Bangkok').toISOString(),
+            status: 'error',
+          };
+
+          errors.push(errorInfo);
+
+          console.error(`Print request ${i + 1} failed:`, {
+            error: (itemError as Error).message,
+            item: item,
+            timestamp: moment()
+              .tz('Asia/Bangkok')
+              .format('YYYY-MM-DD HH:mm:ss'),
+          });
+        }
+      }
+
+      // Determine overall response status
+      const hasErrors = errors.length > 0;
+      const hasSuccess = results.length > 0;
+
+      let status: 'success' | 'error' = 'success';
+      let message = '';
+
+      if (hasSuccess && !hasErrors) {
+        status = 'success';
+        message = `All ${results.length} print requests prepared successfully`;
+      } else if (hasSuccess && hasErrors) {
+        status = 'success'; // Partial success
+        message = `${results.length} successful, ${errors.length} failed out of ${data.length} items`;
+      } else {
+        status = 'error';
+        message = `All ${errors.length} print requests failed`;
+      }
+
+      return {
+        status,
+        message,
+        data: [
+          {
+            summary: {
+              total_items: data.length,
+              successful: results.length,
+              failed: errors.length,
+              processed_at: moment().tz('Asia/Bangkok').toISOString(),
+            },
+            results: results,
+            errors: hasErrors ? errors : undefined,
           },
         ],
       };
@@ -2329,17 +2382,66 @@ export class ProductionRecordService {
       console.error('Print service error:', {
         error: (error as Error).message,
         stack: (error as Error).stack,
-        data: data,
+        input_data: data,
+        timestamp: moment().tz('Asia/Bangkok').format('YYYY-MM-DD HH:mm:ss'),
       });
 
       throw new HttpException(
         {
           status: 'error',
-          message: (error as Error).message || 'Failed to send print request',
+          message:
+            (error as Error).message || 'Failed to process print requests',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  // Helper method สำหรับจัดรูปแบบชื่อพนักงาน
+  private getEmployeeIds(employees: any[]): string {
+    if (!employees || employees.length === 0) {
+      return '-';
+    }
+
+    const employeeIds = employees
+      .map((emp) => emp?.employee_id)
+      .filter((id) => id)
+      .join(' ');
+
+    return employeeIds || '-';
+  }
+
+  // ผลลัพธ์: "EMP001, EMP002, EMP003"
+
+  // Helper method สำหรับ validate print payload
+  private validatePrintPayload(payload: PrintDto): void {
+    const requiredFields = ['sap_no', 'quantity'];
+    const missingFields = requiredFields.filter((field) => !payload[field]);
+
+    if (missingFields.length > 0) {
+      throw new Error(
+        `Missing required fields for printing: ${missingFields.join(', ')}`,
+      );
+    }
+
+    if (payload.quantity <= 0) {
+      throw new Error('Quantity must be greater than 0');
+    }
+  }
+
+  // Helper method สำหรับส่งข้อมูลไปยัง print service (ถ้าต้องการใช้งาน)
+  private async sendToPrintService(
+    url: string,
+    payload: PrintDto,
+  ): Promise<any> {
+    try {
+      await axios.post(url, payload);
+
+      return { success: true, message: 'Print job queued' };
+    } catch (error) {
+      console.error('Failed to send to print service:', error);
+      throw new Error('Print service unavailable');
     }
   }
 

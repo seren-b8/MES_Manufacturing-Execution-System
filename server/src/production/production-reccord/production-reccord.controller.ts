@@ -79,7 +79,7 @@ export class ProductionRecordController {
   }
 
   @Post('sale-print')
-  async salePrint(@Body() data: SalePrintDto) {
+  async salePrint(@Body() data: SalePrintDto[]) {
     return this.productionRecordService.printSaleLabel(data);
   }
   //!print-label
