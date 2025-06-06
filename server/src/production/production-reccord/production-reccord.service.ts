@@ -46,6 +46,7 @@ import { string } from 'yargs';
 import { error } from 'console';
 import { Employee } from 'src/schema/employee.schema';
 import { PrinterDevice } from 'src/schema/printer-device.schema';
+import { console } from 'inspector';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -1389,55 +1390,49 @@ export class ProductionRecordService {
           HttpStatus.NOT_FOUND,
         );
       }
-      // Find record by serial code
-      const record = await this.productionRecordModel.findOne({
-        serial_code: serialCode,
-      });
+      const data = await this.productionRecordModel.aggregate([
+        { $match: { serial_code: serialCode } },
+        {
+          $lookup: {
+            from: this.assignOrderModel.collection.collectionName,
+            localField: 'assign_order_id',
+            foreignField: '_id',
+            as: 'assign_order',
+            pipeline: [
+              {
+                $lookup: {
+                  from: this.productionOrderModel.collection.collectionName,
+                  localField: 'production_order_id',
+                  foreignField: '_id',
+                  as: 'production_order',
+                },
+              },
+              {
+                $unwind: { path: '$production_order' },
+              },
+            ],
+          },
+        },
+        {
+          $unwind: { path: '$assign_order' },
+        },
+      ]);
 
-      if (!record) {
+      if (data.length === 0) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'Production record not found',
+            message: 'No production record found with the provided serial code',
             data: [],
           },
           HttpStatus.NOT_FOUND,
         );
       }
 
-      const assignOrder = await this.assignOrderModel.findById(
-        record.assign_order_id,
-      );
-
-      if (!assignOrder) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'assign order not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-      const ProductionOrder_id = new Types.ObjectId(
-        assignOrder.production_order_id,
-      );
-      const productionOrder =
-        await this.productionOrderModel.findById(ProductionOrder_id);
-
-      if (!productionOrder) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'production order not found',
-            data: [],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
+      const record = data[0]; // Get the first record from the aggregation result
 
       // Check if record is already confirmed
-      if (record.confirmation_status === 'confirmed') {
+      if (record?.confirmation_status === 'confirmed') {
         throw new HttpException(
           {
             status: 'error',
@@ -1449,14 +1444,14 @@ export class ProductionRecordService {
       }
 
       // Update the record
-      const updatedRecord = await this.productionRecordModel
+      await this.productionRecordModel
         .findByIdAndUpdate(
           record._id,
           {
             $set: {
               confirmation_status: 'confirmed',
               confirmed_by: user._id,
-              confirmed_at: moment().toDate(),
+              confirmed_at: moment().tz('Asia/Bangkok').toDate(),
             },
           },
           { new: true },
@@ -1467,8 +1462,9 @@ export class ProductionRecordService {
       const dataReturn = [
         {
           quantity: record.quantity,
-          production_date: record.createdAt || moment().toDate(),
-          material_number: productionOrder.material_number,
+          production_date:
+            record.createdAt || moment().tz('Asia/Bangkok').toDate(),
+          material_number: record.assign_order.production_order.material_number,
           serial_code: serialCode,
         },
       ];
@@ -1994,6 +1990,9 @@ export class ProductionRecordService {
   }
 
   async printSaleLabel(data: SalePrintDto[]): Promise<ResponseFormat<any>> {
+    console.error('🔥🔥🔥 SERVICE METHOD CALLED 🔥🔥🔥');
+    console.error('🔥 printSaleLabel data:', JSON.stringify(data, null, 2));
+
     try {
       // Validate input array
       if (!data || !Array.isArray(data) || data.length === 0) {
@@ -2006,19 +2005,6 @@ export class ProductionRecordService {
           HttpStatus.BAD_REQUEST,
         );
       }
-
-      const collectionNames = {
-        machine: this.machineInfoModel.collection.collectionName,
-        order: this.productionOrderModel.collection.collectionName,
-        assignOrder: this.assignOrderModel.collection.collectionName,
-        productionRecord: this.productionRecordModel.collection.collectionName,
-        assignEmployee: this.assignEmployeeModel.collection.collectionName,
-        user: this.userModel.collection.collectionName,
-        cavity: this.masterCavityModel.collection.collectionName,
-        part: this.masterPartModel.collection.collectionName,
-        serialCounter: this.serialCounterModel.collection.collectionName,
-        employee: this.employeeModel.collection.collectionName,
-      };
 
       const results = [];
       const errors = [];
@@ -2054,9 +2040,9 @@ export class ProductionRecordService {
           const printerIp = printer.ip_device;
           const printServiceUrl = `http://${printerIp}:8000/api/print`;
 
-          // Initialize print payload with default values
+          // ใช้ pattern เดียวกับ printLabel ที่ทำงานได้
           let printPayload: PrintDto = {
-            tag_no: item.tag_no || 1,
+            tag_no: 0, // จะคำนวณใหม่
             order_id: '',
             sap_no: item.material_no || '',
             customer_name: '',
@@ -2067,15 +2053,27 @@ export class ProductionRecordService {
             mat: '-',
             color: '-',
             producer: '-',
-            date: moment().tz('Asia/Bangkok').format('YYYY-MM-DD'),
+            date: this.formatDateForPrinter(
+              new Date().toISOString().split('T')[0],
+            ), // ใช้ formatDateForPrinter
             quantity: item.quantity || 0,
             number_of_tags: item.number_of_tags || 1,
             code: '-',
             image_url: '',
           };
 
+          // ตรวจสอบ serial_code_mes
+          // แนะนำ (เข้าใจง่าย)
+          if (
+            item.serial_code_mes &&
+            !item.serial_code_mes.startsWith('B8MES|')
+          ) {
+            item.serial_code_mes = 'B8MES|' + item.serial_code_mes;
+          }
+
           // If serial_code_mes is provided, get data from production record
           if (item.serial_code_mes) {
+            // ใช้ aggregate pattern เดียวกับ printLabel
             const records = await this.productionRecordModel.aggregate([
               {
                 $match: {
@@ -2084,7 +2082,7 @@ export class ProductionRecordService {
               },
               {
                 $lookup: {
-                  from: collectionNames.assignOrder,
+                  from: 'assign_order',
                   localField: 'assign_order_id',
                   foreignField: '_id',
                   as: 'assign_order',
@@ -2098,7 +2096,7 @@ export class ProductionRecordService {
               },
               {
                 $lookup: {
-                  from: collectionNames.order,
+                  from: 'production_order',
                   localField: 'assign_order.production_order_id',
                   foreignField: '_id',
                   as: 'production_order',
@@ -2112,7 +2110,7 @@ export class ProductionRecordService {
               },
               {
                 $lookup: {
-                  from: collectionNames.part,
+                  from: 'master_parts',
                   localField: 'production_order.material_number',
                   foreignField: 'material_number',
                   as: 'part_info',
@@ -2124,23 +2122,24 @@ export class ProductionRecordService {
                   preserveNullAndEmptyArrays: true,
                 },
               },
+              // ใช้ cavity lookup pattern เดียวกับ printLabel
               {
                 $lookup: {
-                  from: collectionNames.cavity,
-                  localField: 'part_info._id',
-                  foreignField: 'parts',
+                  from: 'master_cavity',
+                  let: { part_id: '$part_info._id' },
+                  pipeline: [
+                    {
+                      $match: {
+                        $expr: { $in: ['$$part_id', '$parts'] },
+                      },
+                    },
+                  ],
                   as: 'cavity_info',
                 },
               },
               {
-                $unwind: {
-                  path: '$cavity_info',
-                  preserveNullAndEmptyArrays: true,
-                },
-              },
-              {
                 $lookup: {
-                  from: collectionNames.assignEmployee,
+                  from: 'assign_employee',
                   localField: 'assign_employee_ids',
                   foreignField: '_id',
                   as: 'assign_employees',
@@ -2148,7 +2147,7 @@ export class ProductionRecordService {
               },
               {
                 $lookup: {
-                  from: collectionNames.user,
+                  from: 'users',
                   localField: 'assign_employees.user_id',
                   foreignField: '_id',
                   as: 'users',
@@ -2156,7 +2155,7 @@ export class ProductionRecordService {
               },
               {
                 $lookup: {
-                  from: collectionNames.employee,
+                  from: 'employee',
                   localField: 'users.employee_id',
                   foreignField: 'employee_id',
                   as: 'employees',
@@ -2176,16 +2175,18 @@ export class ProductionRecordService {
                   material_description:
                     '$production_order.material_description',
                   machine_number: '$assign_order.machine_number',
-                  // Part Information
+                  // Part Information - ใช้ pattern เดียวกับ printLabel
                   part_number: '$part_info.part_number',
                   part_name: '$part_info.part_name',
                   part_model: '$part_info.part_model',
                   weight: '$part_info.weight',
                   image_url: '$part_info.image_url',
-                  // Cavity Information
-                  cavity_customer: '$cavity_info.customer',
-                  cavity_color: '$cavity_info.color',
-                  cavity_mat: '$cavity_info.mat',
+                  // Cavity Information - ใช้ [0] เหมือน printLabel
+                  cavity_customer: {
+                    $arrayElemAt: ['$cavity_info.customer', 0],
+                  },
+                  cavity_color: { $arrayElemAt: ['$cavity_info.color', 0] },
+                  cavity_mat: { $arrayElemAt: ['$cavity_info.mat', 0] },
                   // Employee Information
                   employees: {
                     $map: {
@@ -2211,89 +2212,87 @@ export class ProductionRecordService {
 
             const record = records[0];
 
-            // Update printPayload with data from production record
+            // คำนวณ tag_no เหมือน printLabel
+            const tagNo = item.serial_code_mes
+              ? parseInt(item.serial_code_mes.split('-')[2] || '0000')
+              : 0;
+
+            // Update printPayload with data from production record - ใช้ pattern เดียวกับ printLabel
             printPayload = {
-              ...printPayload,
-              order_id: record.order_id || '',
-              sap_no: record.material_number || item.material_no || '',
-              customer_name: record.cavity_customer || '',
-              model: record.part_model || '',
-              part_code: record.part_number || '',
-              part_name: record.part_name || '',
-              mat: record.cavity_mat || '',
-              color: record.cavity_color || '',
+              tag_no: tagNo,
+              order_id: record.order_id ?? '-',
+              sap_no: record.material_number ?? item.material_no ?? '-',
+              customer_name: record.cavity_customer ?? '-',
+              model: record.part_model ?? '-',
+              supplier: 'Serenity',
+              part_code: record.part_number ?? '-',
+              part_name: record.part_name ?? '-',
+              mat: record.cavity_mat ?? '-',
+              color: record.cavity_color ?? '-',
               producer: this.getEmployeeIds(record.employees),
-              date: moment(record.production_date)
-                .tz('Asia/Bangkok')
-                .format('YYYY-MM-DD'),
+              date: record.production_date
+                ? this.formatDateForPrinter(
+                    new Date(record.production_date)
+                      .toISOString()
+                      .split('T')[0],
+                  )
+                : this.formatDateForPrinter(
+                    new Date().toISOString().split('T')[0],
+                  ),
               quantity: item.quantity || 0,
-              code: record.serial_code || '',
-              image_url: record.image_url || '',
+              number_of_tags: item.number_of_tags || 1,
+              code: record.serial_code ?? '-',
+              image_url: record.image_url ?? '',
             };
           } else {
-            // If no serial_code_mes, try to get part information from material_number
+            // If no serial_code_mes, get part information from material_number - ใช้ pattern เดียวกับ printLabel
             if (item.material_no) {
-              const partInfo = await this.masterPartModel.aggregate([
+              const masterPart = await this.masterPartModel.aggregate([
                 {
-                  $match: {
-                    material_number: item.material_no,
-                  },
+                  $match: { material_number: item.material_no },
                 },
                 {
                   $lookup: {
-                    from: collectionNames.cavity,
-                    localField: '_id',
-                    foreignField: 'parts',
+                    from: 'master_cavity',
+                    let: { part_id: '$_id' },
+                    pipeline: [
+                      {
+                        $match: {
+                          $expr: { $in: ['$$part_id', '$parts'] },
+                        },
+                      },
+                    ],
                     as: 'cavity_info',
-                  },
-                },
-                {
-                  $unwind: {
-                    path: '$cavity_info',
-                    preserveNullAndEmptyArrays: true,
-                  },
-                },
-                {
-                  $project: {
-                    material_number: 1,
-                    material_description: 1,
-                    part_number: 1,
-                    part_name: 1,
-                    part_model: 1,
-                    weight: 1,
-                    image_url: 1,
-                    cavity_customer: '$cavity_info.customer',
-                    cavity_color: '$cavity_info.color',
-                    cavity_mat: '$cavity_info.mat',
                   },
                 },
               ]);
 
-              if (partInfo && partInfo.length > 0) {
-                const part = partInfo[0];
+              if (masterPart && masterPart.length > 0) {
+                const part = masterPart[0];
                 printPayload = {
                   ...printPayload,
-                  sap_no: part.material_number || item.material_no,
-                  customer_name: part.cavity_customer || '',
-                  model: part.part_model || '',
-                  part_code: part.part_number || '',
-                  part_name: part.part_name || '',
-                  mat: part.cavity_mat || '',
-                  color: part.cavity_color || '',
-                  image_url: part.image_url || '',
+                  sap_no: part.material_number ?? item.material_no ?? '-',
+                  customer_name: part.cavity_info[0]?.customer ?? '-',
+                  model: part.part_model ?? '-',
+                  part_code: part.part_number ?? '-',
+                  part_name: part.part_name ?? '-',
+                  mat: part.cavity_info[0]?.mat ?? '-',
+                  color: part.cavity_info[0]?.color ?? '-',
+                  image_url: part.image_url ?? '',
                 };
               }
             }
           }
 
-          // Validate print payload before adding to results
+          // Validate print payload
           this.validatePrintPayload(printPayload);
 
-          // ส่ง request ไปยัง print service (ถ้าต้องการ)
-          const printResult = await this.sendToPrintService(
-            printServiceUrl,
-            printPayload,
-          );
+          console.error('=== SENDING TO PRINT SERVICE ===');
+          console.error('URL:', printServiceUrl);
+          console.error('Payload:', JSON.stringify(printPayload, null, 2));
+
+          // ส่ง request ไปยัง print service - ใช้ pattern เดียวกับ printLabel
+          await axios.post(printServiceUrl, printPayload);
 
           // Add successful result
           results.push({
@@ -2308,17 +2307,6 @@ export class ProductionRecordService {
             processed_at: moment().tz('Asia/Bangkok').toISOString(),
             status: 'success',
           });
-
-          // Log successful processing
-          console.log(`Print request ${i + 1} prepared successfully:`, {
-            serial_code: item.serial_code_mes,
-            material_no: printPayload.sap_no,
-            quantity: printPayload.quantity,
-            printer: printer.device_name,
-            timestamp: moment()
-              .tz('Asia/Bangkok')
-              .format('YYYY-MM-DD HH:mm:ss'),
-          });
         } catch (itemError) {
           // Collect errors for individual items
           const errorInfo = {
@@ -2330,14 +2318,6 @@ export class ProductionRecordService {
           };
 
           errors.push(errorInfo);
-
-          console.error(`Print request ${i + 1} failed:`, {
-            error: (itemError as Error).message,
-            item: item,
-            timestamp: moment()
-              .tz('Asia/Bangkok')
-              .format('YYYY-MM-DD HH:mm:ss'),
-          });
         }
       }
 
@@ -2352,7 +2332,7 @@ export class ProductionRecordService {
         status = 'success';
         message = `All ${results.length} print requests prepared successfully`;
       } else if (hasSuccess && hasErrors) {
-        status = 'success'; // Partial success
+        status = 'success';
         message = `${results.length} successful, ${errors.length} failed out of ${data.length} items`;
       } else {
         status = 'error';
@@ -2377,14 +2357,6 @@ export class ProductionRecordService {
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;
-
-      // Log error for debugging
-      console.error('Print service error:', {
-        error: (error as Error).message,
-        stack: (error as Error).stack,
-        input_data: data,
-        timestamp: moment().tz('Asia/Bangkok').format('YYYY-MM-DD HH:mm:ss'),
-      });
 
       throw new HttpException(
         {
@@ -2427,21 +2399,6 @@ export class ProductionRecordService {
 
     if (payload.quantity <= 0) {
       throw new Error('Quantity must be greater than 0');
-    }
-  }
-
-  // Helper method สำหรับส่งข้อมูลไปยัง print service (ถ้าต้องการใช้งาน)
-  private async sendToPrintService(
-    url: string,
-    payload: PrintDto,
-  ): Promise<any> {
-    try {
-      await axios.post(url, payload);
-
-      return { success: true, message: 'Print job queued' };
-    } catch (error) {
-      console.error('Failed to send to print service:', error);
-      throw new Error('Print service unavailable');
     }
   }
 
