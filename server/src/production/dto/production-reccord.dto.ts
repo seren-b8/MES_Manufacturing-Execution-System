@@ -40,6 +40,7 @@ export interface labelData {
 }
 
 export class PrintRequestDto {
+  tag_no?: number; //split จาก serial_number
   customerName?: string;
   jobOrder?: string;
   mat?: string;

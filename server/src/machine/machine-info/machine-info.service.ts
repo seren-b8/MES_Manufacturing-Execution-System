@@ -1665,7 +1665,7 @@ export class MachineInfoService {
   }
 
   /**
-   * รีเซ็ต counter ของเครื่องจักรทั้งหมด
+   * รีเซ็ต counter ของเครื่องจักรทั้งหมด (ปรับปรุงแล้ว)
    * @param resetType - ประเภทการรีเซ็ต ('all', 'active-only', 'inactive-only')
    * @returns ResponseFormat with reset results
    */
@@ -1673,93 +1673,140 @@ export class MachineInfoService {
     resetType: 'all' | 'active-only' | 'inactive-only' = 'all',
   ): Promise<ResponseFormat<any>> {
     try {
-      const machines = await this.machineInfoModel.find({}).exec();
+      const startTime = Date.now();
 
-      if (!machines || machines.length === 0) {
+      // ใช้ aggregation เพื่อดึงข้อมูลเครื่องจักรและ active assignments ในครั้งเดียว
+      const machinesWithAssignments = await this.machineInfoModel.aggregate([
+        // Stage 1: Project เฉพาะฟิลด์ที่จำเป็น
+        {
+          $project: {
+            machine_number: 1,
+            machine_name: 1,
+            counter: 1,
+            recorded_counter: 1,
+            is_counter_paused: 1,
+            pause_start_counter: 1,
+          },
+        },
+
+        // Stage 2: Lookup active assign_order
+        {
+          $lookup: {
+            from: this.assignOrderModel.collection.collectionName,
+            let: { machineNumber: '$machine_number' },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$machine_number', '$$machineNumber'] },
+                      { $eq: ['$status', 'active'] },
+                    ],
+                  },
+                },
+              },
+              {
+                $project: {
+                  _id: 1,
+                  production_order_id: 1,
+                },
+              },
+            ],
+            as: 'activeAssignments',
+          },
+        },
+
+        // Stage 3: Add hasActiveOrder field
+        {
+          $addFields: {
+            hasActiveOrder: { $gt: [{ $size: '$activeAssignments' }, 0] },
+            activeAssignmentId: { $arrayElemAt: ['$activeAssignments._id', 0] },
+          },
+        },
+
+        // Stage 4: Filter based on resetType
+        ...(resetType !== 'all'
+          ? [
+              {
+                $match: {
+                  hasActiveOrder: resetType === 'active-only' ? true : false,
+                },
+              },
+            ]
+          : []),
+
+        // Stage 5: Project final result
+        {
+          $project: {
+            machine_number: 1,
+            machine_name: 1,
+            counter: 1,
+            recorded_counter: 1,
+            is_counter_paused: 1,
+            pause_start_counter: 1,
+            hasActiveOrder: 1,
+            activeAssignmentId: 1,
+          },
+        },
+      ]);
+
+      if (!machinesWithAssignments || machinesWithAssignments.length === 0) {
         return {
           status: 'error',
-          message: 'No machines found in the system',
+          message: `No machines found matching criteria: ${resetType}`,
           data: [],
         };
       }
+
+      // แยกเครื่องจักรออกเป็น 2 กลุ่ม
+      const machinesWithActiveOrders = machinesWithAssignments.filter(
+        (m) => m.hasActiveOrder,
+      );
+      const machinesWithoutActiveOrders = machinesWithAssignments.filter(
+        (m) => !m.hasActiveOrder,
+      );
 
       const resetResults = [];
       let successCount = 0;
       let failureCount = 0;
 
-      for (const machine of machines) {
+      // กลุ่มที่ 1: เครื่องจักรที่มี active orders - ใช้ setMachineCounter
+      for (const machine of machinesWithActiveOrders) {
         try {
-          // ตรวจสอบว่าเครื่องจักรมี active order หรือไม่
-          const activeOrder = await this.assignOrderModel
-            .findOne({
-              machine_number: machine.machine_number,
-              status: 'active',
-            })
-            .exec();
-
-          const hasActiveOrder = !!activeOrder;
-
-          // ตรวจสอบเงื่อนไขการรีเซ็ตตาม resetType
-          let shouldReset = false;
-          switch (resetType) {
-            case 'all':
-              shouldReset = true;
-              break;
-            case 'active-only':
-              shouldReset = hasActiveOrder;
-              break;
-            case 'inactive-only':
-              shouldReset = !hasActiveOrder;
-              break;
-          }
-
-          if (!shouldReset) {
-            resetResults.push({
-              machine_number: machine.machine_number,
-              status: 'skipped',
-              reason: `Machine does not match reset criteria (${resetType})`,
-              has_active_order: hasActiveOrder,
-              previous_counter: machine.counter || 0,
-              previous_recorded_counter: machine.recorded_counter || 0,
-            });
-            continue;
-          }
-
-          // เรียกใช้ resetMachineCounter
-          await this.resetMachineCounter(
+          // ใช้ setMachineCounter เพื่อรีเซ็ตและคำนวณค่าใหม่
+          // ส่งค่า 0 เพื่อรีเซ็ต counter
+          const result = await this.setMachineCounter(
             machine.machine_number,
-            hasActiveOrder,
+            0,
           );
 
-          // ดึงข้อมูลเครื่องจักรหลังจากรีเซ็ต
-          const updatedMachine = await this.machineInfoModel
-            .findOne({
+          if (result.status === 'success') {
+            resetResults.push({
               machine_number: machine.machine_number,
-            })
-            .exec();
-
-          resetResults.push({
-            machine_number: machine.machine_number,
-            status: 'success',
-            has_active_order: hasActiveOrder,
-            previous_counter: machine.counter || 0,
-            previous_recorded_counter: machine.recorded_counter || 0,
-            new_recorded_counter: updatedMachine?.recorded_counter || 0,
-            is_counter_paused: updatedMachine?.is_counter_paused || false,
-            pause_start_counter: updatedMachine?.pause_start_counter || null,
-          });
-
-          successCount++;
+              machine_name: machine.machine_name,
+              status: 'success',
+              method: 'setMachineCounter',
+              has_active_order: true,
+              previous_counter: machine.counter || 0,
+              previous_recorded_counter: machine.recorded_counter || 0,
+              new_counter: 0,
+              new_recorded_counter: 0,
+            });
+            successCount++;
+          } else {
+            throw new Error(result.message);
+          }
         } catch (error) {
           resetResults.push({
             machine_number: machine.machine_number,
+            machine_name: machine.machine_name,
             status: 'failed',
+            method: 'setMachineCounter',
             error: (error as Error).message,
-            has_active_order: false,
+            has_active_order: true,
             previous_counter: machine.counter || 0,
             previous_recorded_counter: machine.recorded_counter || 0,
           });
-
           failureCount++;
           console.error(
             `Failed to reset counter for machine ${machine.machine_number}:`,
@@ -1768,21 +1815,129 @@ export class MachineInfoService {
         }
       }
 
+      // กลุ่มที่ 2: เครื่องจักรที่ไม่มี active orders - ใช้ bulk update
+      if (machinesWithoutActiveOrders.length > 0) {
+        try {
+          const machineNumbers = machinesWithoutActiveOrders.map(
+            (m) => m.machine_number,
+          );
+
+          // ใช้ bulk update เพื่อรีเซ็ตเครื่องจักรที่ไม่มี active orders
+          const bulkUpdateResult = await this.machineInfoModel.updateMany(
+            { machine_number: { $in: machineNumbers } },
+            {
+              $set: {
+                counter: 0,
+                recorded_counter: 0,
+                is_counter_paused: false,
+                pause_start_counter: null,
+              },
+            },
+          );
+
+          // เพิ่มผลลัพธ์สำหรับแต่ละเครื่อง
+          for (const machine of machinesWithoutActiveOrders) {
+            resetResults.push({
+              machine_number: machine.machine_number,
+              machine_name: machine.machine_name,
+              status: 'success',
+              method: 'bulk_update',
+              has_active_order: false,
+              previous_counter: machine.counter || 0,
+              previous_recorded_counter: machine.recorded_counter || 0,
+              new_counter: 0,
+              new_recorded_counter: 0,
+              is_counter_paused: false,
+              pause_start_counter: null,
+            });
+            successCount++;
+          }
+
+          console.log(
+            `Bulk updated ${bulkUpdateResult.modifiedCount} machines without active orders`,
+          );
+        } catch (error) {
+          // ถ้า bulk update ล้มเหลว ให้ทำแต่ละเครื่องแยก
+          console.error(
+            'Bulk update failed, falling back to individual updates:',
+            error,
+          );
+
+          for (const machine of machinesWithoutActiveOrders) {
+            try {
+              await this.machineInfoModel.findOneAndUpdate(
+                { machine_number: machine.machine_number },
+                {
+                  $set: {
+                    counter: 0,
+                    recorded_counter: 0,
+                    is_counter_paused: false,
+                    pause_start_counter: null,
+                  },
+                },
+              );
+
+              resetResults.push({
+                machine_number: machine.machine_number,
+                machine_name: machine.machine_name,
+                status: 'success',
+                method: 'individual_update',
+                has_active_order: false,
+                previous_counter: machine.counter || 0,
+                previous_recorded_counter: machine.recorded_counter || 0,
+                new_counter: 0,
+                new_recorded_counter: 0,
+                is_counter_paused: false,
+                pause_start_counter: null,
+              });
+              successCount++;
+            } catch (individualError) {
+              resetResults.push({
+                machine_number: machine.machine_number,
+                machine_name: machine.machine_name,
+                status: 'failed',
+                method: 'individual_update',
+                error: (individualError as Error).message,
+                has_active_order: false,
+                previous_counter: machine.counter || 0,
+                previous_recorded_counter: machine.recorded_counter || 0,
+              });
+              failureCount++;
+            }
+          }
+        }
+      }
+
+      const endTime = Date.now();
+      const executionTime = endTime - startTime;
+
       // สรุปผลการรีเซ็ต
       const summary = {
-        total_machines: machines.length,
+        total_machines: machinesWithAssignments.length,
+        machines_with_active_orders: machinesWithActiveOrders.length,
+        machines_without_active_orders: machinesWithoutActiveOrders.length,
         success_count: successCount,
         failure_count: failureCount,
-        skipped_count: resetResults.filter((r) => r.status === 'skipped')
-          .length,
+        success_rate: `${((successCount / machinesWithAssignments.length) * 100).toFixed(2)}%`,
         reset_type: resetType,
+        execution_time_ms: executionTime,
         reset_timestamp: new Date(),
+        performance: {
+          used_set_machine_counter: machinesWithActiveOrders.length,
+          used_bulk_update: machinesWithoutActiveOrders.length > 0,
+          avg_time_per_machine: `${(executionTime / machinesWithAssignments.length).toFixed(2)}ms`,
+        },
         details: resetResults,
       };
 
+      const statusMessage =
+        failureCount === 0
+          ? `Reset completed successfully: ${successCount} machines reset in ${executionTime}ms`
+          : `Reset completed with errors: ${successCount} success, ${failureCount} failed in ${executionTime}ms`;
+
       return {
         status: failureCount === 0 ? 'success' : 'error',
-        message: `Reset completed: ${successCount} success, ${failureCount} failed, ${summary.skipped_count} skipped`,
+        message: statusMessage,
         data: [summary],
       };
     } catch (error) {

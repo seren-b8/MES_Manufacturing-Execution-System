@@ -168,7 +168,7 @@ export class MachineInfoController {
     name: 'resetMachineCounterDaily',
     timeZone: 'UTC', // UTC time to match Thailand timezone (UTC+7)
   })
-  async handleDailyMachineCounterReset() {
+  async autoDailyMachineCounterReset() {
     const thaiTime = moment().tz('Asia/Bangkok');
     this.logger.log(
       `Starting daily machine counter reset at ${thaiTime.format('YYYY-MM-DD HH:mm:ss')} (Thailand Time)`,

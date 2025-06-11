@@ -1932,9 +1932,10 @@ export class ProductionRecordService {
       const labelData = masterPart[0];
 
       const printPayload: PrintDto = {
-        tag_no: data.serial_number
-          ? parseInt(data.serial_number.split('-')[2] || '0000')
-          : 0,
+        tag_no:
+          data.serial_number && data.serial_number.includes('-')
+            ? parseInt(data.serial_number.split('-')[2] || '0', 10) || 0
+            : 0,
         order_id: data?.jobOrder ?? '-',
         sap_no: data?.matNo ?? '-',
         customer_name: data?.customerName ?? '-',
@@ -2042,7 +2043,7 @@ export class ProductionRecordService {
 
           // ใช้ pattern เดียวกับ printLabel ที่ทำงานได้
           let printPayload: PrintDto = {
-            tag_no: 0, // จะคำนวณใหม่
+            tag_no: item.tag_no || 0,
             order_id: '',
             sap_no: item.material_no || '',
             customer_name: '',
@@ -2213,9 +2214,10 @@ export class ProductionRecordService {
             const record = records[0];
 
             // คำนวณ tag_no เหมือน printLabel
-            const tagNo = item.serial_code_mes
-              ? parseInt(item.serial_code_mes.split('-')[2] || '0000')
-              : 0;
+            const tagNo =
+              item.tag_no || item.serial_code_mes
+                ? parseInt(item.serial_code_mes.split('-')[2] || '0000')
+                : 0;
 
             // Update printPayload with data from production record - ใช้ pattern เดียวกับ printLabel
             printPayload = {
