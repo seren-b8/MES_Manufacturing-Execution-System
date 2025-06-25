@@ -9,6 +9,7 @@ import { SapSyncValidationService } from './sap-sync-validation.service';
 import * as moment from 'moment-timezone';
 import * as _ from 'lodash';
 import { ProductionOrder } from 'src/schema/production-order.schema';
+import { toObjectId } from 'src/shared/utils/type.utils';
 
 @Injectable()
 export class SapProductionSyncService {
@@ -311,26 +312,32 @@ export class SapProductionSyncService {
 
       // เก็บข้อมูลทั้งหมดของแต่ละ order ก่อนประมวลผล
       const orderGroups: {
-        [orderId: string]: { key: string; records: any[] }[];
+        [orderDateKey: string]: { key: string; records: any[] }[];
       } = {};
 
       // จัดกลุ่มตาม orderId
       Object.entries(groupedRecords).forEach(([key, groupRecords]) => {
-        const [orderId] = key.split('-');
-        if (!orderGroups[orderId]) {
-          orderGroups[orderId] = [];
+        const [orderId, , , dateStr] = key.split('-');
+        const orderDateKey = `${orderId}-${dateStr}`;
+        if (!orderGroups[orderDateKey]) {
+          orderGroups[orderDateKey] = [];
         }
-        orderGroups[orderId].push({ key, records: groupRecords });
+        orderGroups[orderDateKey].push({ key, records: groupRecords });
       });
 
       const orderPromises = Object.entries(orderGroups).map(
-        async ([orderId, groups]) => {
-          // ใช้ TID ที่มีอยู่แล้วหรือสร้างใหม่
-          let sharedTid = orderTidMap.get(orderId);
-          if (!sharedTid) {
-            sharedTid = await this.validationService.createTID(orderId);
+        async ([orderDateKey, groups]) => {
+          const [baseOrderId, baseDateStr] = orderDateKey.split('-');
 
-            orderTidMap.set(orderId, sharedTid);
+          // ใช้ TID ที่มีอยู่แล้วหรือสร้างใหม่
+          let sharedTid = orderTidMap.get(orderDateKey);
+          if (!sharedTid) {
+            sharedTid = await this.validationService.createTID(
+              baseOrderId,
+              baseDateStr,
+            );
+
+            orderTidMap.set(orderDateKey, sharedTid);
           }
           // เตรียมข้อมูลสำหรับทุกกลุ่มใน order นี้
           let globalItemCounter = 1; // itemno เริ่มที่ 1 สำหรับแต่ละ order
@@ -553,6 +560,7 @@ export class SapProductionSyncService {
           .find({
             confirmation_status: 'confirmed',
             is_synced_to_sap: false,
+            assign_order_id: { $ne: null }, // เพิ่มเงื่อนไขนี้
           })
           .select(
             'quantity is_not_good assign_employee_ids assign_order_id master_not_good_id createdAt production_date',
@@ -560,8 +568,10 @@ export class SapProductionSyncService {
           .populate([
             {
               path: 'assign_order_id',
+              match: { _id: { $ne: null } },
               populate: {
                 path: 'production_order_id',
+                match: { _id: { $ne: null } },
               },
             },
             'master_not_good_id',
@@ -576,11 +586,28 @@ export class SapProductionSyncService {
           .limit(batchSize)
           .lean();
 
-        if (pendingRecords.length === 0) break;
+        if (pendingRecords.length === 0) {
+          console.warn(
+            `No records found at page ${currentPage}, breaking loop`,
+          );
+          break;
+        }
+        const validRecords = pendingRecords.filter((record) => {
+          const assignOrder = record.assign_order_id as any;
+          return assignOrder?.production_order_id;
+        });
+
+        if (validRecords.length === 0) {
+          return {
+            status: 'success',
+            message: 'No valid records found for sync',
+            data: [],
+          };
+        }
 
         // ประมวลผล batch นี้ โดยส่ง orderTidMap เข้าไปด้วย
         const batchProcessed = await this.createSyncLogsFromRecords(
-          pendingRecords,
+          validRecords,
           orderTidMap,
         );
         processedCount += batchProcessed;
@@ -735,6 +762,9 @@ export class SapProductionSyncService {
       // ส่งเฉพาะ logs ที่ผ่านการตรวจสอบแล้ว
       if (validLogs.length > 0) {
         await this.sendToSapInBatches(validLogs);
+        console.warn(
+          `Sent ${validLogs.length} valid sync logs to SAP with TID: ${validLogs[0].tid}`,
+        );
       }
 
       return {

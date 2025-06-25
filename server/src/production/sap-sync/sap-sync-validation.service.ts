@@ -251,7 +251,7 @@ export class SapSyncValidationService {
     return employeeId.substring(0, this.EMP_ID_MAX_LENGTH);
   }
 
-  async createTID(orderId: string): Promise<string> {
+  async createTID(orderId: string, budat: string): Promise<string> {
     try {
       console.log(`Creating TID for orderId: ${orderId}`);
 
@@ -261,7 +261,7 @@ export class SapSyncValidationService {
       const randomValue = Math.floor(Math.random() * 1000000);
 
       // สร้าง seed สำหรับการเข้ารหัส
-      const seedValue = `${timestamp}-${orderDigits}-${randomValue}`;
+      const seedValue = `${timestamp}-${orderDigits}-${budat}-${randomValue}`;
       console.log(`Seed value: ${seedValue}`);
 
       // ใช้ crypto เพื่อสร้าง hash
@@ -281,7 +281,7 @@ export class SapSyncValidationService {
         console.log(`TID ${tid} already exists, regenerating...`);
         // หน่วงเวลาเล็กน้อยเพื่อให้ timestamp เปลี่ยน
         await new Promise((resolve) => setTimeout(resolve, 10));
-        return this.createTID(orderId);
+        return this.createTID(orderId, budat);
       }
 
       console.log(
