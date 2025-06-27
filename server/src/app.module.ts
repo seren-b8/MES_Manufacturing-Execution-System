@@ -42,8 +42,13 @@ const validateConfig = (config: Record<string, unknown>) => {
     ThrottlerModule.forRoot([
       {
         name: 'default',
-        ttl: 60000, // เป็นมิลลิวินาที (60 วินาที)
-        limit: 500, // จำกัดการเรียกใช้งาน 50 ครั้ง
+        ttl: 60000,
+        limit: 1000, // เพิ่มจาก 500 เป็น 1000
+      },
+      {
+        name: 'auth', // แยก limit สำหรับ auth endpoints
+        ttl: 60000,
+        limit: 100,
       },
     ]),
     DatabaseModule,
