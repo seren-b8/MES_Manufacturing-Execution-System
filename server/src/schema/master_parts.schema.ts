@@ -23,6 +23,15 @@ export class MasterPart extends Document {
 
   @Prop()
   image_url: string;
+
+  @Prop({ type: String })
+  co_product_material?: string; // material_number ของงานคู่
+
+  @Prop({ default: false })
+  is_co_product: boolean;
 }
 
 export const MasterPartSchema = SchemaFactory.createForClass(MasterPart);
+
+MasterPartSchema.index({ is_co_product: 1 });
+MasterPartSchema.index({ co_product_material: 1 });

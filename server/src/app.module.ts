@@ -16,6 +16,7 @@ import { CustomThrottlerGuard } from './auth/guard/custom-throttler.guard';
 import { MesCacheModule } from './shared/cache/cache.module';
 import { FileClientModule } from './shared/services/file-client/file-client.module';
 import { ExcelModule } from './excel/excel.module';
+import { LabelModule } from './label/label.module';
 
 const validateConfig = (config: Record<string, unknown>) => {
   const requiredKeys = ['SECRET_KEY'];
@@ -61,6 +62,7 @@ const validateConfig = (config: Record<string, unknown>) => {
     MesCacheModule,
     FileClientModule,
     ExcelModule,
+    LabelModule,
   ],
   controllers: [AppController],
   providers: [

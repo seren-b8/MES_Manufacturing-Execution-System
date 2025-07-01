@@ -1,0 +1,96 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Label Canvas Preview</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      background: white;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .container {
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Label Preview - Canvas</h2>
+    <canvas id="labelCanvas" width="640" height="550"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('labelCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Copy โค้ดจาก service มาใส่ (ลบ async/await)
+    function drawLabel() {
+      // Utils
+      const drawText = (text, x, y, font = '16px Arial', bold = false) => {
+        ctx.font = bold ? `bold ${font}` : font;
+        ctx.fillText(text, x, y);
+      };
+
+      const drawBox = (x, y, w, h, value, labelBold = false, valueBold = true) => {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000000';
+        ctx.strokeRect(x, y, w, h);
+        drawText(value, x + 5, y + 15, '16px Arial', valueBold);
+      };
+
+      // Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 640, 550);
+
+      // Header
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 20px Arial';
+      ctx.fillText('MES B8', 10, 30);
+      ctx.font = '14px Arial';
+      ctx.fillText('Manufacturing Execution System B8', 10, 50);
+
+      // Customer Row
+    //   drawText('Customer Name :', 10, 75);
+    //   drawText('DAIKIN COMPRESSOR', 150, 75, '14px Arial', true);
+      drawText('Model –', 500, 75);
+      drawBox(0, 60, 640, 40, '', 'Customer Name : DAIKIN COMPRESSOR');
+
+      // Boxes
+      drawBox(0, 100, 640, 40, 'Supplier', '1650009038');
+      drawBox(0, 140, 320, 40, 'Order ID', '2PD04462/1 – 1');
+      drawBox(0, 180, 320, 100, 'Part Code', 'Insulator B');
+      drawBox(0, 280, 320, 100, 'Part Name', 'Insulator B');
+      drawBox(0, 380, 320, 150, "Picture of part", 'NATURAL');
+
+
+    //   drawBox(315, 100, 305, 40, 'SAP No', '49001929');
+      drawBox(320, 140, 320, 40, 'SAP No', 'LIQUID CRYSTAL');
+      drawBox(320, 180, 320, 50, "Mat'l", 'NATURAL');
+      drawBox(320, 230, 320, 50, "Color", 'NATURAL');
+      drawBox(320, 280, 320, 50, "Producer", 'NATURAL');
+      drawBox(320, 330, 320, 50, "Date", 'NATURAL');
+      drawBox(320, 380, 320, 150, "Quantity (Unit)", 'NATURAL');
+
+      // Quantity
+      ctx.font = 'bold 60px Arial';
+      ctx.fillText('70', 400, 500);
+      ctx.font = '16px Arial';
+      ctx.fillText('PCS.', 540, 500);
+
+      // Footer
+      ctx.font = '12px Arial';
+      ctx.fillText('B8MES | OK2EBB5C927–6QLhOOTna7–4 (1/1)PRO –001 LABEL MES | Effective Date 03–05–2568 Rev.0', 10, 545);
+    }
+
+    // วาดทันทีที่โหลดหน้า
+    drawLabel();
+  </script>
+</body>
+</html>

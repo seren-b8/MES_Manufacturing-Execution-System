@@ -52,6 +52,7 @@ import {
   SerialCounter,
   SerialCounterSchema,
 } from '../schema/serial-counter.schema';
+import { LabelJob, LabelJobSchema } from 'src/schema/label-job.shema';
 
 @Module({
   imports: [
@@ -69,6 +70,9 @@ import {
 
       // Printter Management
       { name: PrinterDevice.name, schema: PrinterDeviceSchema },
+
+      // Label Job
+      { name: LabelJob.name, schema: LabelJobSchema },
 
       // Master Data
       { name: MasterCavity.name, schema: MasterCavitySchema },
