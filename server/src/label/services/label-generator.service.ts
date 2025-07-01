@@ -215,7 +215,7 @@ export class LabelGeneratorService {
       ctx.fillRect(0, 0, 640, 550);
 
       // Header
-      const iconImage = await loadImage('../icon.png');
+      const iconImage = await loadImage('../template/icon.png');
       ctx.drawImage(iconImage, 5, 5, 50, 50);
       drawLine(65, 0, 65, 50);
       ctx.fillStyle = '#000000';
@@ -245,7 +245,7 @@ export class LabelGeneratorService {
       drawBox(0, 380, 350, 150, '');
       drawText('Picture of part', 5, 400, '20px Arial', true);
 
-      const partImage = await loadImage('../icon.png');
+      const partImage = await loadImage('../template/icon.png'); // <-- Placeholder for part image
       ctx.drawImage(partImage, 40, 410, 100, 100);
 
       ctx.drawImage(qrImage, 200, 380, 150, 150);
