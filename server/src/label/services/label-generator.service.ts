@@ -12,37 +12,16 @@ export class LabelGeneratorService {
   async generate1PartLabel(): Promise<Buffer> {
     const canvas = createCanvas(640, 550);
     const ctx = canvas.getContext('2d');
-    function addQRCodePlaceholder(x, y, size = 100) {
-      // วาดกรอบ QR Code
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, size, size);
-
-      // วาด pattern QR แบบ mock
-      ctx.fillStyle = '#000000';
-      for (let i = 0; i < 15; i++) {
-        for (let j = 0; j < 15; j++) {
-          if ((i + j) % 2 === 0) {
-            ctx.fillRect(x + i * 10, y + j * 10, 8, 8);
-          }
-        }
-      }
-      ctx.font = '12px Arial';
-      ctx.fillText('QR CODE', x + 50, y + size / 2);
-    }
-
-    function addImage(imageUrl, x, y, width, height) {
-      const img = new Image();
-      img.onload = function () {
-        ctx.drawImage(img, x, y, width, height);
-      };
-      img.onerror = function () {
-        // ถ้าโหลดรูปไม่ได้
-        ctx.strokeRect(x, y, width, height);
-        ctx.fillText('IMAGE ERROR', x + 10, y + height / 2);
-      };
-      img.src = imageUrl;
-    }
+    const qrData = 'MES-B8-2PD04462/1-20250627'; // Example QR code data
+    const qrBuffer = await QRCode.toBuffer(qrData, {
+      width: 70,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF',
+      },
+    });
+    const qrImage = await this.loadImage(qrBuffer);
 
     function drawCenteredText(
       text,
@@ -201,7 +180,7 @@ export class LabelGeneratorService {
       drawSmartBox(x, y, w, h, text, 20, 12);
     }
 
-    function drawLabel() {
+    async function drawLabel() {
       // Utils
       const drawText = (text, x, y, font = '16px Arial', bold = false) => {
         ctx.font = bold ? `bold ${font}` : font;
@@ -236,7 +215,8 @@ export class LabelGeneratorService {
       ctx.fillRect(0, 0, 640, 550);
 
       // Header
-      addImage('../icon.png', 5, 5, 50, 50);
+      const iconImage = await loadImage('../icon.png');
+      ctx.drawImage(iconImage, 5, 5, 50, 50);
       drawLine(65, 0, 65, 50);
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 30px Arial';
@@ -264,8 +244,11 @@ export class LabelGeneratorService {
 
       drawBox(0, 380, 350, 150, '');
       drawText('Picture of part', 5, 400, '20px Arial', true);
-      addImage('../icon.png', 40, 410, 100, 100); // <-- Placeholder for part image
-      addQRCodePlaceholder(200, 380, 150); // <-- Placeholder for QR Code
+
+      const partImage = await loadImage('../icon.png');
+      ctx.drawImage(partImage, 40, 410, 100, 100);
+
+      ctx.drawImage(qrImage, 200, 380, 150, 150);
 
       //box data row 1
       drawSmartText('124-9001-929', 100, 140, 250, 40, 20, 12); // <-- Order ID (Smart Text)
