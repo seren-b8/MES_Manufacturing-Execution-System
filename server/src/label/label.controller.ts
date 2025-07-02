@@ -32,9 +32,9 @@ export class LabelController {
   async previewLabel() // @Param('type') type: "1_part"| "2_part",
   // @Query() mockData: any,
   : Promise<any> {
-    const type = '1_part'; // or "2_part" based on your requirement
+    const type: '1_part' | '2_part' = '2_part'; // or "1_part" based on your requirement
     const buffer = await this.labelGeneratorService
-      .generate1PartLabel
+      .generate2PartLabel
       //   type, // or "2_part" based on your requirement
       //   //   mockData,
       ();
@@ -60,7 +60,7 @@ export class LabelController {
               </div>
               <div class="preview-box">
                 <h3>Reference Design</h3>
-                <img src="/label-references/${type == '1_part' ? '1part.png' : '2part.png'}" />
+                <img src="/label-references/${'2part.png'}" />
                 <p><em>Target design to match</em></p>
               </div>
             </div>
