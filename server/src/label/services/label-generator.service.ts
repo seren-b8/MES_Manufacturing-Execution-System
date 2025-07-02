@@ -300,9 +300,6 @@ export class LabelGeneratorService {
     const canvas = createCanvas(640, 550);
     const ctx = canvas.getContext('2d');
 
-    const qrData1 = 'B8MES|NG2EBB5C312-6QLZuGcXSX-3'; // QR data for part 1
-    const qrData2 = 'B8MES|NG2EBB5C312-6QLZuGcXSX-4'; // QR data for part 2
-
     const iconImage = await loadImage('public/icon/Icon.png');
     const partImage1 = await loadImage('public/icon/Icon.png'); // <-- part 1 image
     const partImage2 = await loadImage('public/icon/Icon.png'); // <-- part 2 image
@@ -320,12 +317,14 @@ export class LabelGeneratorService {
         sapNo: '49001929',
         code: '2PD04462/1-1',
         name: 'B8MES-4900',
+        serial: 'B8MES|NG2EBB5C312-6QLZuGcXSX-3',
       },
       part2: {
         orderId: '124-9001-930',
         sapNo: '49001930',
         code: '2PD04462/1-2',
         name: 'B8MES-4901',
+        serial: 'B8MES|NG2EBB5C312-6QLZuGcXSX-4',
       },
     };
 
@@ -599,11 +598,11 @@ export class LabelGeneratorService {
 
       drawSmartText('A123', 200, 180, 150, 50, 50, 12); // <-- Part Code 1 (Smart Text)
       drawSmartText('B8MES-49001929', 200, 230, 150, 50, 50, 12); // <-- Part Name 1 (Smart Text)
-      await drawQRCode(qrData1, 100, 180, 100); // <-- part 1 QR Code
+      await drawQRCode(labelData.part1.serial, 100, 180, 100); // <-- part 1 QR Code
 
       drawSmartText('A123', 100, 280, 150, 50, 50, 12); // <-- Part Code 2 (Smart Text)
       drawSmartText('B8MES-49001929', 100, 330, 150, 50, 50, 12); // <-- Part Name 2 (Smart Text)
-      await drawQRCode(qrData2, 250, 280, 100); // <-- part 2 QR Code
+      await drawQRCode(labelData.part2.serial, 250, 280, 100); // <-- part 2 QR Code
 
       drawLine(450, 140, 450, 380);
       drawBox(350, 140, 290, 40, 'SAP No');
@@ -633,7 +632,7 @@ export class LabelGeneratorService {
 
       // Footer
       ctx.font = '12px Arial';
-      ctx.fillText('B8MES | OK2EBB5C927–6QLhOOTna7–4 ', 5, 545); // <-- QR Code text
+      ctx.fillText(labelData.part1.serial, 5, 545); // <-- QR Code text
       ctx.fillText(
         'F - PRO – 001 LABEL MES | Effective Date 03–05–2568 Rev.0',
         300,
