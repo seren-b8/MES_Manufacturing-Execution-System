@@ -34,7 +34,7 @@ export class LabelController {
   : Promise<any> {
     const type: '1_part' | '2_part' = '2_part'; // or "1_part" based on your requirement
     const buffer = await this.labelGeneratorService
-      .generate2PartLabel
+      .generate1PartLabel
       //   type, // or "2_part" based on your requirement
       //   //   mockData,
       ();

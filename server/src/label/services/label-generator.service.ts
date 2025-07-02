@@ -5,6 +5,7 @@ import * as fs from 'fs';
 
 import * as QRCode from 'qrcode';
 import { ProductionRecord } from 'src/schema/production-record.schema';
+import e from 'express';
 // import { CoProductRecord } from '../schemas/co-product-record.schema';
 
 @Injectable()
@@ -12,175 +13,30 @@ export class LabelGeneratorService {
   async generate1PartLabel(): Promise<Buffer> {
     const canvas = createCanvas(640, 550);
     const ctx = canvas.getContext('2d');
-    const qrData = 'B8MES|NG2EBB5C312-6QLZuGcXSX-3'; // QR data
-    const qrBuffer = await QRCode.toBuffer(qrData, {
-      width: 150,
-      margin: 0,
-      color: {
-        dark: '#000000',
-        light: '#FFFFFF',
+    const iconImage = 'public/icon/Icon.png';
+
+    const labelData = {
+      labelNo: '1',
+      customer: 'DAIKIN COMPRESSOR',
+      supplier: 'SNC SERENITY CO., LTD.',
+      mat: 'abasda',
+      color: 'Black',
+      producer: '2611061',
+      date: '2023-05-01',
+      part1: {
+        orderId: '124-9001-929',
+        sapNo: '49001929',
+        code: '2PD04462/1-1',
+        name: 'B8MES-4900',
+        quantity: 10000,
+        serial: 'B8MES|NG2EBB5C312-6QLZuGcXSX-3',
+        partImage: 'public/icon/Icon.png',
       },
-    });
-    const qrImage = await this.loadImage(qrBuffer);
+    };
 
-    function drawCenteredText(
-      text,
-      x,
-      y,
-      width,
-      height,
-      font = '20px Arial',
-      bold = false,
-    ) {
-      ctx.font = bold ? `bold ${font}` : font;
+    // Function สำหรับวาดรูปแบบปลอดภัย
 
-      // วัดขนาดข้อความ
-      const textMetrics = ctx.measureText(text);
-      const textWidth = textMetrics.width;
-      const textHeight = parseInt(font); // ประมาณจาก font size
-
-      // คำนวณตำแหน่งกึ่งกลาง
-      const centerX = x + width / 2 - textWidth / 2;
-      const centerY = y + height / 2 + textHeight / 4; // +textHeight/4 เพื่อจัดให้ดูกึ่งกลาง
-
-      ctx.fillText(text, centerX, centerY);
-    }
-
-    function drawSmartText(
-      text,
-      x,
-      y,
-      width,
-      height,
-      maxFontSize = 20,
-      minFontSize = 10,
-    ) {
-      if (!text) return;
-
-      const padding = 5;
-      const availableWidth = width - padding * 2;
-      const availableHeight = height - padding * 2;
-
-      let fontSize = maxFontSize;
-      let lines = [];
-      let totalHeight = 0;
-
-      // ลองขนาด font จากใหญ่ไปเล็ก
-      for (fontSize = maxFontSize; fontSize >= minFontSize; fontSize--) {
-        ctx.font = `bold ${fontSize}px Arial`;
-        lines = wrapText(text, availableWidth);
-        totalHeight = lines.length * (fontSize * 1.2); // line height = fontSize * 1.2
-
-        // ถ้าความสูงรวมไม่เกิน available height ให้หยุด
-        if (totalHeight <= availableHeight) {
-          break;
-        }
-      }
-
-      // คำนวณตำแหน่งเริ่มต้น (กึ่งกลางแนวตั้ง)
-      const startY =
-        y + padding + (availableHeight - totalHeight) / 2 + fontSize;
-
-      // วาดแต่ละบรรทัด
-      ctx.fillStyle = '#000000';
-      ctx.font = `${fontSize}px Arial`;
-
-      lines.forEach((line, index) => {
-        const lineY = startY + index * fontSize * 1.2;
-        const textWidth = ctx.measureText(line).width;
-        const centerX = x + padding + (availableWidth - textWidth) / 2; // กึ่งกลางแนวนอน
-
-        ctx.fillText(line, centerX, lineY);
-      });
-    }
-
-    // Function สำหรับ word wrap
-    function wrapText(text, maxWidth) {
-      const words = text.split(' ');
-      const lines = [];
-      let currentLine = '';
-
-      for (let word of words) {
-        const testLine = currentLine + (currentLine ? ' ' : '') + word;
-        const testWidth = ctx.measureText(testLine).width;
-
-        if (testWidth <= maxWidth) {
-          currentLine = testLine;
-        } else {
-          if (currentLine) {
-            lines.push(currentLine);
-            currentLine = word;
-          } else {
-            // ถ้าคำเดียวยาวเกินไป ให้ตัดตัวอักษร
-            lines.push(...breakLongWord(word, maxWidth));
-            currentLine = '';
-          }
-        }
-      }
-
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-
-      return lines;
-    }
-
-    // Function สำหรับตัดคำยาว
-    function breakLongWord(word, maxWidth) {
-      const lines = [];
-      let currentLine = '';
-
-      for (let char of word) {
-        const testLine = currentLine + char;
-        const testWidth = ctx.measureText(testLine).width;
-
-        if (testWidth <= maxWidth) {
-          currentLine = testLine;
-        } else {
-          if (currentLine) {
-            lines.push(currentLine);
-          }
-          currentLine = char;
-        }
-      }
-
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-
-      return lines;
-    }
-
-    // Function สำหรับวาดกล่องพร้อมข้อความ Smart
-    function drawSmartBox(
-      x,
-      y,
-      w,
-      h,
-      text,
-      maxFontSize = 20,
-      minFontSize = 10,
-    ) {
-      // วาดกล่อง
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = '#000000';
-      ctx.strokeRect(x, y, w, h);
-
-      // วาดข้อความ Smart
-      drawSmartText(text, x, y, w, h, maxFontSize, minFontSize);
-    }
-
-    // Function พิเศษสำหรับข้อมูลสำคัญ (ปรับ font น้อยกว่า)
-    function drawImportantBox(x, y, w, h, text) {
-      drawSmartBox(x, y, w, h, text, 24, 16); // font ใหญ่กว่า
-    }
-
-    // Function สำหรับข้อมูลทั่วไป
-    function drawRegularBox(x, y, w, h, text) {
-      drawSmartBox(x, y, w, h, text, 20, 12);
-    }
-
-    async function drawLabel() {
+    const drawLabel = async () => {
       // Utils
       const drawText = (text, x, y, font = '16px Arial', bold = false) => {
         ctx.font = bold ? `bold ${font}` : font;
@@ -215,8 +71,8 @@ export class LabelGeneratorService {
       ctx.fillRect(0, 0, 640, 550);
 
       // Header
-      const iconImage = await loadImage('public/icon/Icon.png');
-      ctx.drawImage(iconImage, 5, 5, 50, 50);
+      // ctx.drawImage(iconImage, 5, 5, 50, 50);
+      await this.drawImage(iconImage, 5, 5, 50, 50, ctx);
       drawLine(65, 0, 65, 50);
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 30px Arial';
@@ -224,15 +80,15 @@ export class LabelGeneratorService {
       ctx.font = 'bold 17px Arial';
       ctx.fillText('Manufacturing Execution System B8', 75, 50);
 
-      drawCenteredText('1', 560, 20, 60, 40, '50px Arial', true); // <-- label number
+      this.drawCenteredText('1', 560, 20, 60, 40, '50px Arial', true, ctx); // <-- label number
 
       drawText('Model -', 520, 90, '20px Arial', true); // <-- model
-      drawBox(0, 60, 640, 40, 'Customer Name : DAIKIN COMPRESSOR'); // <-- customer name
+      drawBox(0, 60, 640, 40, `Customer Name : ${labelData.customer}`); // <-- customer name
 
       // Boxes
       drawLine(100, 100, 100, 380);
-      drawBox(0, 100, 640, 40, 'Supplier    Serenity');
-      drawBox(0, 140, 350, 40, 'Order ID');
+      drawBox(0, 100, 640, 40, `Supplier    ${labelData.supplier}`);
+      drawBox(0, 140, 350, 40, `Order ID`);
 
       drawBox(0, 180, 350, 100, '');
       drawText('Part', 5, 220, '25px Arial', true);
@@ -245,15 +101,23 @@ export class LabelGeneratorService {
       drawBox(0, 380, 350, 150, '');
       drawText('Picture of part', 5, 400, '20px Arial', true);
 
-      const partImage = await loadImage('public/icon/Icon.png'); // <-- Placeholder for part image
-      ctx.drawImage(partImage, 40, 410, 100, 100);
+      await this.drawImage(labelData.part1.partImage, 40, 410, 100, 100, ctx);
 
-      ctx.drawImage(qrImage, 200, 380, 150, 150);
+      await this.drawQRCode(labelData.part1.serial, 200, 380, 150, ctx); // <-- part 1 QR Code
 
       //box data row 1
-      drawSmartText('124-9001-929', 100, 140, 250, 40, 25, 12); // <-- Order ID (Smart Text)
-      drawSmartText('2PD04462/1-1', 100, 180, 250, 100, 60, 12); // <-- Part Code (Smart Text)
-      drawSmartText('B8MES-4900', 100, 280, 250, 100, 60, 12); // <-- Part Name (Smart Text)
+      this.drawSmartText(
+        labelData.part1.orderId,
+        100,
+        140,
+        250,
+        40,
+        25,
+        12,
+        ctx,
+      ); // <-- Order ID (Smart Text)
+      this.drawSmartText(labelData.part1.code, 100, 180, 250, 100, 60, 12, ctx); // <-- Part Code (Smart Text)
+      this.drawSmartText(labelData.part1.name, 100, 280, 250, 100, 60, 12, ctx); // <-- Part Name (Smart Text)
 
       drawLine(450, 140, 450, 380);
       drawBox(350, 140, 290, 40, 'SAP No');
@@ -265,15 +129,24 @@ export class LabelGeneratorService {
       drawText('Quantity (Unit)', 360, 400, '20px Arial', true);
 
       // box data row 2
-      drawSmartText('49001929', 450, 140, 190, 40, 20, 12); // <-- SAP No (Smart Text)
+      this.drawSmartText(labelData.part1.sapNo, 450, 140, 190, 40, 20, 12, ctx); // <-- SAP No (Smart Text)
 
-      drawSmartText('abasda', 450, 180, 190, 50, 25, 12); // <-- mat (Smart Text)
-      drawSmartText('Black', 450, 230, 190, 50, 25, 12); // <-- Color (Smart Text)
-      drawSmartText('2611061', 450, 280, 190, 50, 25, 12); // <-- Producer (Smart Text)
-      drawSmartText('2023-05-01', 450, 330, 190, 50, 25, 12); // <-- Date (Smart Text)
+      this.drawSmartText(labelData.mat, 450, 180, 190, 50, 25, 12, ctx); // <-- mat (Smart Text)
+      this.drawSmartText(labelData.color, 450, 230, 190, 50, 25, 12, ctx); // <-- Color (Smart Text)
+      this.drawSmartText(labelData.producer, 450, 280, 190, 50, 25, 12, ctx); // <-- Producer (Smart Text)
+      this.drawSmartText(labelData.date, 450, 330, 190, 50, 25, 12, ctx); // <-- Date (Smart Text)
 
       // Quantity
-      drawCenteredText('10', 470, 440, 50, 50, '95px Arial', true); // <-- quantity
+      this.drawCenteredText(
+        labelData.part1.quantity.toString(),
+        470,
+        440,
+        50,
+        50,
+        '95px Arial',
+        true,
+        ctx,
+      ); // <-- quantity
 
       ctx.font = 'bold 20px Arial';
       ctx.fillText('PCS.', 580, 520);
@@ -282,13 +155,13 @@ export class LabelGeneratorService {
 
       // Footer
       ctx.font = 'bold 12px Arial';
-      ctx.fillText(qrData, 5, 545); // <-- QR Code text
+      ctx.fillText(labelData.part1.serial, 5, 545); // <-- QR Code text
       ctx.fillText(
         'F - PRO – 001 LABEL MES | Effective Date 03–05–2568 Rev.0',
         290,
         545,
       );
-    }
+    };
 
     // วาดทันทีที่โหลดหน้า
     await drawLabel();
@@ -299,10 +172,7 @@ export class LabelGeneratorService {
   async generate2PartLabel(): Promise<Buffer> {
     const canvas = createCanvas(640, 550);
     const ctx = canvas.getContext('2d');
-
-    const iconImage = await loadImage('public/icon/Icon.png');
-    const partImage1 = await loadImage('public/icon/Icon.png'); // <-- part 1 image
-    const partImage2 = await loadImage('public/icon/Icon.png'); // <-- part 2 image
+    const iconImage = 'public/icon/Icon.png';
 
     const labelData = {
       labelNo: '1',
@@ -317,210 +187,22 @@ export class LabelGeneratorService {
         sapNo: '49001929',
         code: '2PD04462/1-1',
         name: 'B8MES-4900',
+        quantity: 10,
         serial: 'B8MES|NG2EBB5C312-6QLZuGcXSX-3',
+        partImage: 'public/icon/Icon.png', // <-- part 1 image path
       },
       part2: {
         orderId: '124-9001-930',
         sapNo: '49001930',
         code: '2PD04462/1-2',
         name: 'B8MES-4901',
+        quantity: 10,
         serial: 'B8MES|NG2EBB5C312-6QLZuGcXSX-4',
+        partImage: 'public/icon/Icon.png', // <-- part 2 image path
       },
     };
 
-    const drawQRCode = async (
-      qrData: string,
-      x: number,
-      y: number,
-      size: number = 100,
-    ): Promise<void> => {
-      try {
-        const qrBuffer = await QRCode.toBuffer(qrData, {
-          width: size,
-          margin: 0,
-          color: {
-            dark: '#000000',
-            light: '#FFFFFF',
-          },
-        });
-
-        const qrImage = await this.loadImage(qrBuffer);
-        ctx.drawImage(qrImage, x, y, size, size);
-      } catch (error) {
-        console.error('QR Code generation error:', error);
-
-        // วาดกรอบแทนถ้า error
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x, y, size, size);
-
-        // วาดข้อความ error
-        ctx.fillStyle = '#666666';
-        ctx.font = '12px Arial';
-        const text = 'QR ERROR';
-        const textWidth = ctx.measureText(text).width;
-        ctx.fillText(text, x + (size - textWidth) / 2, y + size / 2);
-      }
-    };
-
-    function drawCenteredText(
-      text,
-      x,
-      y,
-      width,
-      height,
-      font = '20px Arial',
-      bold = false,
-    ) {
-      ctx.font = bold ? `bold ${font}` : font;
-
-      // วัดขนาดข้อความ
-      const textMetrics = ctx.measureText(text);
-      const textWidth = textMetrics.width;
-      const textHeight = parseInt(font); // ประมาณจาก font size
-
-      // คำนวณตำแหน่งกึ่งกลาง
-      const centerX = x + width / 2 - textWidth / 2;
-      const centerY = y + height / 2 + textHeight / 4; // +textHeight/4 เพื่อจัดให้ดูกึ่งกลาง
-
-      ctx.fillText(text, centerX, centerY);
-    }
-
-    function drawSmartText(
-      text,
-      x,
-      y,
-      width,
-      height,
-      maxFontSize = 20,
-      minFontSize = 10,
-    ) {
-      if (!text) return;
-
-      const padding = 5;
-      const availableWidth = width - padding * 2;
-      const availableHeight = height - padding * 2;
-
-      let fontSize = maxFontSize;
-      let lines = [];
-      let totalHeight = 0;
-
-      // ลองขนาด font จากใหญ่ไปเล็ก
-      for (fontSize = maxFontSize; fontSize >= minFontSize; fontSize--) {
-        ctx.font = `bold ${fontSize}px Arial`;
-        lines = wrapText(text, availableWidth);
-        totalHeight = lines.length * (fontSize * 1.2); // line height = fontSize * 1.2
-
-        // ถ้าความสูงรวมไม่เกิน available height ให้หยุด
-        if (totalHeight <= availableHeight) {
-          break;
-        }
-      }
-
-      // คำนวณตำแหน่งเริ่มต้น (กึ่งกลางแนวตั้ง)
-      const startY =
-        y + padding + (availableHeight - totalHeight) / 2 + fontSize;
-
-      // วาดแต่ละบรรทัด
-      ctx.fillStyle = '#000000';
-      ctx.font = `${fontSize}px Arial`;
-
-      lines.forEach((line, index) => {
-        const lineY = startY + index * fontSize * 1.2;
-        const textWidth = ctx.measureText(line).width;
-        const centerX = x + padding + (availableWidth - textWidth) / 2; // กึ่งกลางแนวนอน
-
-        ctx.fillText(line, centerX, lineY);
-      });
-    }
-
-    // Function สำหรับ word wrap
-    function wrapText(text, maxWidth) {
-      const words = text.split(' ');
-      const lines = [];
-      let currentLine = '';
-
-      for (let word of words) {
-        const testLine = currentLine + (currentLine ? ' ' : '') + word;
-        const testWidth = ctx.measureText(testLine).width;
-
-        if (testWidth <= maxWidth) {
-          currentLine = testLine;
-        } else {
-          if (currentLine) {
-            lines.push(currentLine);
-            currentLine = word;
-          } else {
-            // ถ้าคำเดียวยาวเกินไป ให้ตัดตัวอักษร
-            lines.push(...breakLongWord(word, maxWidth));
-            currentLine = '';
-          }
-        }
-      }
-
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-
-      return lines;
-    }
-
-    // Function สำหรับตัดคำยาว
-    function breakLongWord(word, maxWidth) {
-      const lines = [];
-      let currentLine = '';
-
-      for (let char of word) {
-        const testLine = currentLine + char;
-        const testWidth = ctx.measureText(testLine).width;
-
-        if (testWidth <= maxWidth) {
-          currentLine = testLine;
-        } else {
-          if (currentLine) {
-            lines.push(currentLine);
-          }
-          currentLine = char;
-        }
-      }
-
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-
-      return lines;
-    }
-
-    // Function สำหรับวาดกล่องพร้อมข้อความ Smart
-    function drawSmartBox(
-      x,
-      y,
-      w,
-      h,
-      text,
-      maxFontSize = 20,
-      minFontSize = 10,
-    ) {
-      // วาดกล่อง
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = '#000000';
-      ctx.strokeRect(x, y, w, h);
-
-      // วาดข้อความ Smart
-      drawSmartText(text, x, y, w, h, maxFontSize, minFontSize);
-    }
-
-    // Function พิเศษสำหรับข้อมูลสำคัญ (ปรับ font น้อยกว่า)
-    function drawImportantBox(x, y, w, h, text) {
-      drawSmartBox(x, y, w, h, text, 24, 16); // font ใหญ่กว่า
-    }
-
-    // Function สำหรับข้อมูลทั่วไป
-    function drawRegularBox(x, y, w, h, text) {
-      drawSmartBox(x, y, w, h, text, 20, 12);
-    }
-
-    async function drawLabel() {
+    const drawLabel = async () => {
       // Utils
       const drawText = (text, x, y, font = '16px Arial', bold = false) => {
         ctx.font = bold ? `bold ${font}` : font;
@@ -564,7 +246,7 @@ export class LabelGeneratorService {
 
       // Header
 
-      ctx.drawImage(iconImage, 5, 5, 50, 50);
+      await this.drawImage(iconImage, 5, 5, 50, 50, ctx);
       drawLine(65, 0, 65, 50);
       ctx.fillStyle = '#000000';
       ctx.font = 'bold 30px Arial';
@@ -572,7 +254,16 @@ export class LabelGeneratorService {
       ctx.font = 'bold 17px Arial';
       ctx.fillText('Manufacturing Execution System B8', 75, 50);
 
-      drawCenteredText(labelData.labelNo, 560, 20, 60, 40, '50px Arial', true); // <-- label number
+      this.drawCenteredText(
+        labelData.labelNo,
+        560,
+        20,
+        60,
+        40,
+        '50px Arial',
+        true,
+        ctx,
+      ); // <-- label number
 
       drawText('Model', 520, 90, '20px Arial', true);
       drawBox(0, 60, 640, 40, `Customer Name : ${labelData.customer}`); // <-- customer name
@@ -590,19 +281,28 @@ export class LabelGeneratorService {
 
       drawBox(0, 380, 350, 150, '');
       drawText('Picture of part', 5, 400, '20px Arial', true);
-      ctx.drawImage(partImage1, 70, 410, 100, 100); // <-- part 1 image
-      ctx.drawImage(partImage2, 180, 410, 100, 100); // <-- part 2 image
+      await this.drawImage(labelData.part1.partImage, 70, 410, 100, 100, ctx); // <-- part 1 image
+      await this.drawImage(labelData.part2.partImage, 180, 410, 100, 100, ctx); // <-- part 2 image
 
       //box data row 1
-      drawSmartText('124-9001-929, 124-9001-929', 100, 140, 250, 40, 20, 12); // <-- Order ID 1, 2 (Smart Text)
+      this.drawSmartText(
+        `${labelData.part1.orderId}, ${labelData.part2.orderId}`,
+        100,
+        140,
+        250,
+        40,
+        20,
+        12,
+        ctx,
+      ); // <-- Order ID 1, 2 (Smart Text)
 
-      drawSmartText('A123', 200, 180, 150, 50, 50, 12); // <-- Part Code 1 (Smart Text)
-      drawSmartText('B8MES-49001929', 200, 230, 150, 50, 50, 12); // <-- Part Name 1 (Smart Text)
-      await drawQRCode(labelData.part1.serial, 100, 180, 100); // <-- part 1 QR Code
+      this.drawSmartText(labelData.part1.code, 200, 180, 150, 50, 50, 12, ctx); // <-- Part Code 1 (Smart Text)
+      this.drawSmartText(labelData.part1.name, 200, 230, 150, 50, 50, 12, ctx); // <-- Part Name 1 (Smart Text)
+      await this.drawQRCode(labelData.part1.serial, 100, 180, 100, ctx); // <-- part 1 QR Code
 
-      drawSmartText('A123', 100, 280, 150, 50, 50, 12); // <-- Part Code 2 (Smart Text)
-      drawSmartText('B8MES-49001929', 100, 330, 150, 50, 50, 12); // <-- Part Name 2 (Smart Text)
-      await drawQRCode(labelData.part2.serial, 250, 280, 100); // <-- part 2 QR Code
+      this.drawSmartText(labelData.part2.code, 100, 280, 150, 50, 50, 12, ctx); // <-- Part Code 2 (Smart Text)
+      this.drawSmartText(labelData.part2.name, 100, 330, 150, 50, 50, 12, ctx); // <-- Part Name 2 (Smart Text)
+      await this.drawQRCode(labelData.part2.serial, 250, 280, 100, ctx); // <-- part 2 QR Code
 
       drawLine(450, 140, 450, 380);
       drawBox(350, 140, 290, 40, 'SAP No');
@@ -614,16 +314,43 @@ export class LabelGeneratorService {
       drawText('Quantity (Unit)', 360, 400, '20px Arial', true);
 
       // box data row 2
-      drawSmartText('49001929, 49001929', 450, 140, 190, 40, 25, 12); // <-- SAP No 1, 2 (Smart Text)
+      this.drawSmartText(
+        `${labelData.part1.sapNo}, ${labelData.part2.sapNo}`,
+        450,
+        140,
+        190,
+        40,
+        25,
+        12,
+        ctx,
+      ); // <-- SAP No 1, 2 (Smart Text)
 
-      drawSmartText('abasda', 450, 180, 190, 50, 25, 12); // <-- mat (Smart Text)
-      drawSmartText('Black', 450, 230, 190, 50, 25, 12); // <-- Color (Smart Text)
-      drawSmartText('2611061', 450, 280, 190, 50, 25, 12); // <-- Producer (Smart Text)
-      drawSmartText('2023-05-01', 450, 330, 190, 50, 25, 12); // <-- Date (Smart Text)
+      this.drawSmartText(labelData.mat, 450, 180, 190, 50, 25, 12, ctx); // <-- mat (Smart Text)
+      this.drawSmartText(labelData.color, 450, 230, 190, 50, 25, 12, ctx); // <-- Color (Smart Text)
+      this.drawSmartText(labelData.producer, 450, 280, 190, 50, 25, 12, ctx); // <-- Producer (Smart Text)
+      this.drawSmartText(labelData.date, 450, 330, 190, 50, 25, 12, ctx); // <-- Date (Smart Text)
 
       // Quantity
-      drawSmartText('A: 10', 350, 400, 290, 55, 55, 12); // <-- quantity part 1
-      drawSmartText('B: 10', 350, 455, 290, 55, 55, 12); // <-- quantity part 2
+      this.drawSmartText(
+        `A: ${labelData.part1.quantity}`,
+        350,
+        400,
+        290,
+        60,
+        70,
+        12,
+        ctx,
+      ); // <-- quantity part 1
+      this.drawSmartText(
+        `B: ${labelData.part2.quantity}`,
+        350,
+        455,
+        290,
+        60,
+        70,
+        12,
+        ctx,
+      ); // <-- quantity part 2
 
       ctx.font = 'bold 20px Arial';
       ctx.fillText('PCS.', 580, 520);
@@ -638,7 +365,7 @@ export class LabelGeneratorService {
         300,
         545,
       );
-    }
+    };
 
     // วาดทันทีที่โหลดหน้า
     await drawLabel();
@@ -646,8 +373,199 @@ export class LabelGeneratorService {
     return canvas.toBuffer('image/png');
   }
 
-  private async loadImage(buffer: Buffer): Promise<any> {
-    const { loadImage } = await import('canvas');
-    return loadImage(buffer);
+  // Private Methods
+  private async drawImage(
+    imagePath: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    ctx: CanvasRenderingContext2D,
+  ): Promise<void> {
+    const image = await this.loadImageSafe(imagePath);
+
+    if (image) {
+      ctx.drawImage(image, x, y, width, height);
+    } else {
+      console.log(`Skipping image draw for: ${imagePath}`);
+    }
+  }
+
+  private async drawQRCode(
+    qrData: string,
+    x: number,
+    y: number,
+    size: number = 100,
+    ctx: CanvasRenderingContext2D,
+  ): Promise<void> {
+    try {
+      const qrBuffer = await QRCode.toBuffer(qrData, {
+        width: size,
+        margin: 0,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF',
+        },
+      });
+
+      const qrImage = await this.loadImageSafe(qrBuffer);
+      ctx.drawImage(qrImage, x, y, size, size);
+    } catch (error) {
+      console.error('QR Code generation error:', error);
+
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, size, size);
+
+      ctx.fillStyle = '#666666';
+      ctx.font = '12px Arial';
+      const text = 'QR ERROR';
+      const textWidth = ctx.measureText(text).width;
+      ctx.fillText(text, x + (size - textWidth) / 2, y + size / 2);
+    }
+  }
+
+  private drawCenteredText(
+    text: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    font: string = '20px Arial',
+    bold: boolean = false,
+    ctx: CanvasRenderingContext2D,
+  ): void {
+    ctx.font = bold ? `bold ${font}` : font;
+
+    const textMetrics = ctx.measureText(text);
+    const textWidth = textMetrics.width;
+    const textHeight = parseInt(font);
+
+    const centerX = x + width / 2 - textWidth / 2;
+    const centerY = y + height / 2 + textHeight / 4;
+
+    ctx.fillText(text, centerX, centerY);
+  }
+
+  private drawSmartText(
+    text: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    maxFontSize: number = 20,
+    minFontSize: number = 10,
+    ctx: CanvasRenderingContext2D,
+  ): void {
+    if (!text) return;
+
+    const padding = 5;
+    const availableWidth = width - padding * 2;
+    const availableHeight = height - padding * 2;
+
+    let fontSize = maxFontSize;
+    let lines = [];
+    let totalHeight = 0;
+
+    for (fontSize = maxFontSize; fontSize >= minFontSize; fontSize--) {
+      ctx.font = `bold ${fontSize}px Arial`;
+      lines = this.wrapText(text, availableWidth, ctx);
+      totalHeight = lines.length * (fontSize * 1.2);
+
+      if (totalHeight <= availableHeight) {
+        break;
+      }
+    }
+
+    const startY = y + padding + (availableHeight - totalHeight) / 2 + fontSize;
+
+    ctx.fillStyle = '#000000';
+    ctx.font = `${fontSize}px Arial`;
+
+    lines.forEach((line, index) => {
+      const lineY = startY + index * fontSize * 1.2;
+      const textWidth = ctx.measureText(line).width;
+      const centerX = x + padding + (availableWidth - textWidth) / 2;
+      ctx.fillText(line, centerX, lineY);
+    });
+  }
+
+  private wrapText(
+    text: string,
+    maxWidth: number,
+    ctx: CanvasRenderingContext2D,
+  ): string[] {
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    for (let word of words) {
+      const testLine = currentLine + (currentLine ? ' ' : '') + word;
+      const testWidth = ctx.measureText(testLine).width;
+
+      if (testWidth <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          lines.push(...this.breakLongWord(word, maxWidth, ctx));
+          currentLine = '';
+        }
+      }
+    }
+
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+
+    return lines;
+  }
+
+  private breakLongWord(
+    word: string,
+    maxWidth: number,
+    ctx: CanvasRenderingContext2D,
+  ): string[] {
+    const lines = [];
+    let currentLine = '';
+
+    for (let char of word) {
+      const testLine = currentLine + char;
+      const testWidth = ctx.measureText(testLine).width;
+
+      if (testWidth <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        currentLine = char;
+      }
+    }
+
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+
+    return lines;
+  }
+
+  private async loadImageSafe(source: string | Buffer): Promise<any> {
+    try {
+      const { loadImage } = await import('canvas');
+
+      if (typeof source === 'string' && !source) {
+        console.warn('Invalid image path');
+        return null;
+      }
+
+      const image = await loadImage(source);
+      return image;
+    } catch (error) {
+      console.error('Error loading image:', (error as Error).message);
+      return null;
+    }
   }
 }
