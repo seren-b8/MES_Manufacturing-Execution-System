@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { Document } from 'mongoose';
+import { ProductionRecord } from './production-record.schema';
+import { CoProductRecord } from './co-product-reccord.shema';
 
 @Schema({
   collection: 'label_jobs',
@@ -9,11 +11,11 @@ import { Document } from 'mongoose';
 })
 export class LabelJob extends Document {
   // Main records
-  @Prop({ type: [Types.ObjectId], ref: 'ProductionRecord' })
+  @Prop({ type: [Types.ObjectId], ref: ProductionRecord.name })
   production_record_ids: Types.ObjectId[];
 
   // Co-product records
-  @Prop({ type: [Types.ObjectId], ref: 'CoProductRecord' })
+  @Prop({ type: [Types.ObjectId], ref: CoProductRecord.name })
   co_product_record_ids?: Types.ObjectId[];
 
   @Prop({ required: true })
@@ -35,6 +37,9 @@ export class LabelJob extends Document {
 
   @Prop({ required: true })
   image_path: string;
+
+  @Prop()
+  image_size?: number; // ขนาดไฟล์ (bytes)
 
   @Prop({
     enum: ['pending', 'generated', 'sent', 'printed', 'failed'],
@@ -58,14 +63,25 @@ export class LabelJob extends Document {
   @Prop()
   error_message?: string;
 
+  // เพิ่มฟิลด์เหล่านี้ (ถ้าต้องการ)
+  @Prop()
+  printed_at?: Date; // วันเวลาที่ปริ้นจริง
+
+  @Prop()
+  generated_by?: Types.ObjectId; // ผู้สร้าง label
+
   createdAt?: Date;
   updatedAt?: Date;
 }
+
 export const LabelJobSchema = SchemaFactory.createForClass(LabelJob);
 
-// Indexes
+// Indexes (เพิ่มอีกหน่อย)
 LabelJobSchema.index({ status: 1 });
 LabelJobSchema.index({ printer_id: 1, createdAt: -1 });
 LabelJobSchema.index({ original_job_id: 1 });
 LabelJobSchema.index({ production_record_ids: 1 });
 LabelJobSchema.index({ is_reprint: 1 });
+LabelJobSchema.index({ label_type: 1 }); // เพิ่ม
+LabelJobSchema.index({ createdAt: -1 }); // เพิ่ม
+LabelJobSchema.index({ status: 1, createdAt: -1 }); // compound index
