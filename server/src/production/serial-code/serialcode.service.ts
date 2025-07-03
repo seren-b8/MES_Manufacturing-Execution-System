@@ -4,6 +4,7 @@ import mongoose, { Model } from 'mongoose';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { SerialCounter } from 'src/schema/serial-counter.schema';
+import { CoProductRecord } from 'src/schema/co-product-reccord.shema';
 
 @Injectable()
 export class SerialCodeService {
@@ -13,7 +14,109 @@ export class SerialCodeService {
 
     @InjectModel(ProductionRecord.name)
     private productionRecordModel: Model<ProductionRecord>,
+
+    @InjectModel(CoProductRecord.name)
+    private coProductRecordModel: Model<CoProductRecord>,
   ) {}
+
+  async generateCoProductSerialCode(
+    assign_order_id: string,
+    co_material_number: string,
+    machine_number: string,
+  ): Promise<{ _id: mongoose.Types.ObjectId; serial: string }> {
+    try {
+      // 1. สร้างข้อมูลวันที่
+      const now = moment().tz('Asia/Bangkok');
+      const thaiTime = this.calculateProductionDate(now.toDate());
+      const dateStr = thaiTime.format('YYYY-MM-DD');
+      const dateYMD = thaiTime.format('YYMMDD');
+      const shift = this.determineShift(now.toDate());
+
+      // 2. แปลงเลขเครื่องเป็นฐาน 16
+      const machineNum = parseInt(machine_number.replace(/\D/g, ''), 10);
+      const machineHex = machineNum.toString(16).toUpperCase();
+
+      // 3. แปลง Co-Material Number เป็นฐาน 16
+      const materialCleaned = co_material_number.replace(/[^A-Za-z0-9]/g, '');
+      let materialHex: string;
+
+      if (/^\d+$/.test(materialCleaned)) {
+        materialHex = parseInt(materialCleaned, 10).toString(16).toUpperCase();
+      } else {
+        materialHex = this.simpleHash(materialCleaned)
+          .substring(0, 6)
+          .toUpperCase();
+      }
+
+      // 4. สร้าง unique hex (เหมือนเดิม)
+      const dateValue = parseInt(thaiTime.format('YYYYMMDD'));
+      const processId = process.pid % 4096;
+      const randomNum = Math.floor(Math.random() * 4096);
+
+      const encodedValue =
+        (BigInt(dateValue) << 32n) |
+        (BigInt(processId) << 12n) |
+        BigInt(randomNum);
+      const uniqueHex = this.toBase62BigInt(encodedValue);
+
+      // 5. ดึงลำดับ Co-product (ใช้ prefix แยก)
+      let counterDoc;
+      let maxAttempts = 3;
+      let attempts = 0;
+
+      while (attempts < maxAttempts) {
+        try {
+          counterDoc = await this.serialCounterModel.findOneAndUpdate(
+            {
+              prefix: `CO${dateYMD}`, // เปลี่ยน prefix เป็น CO
+              machine_number: machine_number,
+              material_number: co_material_number,
+              date: dateStr,
+              shift: shift,
+              type: 'OK', // Co-product ไม่มี NG
+            },
+            { $inc: { sequence: 1 } },
+            { upsert: true, new: true },
+          );
+          break;
+        } catch (err) {
+          attempts++;
+          if (attempts >= maxAttempts) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 100 * attempts));
+        }
+      }
+
+      const sequence = counterDoc.sequence;
+
+      // 6. สร้าง serial code สำหรับ co-product
+      const serialCode = `B8MES|CO${materialHex}${machineHex}-${uniqueHex}-${sequence}`;
+
+      // 7. ตรวจสอบ duplicate
+      const existingRecord = await this.coProductRecordModel
+        .findOne({ serial_code: serialCode })
+        .exec();
+
+      if (existingRecord) {
+        return this.generateCoProductSerialCode(
+          assign_order_id,
+          co_material_number,
+          machine_number,
+        );
+      }
+
+      return { _id: counterDoc._id, serial: serialCode };
+    } catch (error) {
+      console.error('Error generating co-product serial code:', error);
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Cannot create co-product serial code',
+          data: [],
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
 
   private calculateProductionDate(date?: Date): moment.Moment {
     // ใช้ moment.tz กับเขตเวลาประเทศไทย

@@ -48,7 +48,7 @@ export class LabelJob extends Document {
   status: string;
 
   // Reprint fields
-  @Prop({ type: Types.ObjectId, ref: 'LabelJob' })
+  @Prop({ type: Types.ObjectId, ref: LabelJob.name })
   original_job_id?: Types.ObjectId;
 
   @Prop({ default: false })

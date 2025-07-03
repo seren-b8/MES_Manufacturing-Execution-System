@@ -4,6 +4,7 @@ import { HttpExceptionFilter } from './shared/services/filter/http-exception.fil
 import * as moment from 'moment-timezone';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -18,6 +19,13 @@ async function bootstrap() {
   });
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useStaticAssets(join(__dirname, '..', 'public'));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
 
   await app.listen(3000);
 }

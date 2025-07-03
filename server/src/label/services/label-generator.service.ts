@@ -6,35 +6,22 @@ import * as fs from 'fs';
 import * as QRCode from 'qrcode';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import e from 'express';
+import { FileClientService } from 'src/shared/services/file-client/file-client.service';
 // import { CoProductRecord } from '../schemas/co-product-record.schema';
+import { labelData } from '../../production/dto/production-reccord.dto';
+import { GenerateLabelDto, LabelDataDto } from '../dto/generate-label.dto';
+import { CreateLabelRequest, LabelData } from 'src/shared/interface/label-data';
 
 @Injectable()
 export class LabelGeneratorService {
-  async generate1PartLabel(): Promise<Buffer> {
+  constructor(private readonly fileClientService: FileClientService) {}
+  //for 1 part
+  async generate1PartLabel(labelDataDto: LabelDataDto): Promise<Buffer> {
     const canvas = createCanvas(640, 550);
     const ctx = canvas.getContext('2d');
     const iconImage = 'public/icon/Icon.png';
 
-    const labelData = {
-      labelNo: '1',
-      customer: 'DAIKIN COMPRESSOR',
-      supplier: 'SNC SERENITY CO., LTD.',
-      mat: 'abasda',
-      color: 'Black',
-      producer: '2611061',
-      date: '2023-05-01',
-      part1: {
-        orderId: '124-9001-929',
-        sapNo: '49001929',
-        code: '2PD04462/1-1',
-        name: 'B8MES-4900',
-        quantity: 10000,
-        serial: 'B8MES|NG2EBB5C312-6QLZuGcXSX-3',
-        partImage: 'public/icon/Icon.png',
-      },
-    };
-
-    // Function สำหรับวาดรูปแบบปลอดภัย
+    const labelData = this.prepareLabelData(labelDataDto);
 
     const drawLabel = async () => {
       // Utils
@@ -168,39 +155,17 @@ export class LabelGeneratorService {
 
     return canvas.toBuffer('image/png');
   }
-
-  async generate2PartLabel(): Promise<Buffer> {
+  //for 2 part
+  async generate2PartLabel(labelDataDto: LabelDataDto): Promise<Buffer> {
     const canvas = createCanvas(640, 550);
     const ctx = canvas.getContext('2d');
     const iconImage = 'public/icon/Icon.png';
 
-    const labelData = {
-      labelNo: '1',
-      customer: 'DAIKIN COMPRESSOR',
-      supplier: 'SNC SERENITY CO., LTD.',
-      mat: 'abasda',
-      color: 'Black',
-      producer: '2611061',
-      date: '2023-05-01',
-      part1: {
-        orderId: '124-9001-929',
-        sapNo: '49001929',
-        code: '2PD04462/1-1',
-        name: 'B8MES-4900',
-        quantity: 10,
-        serial: 'B8MES|NG2EBB5C312-6QLZuGcXSX-3',
-        partImage: 'public/icon/Icon.png', // <-- part 1 image path
-      },
-      part2: {
-        orderId: '124-9001-930',
-        sapNo: '49001930',
-        code: '2PD04462/1-2',
-        name: 'B8MES-4901',
-        quantity: 10,
-        serial: 'B8MES|NG2EBB5C312-6QLZuGcXSX-4',
-        partImage: 'public/icon/Icon.png', // <-- part 2 image path
-      },
-    };
+    if (!labelDataDto.part2) {
+      throw new Error('Part2 data is required for 2-part label');
+    }
+
+    const labelData = this.prepareLabelData(labelDataDto);
 
     const drawLabel = async () => {
       // Utils
@@ -371,6 +336,110 @@ export class LabelGeneratorService {
     await drawLabel();
 
     return canvas.toBuffer('image/png');
+  }
+
+  async generateAndSaveLabel(
+    labelType: string,
+    labelDataDto: LabelDataDto,
+  ): Promise<{ buffer: Buffer; filePath: string }> {
+    try {
+      // Generate label buffer ตาม type
+      const buffer = await this.generateLabelByType(labelType, labelDataDto);
+
+      // สร้างชื่อไฟล์และ path
+      const timestamp = Date.now();
+
+      const filename = `label_${labelType}_${timestamp}.png`;
+
+      // อัพโหลดไปยัง file service
+      const uploadResult = await this.saveLabelBuffer(buffer, filename);
+
+      console.log('Label saved successfully:', uploadResult);
+
+      return {
+        buffer,
+        filePath: uploadResult,
+      };
+    } catch (error) {
+      console.error('Error in generateAndSaveLabel:', error);
+      throw new Error(
+        `Failed to generate and save label: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  // Master method ที่เลือก generator ตาม label type (แค่ 2 แบบ)
+  async generateLabelByType(
+    labelType: string,
+    labelData: LabelDataDto,
+  ): Promise<Buffer> {
+    switch (labelType) {
+      case '1_part':
+      case 'co_product_separate': // ใช้ 1_part template
+        return await this.generate1PartLabel(labelData);
+
+      case '2_part':
+      case 'co_product_combined': // ใช้ 2_part template
+        return await this.generate2PartLabel(labelData);
+
+      default:
+        throw new Error(`Unsupported label type: ${labelType}`);
+    }
+  }
+
+  // Method สำหรับ generate แบบไม่ save (ใช้สำหรับ preview)
+  async generateLabelOnly(
+    labelType: string,
+    labelData: LabelData,
+  ): Promise<Buffer> {
+    return await this.generateLabelByType(labelType, labelData);
+  }
+
+  // Method สำหรับ save buffer ที่มีอยู่แล้ว
+  async saveLabelBuffer(
+    buffer: Buffer,
+    customFilename?: string,
+  ): Promise<string> {
+    try {
+      const timestamp = Date.now();
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const filename = customFilename || `label_${timestamp}.png`;
+      const folderPath = `labels/${year}/${month}/${day}`;
+
+      const mockFile: Express.Multer.File = {
+        buffer,
+        originalname: filename,
+        mimetype: 'image/png',
+        size: buffer.length,
+        fieldname: 'file',
+        encoding: '7bit',
+        destination: '',
+        filename: filename,
+        path: '',
+        stream: null,
+      };
+
+      const uploadResult = await this.fileClientService.uploadFile(
+        mockFile,
+        folderPath,
+        filename,
+      );
+
+      const filePath =
+        uploadResult.data?.filePath ||
+        uploadResult.data?.path ||
+        `${folderPath}/${filename}`;
+
+      return filePath;
+    } catch (error) {
+      console.error('Error saving label buffer:', error);
+      throw new Error(
+        `Failed to save label buffer: ${(error as Error).message}`,
+      );
+    }
   }
 
   // Private Methods
@@ -567,5 +636,26 @@ export class LabelGeneratorService {
       console.error('Error loading image:', (error as Error).message);
       return null;
     }
+  }
+  private prepareLabelData(labelDataDto: LabelDataDto): LabelData {
+    return {
+      labelNo: labelDataDto.labelNo || '1',
+      customer: labelDataDto.customer,
+      supplier: labelDataDto.supplier || 'Unknown Supplier',
+      mat: labelDataDto.mat || 'Unknown Material',
+      color: labelDataDto.color || 'Unknown Color',
+      producer: labelDataDto.producer || 'Unknown Producer',
+      date: labelDataDto.date || new Date().toISOString().split('T')[0],
+      part1: {
+        ...labelDataDto.part1,
+        partImage: labelDataDto.part1.partImage || 'public/icon/Icon.png',
+      },
+      part2: labelDataDto.part2
+        ? {
+            ...labelDataDto.part2,
+            partImage: labelDataDto.part2.partImage || 'public/icon/Icon.png',
+          }
+        : undefined,
+    };
   }
 }
