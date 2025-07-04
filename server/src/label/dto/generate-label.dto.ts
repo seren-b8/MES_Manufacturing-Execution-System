@@ -62,7 +62,7 @@ export class LabelDataDto {
 
   @IsNotEmpty()
   @IsString()
-  customer: string;
+  customer?: string;
 
   @IsOptional()
   @IsString()

@@ -6,6 +6,7 @@ import { MesCacheModule } from 'src/shared/cache/cache.module';
 import { FileClientModule } from 'src/shared/services/file-client/file-client.module';
 import { LabelController } from './label.controller';
 import { LabelGeneratorService } from './services/label-generator.service';
+import { LabelService } from './label.service';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { LabelGeneratorService } from './services/label-generator.service';
     FileClientModule,
   ],
   controllers: [LabelController],
-  providers: [LabelGeneratorService],
-  exports: [LabelGeneratorService],
+  providers: [LabelGeneratorService, LabelService],
+  exports: [LabelGeneratorService, LabelService],
 })
 export class LabelModule {}

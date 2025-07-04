@@ -88,7 +88,14 @@ export class LabelGeneratorService {
       drawBox(0, 380, 350, 150, '');
       drawText('Picture of part', 5, 400, '20px Arial', true);
 
-      await this.drawImage(labelData.part1.partImage, 40, 410, 100, 100, ctx);
+      await this.drawImage(
+        labelData.part1.partImage ?? '',
+        40,
+        410,
+        100,
+        100,
+        ctx,
+      );
 
       await this.drawQRCode(labelData.part1.serial, 200, 380, 150, ctx); // <-- part 1 QR Code
 
@@ -246,8 +253,22 @@ export class LabelGeneratorService {
 
       drawBox(0, 380, 350, 150, '');
       drawText('Picture of part', 5, 400, '20px Arial', true);
-      await this.drawImage(labelData.part1.partImage, 70, 410, 100, 100, ctx); // <-- part 1 image
-      await this.drawImage(labelData.part2.partImage, 180, 410, 100, 100, ctx); // <-- part 2 image
+      await this.drawImage(
+        labelData.part1.partImage ?? '',
+        70,
+        410,
+        100,
+        100,
+        ctx,
+      ); // <-- part 1 image
+      await this.drawImage(
+        labelData.part2.partImage ?? '',
+        180,
+        410,
+        100,
+        100,
+        ctx,
+      ); // <-- part 2 image
 
       //box data row 1
       this.drawSmartText(
@@ -625,7 +646,7 @@ export class LabelGeneratorService {
     try {
       const { loadImage } = await import('canvas');
 
-      if (typeof source === 'string' && !source) {
+      if (typeof source === 'string' && !source && source == '') {
         console.warn('Invalid image path');
         return null;
       }
@@ -637,23 +658,46 @@ export class LabelGeneratorService {
       return null;
     }
   }
+
   private prepareLabelData(labelDataDto: LabelDataDto): LabelData {
+    // Early validation
+    if (!labelDataDto?.part1) {
+      throw new Error('Invalid label data: part1 is required');
+    }
+
+    const defaultImage = 'public/icon/Icon.png';
+
     return {
+      // Basic info
       labelNo: labelDataDto.labelNo || '1',
-      customer: labelDataDto.customer,
+      customer: labelDataDto.customer || 'Unknown',
       supplier: labelDataDto.supplier || 'Unknown Supplier',
       mat: labelDataDto.mat || 'Unknown Material',
       color: labelDataDto.color || 'Unknown Color',
       producer: labelDataDto.producer || 'Unknown Producer',
       date: labelDataDto.date || new Date().toISOString().split('T')[0],
+
+      // Part1 (required) - ใช้ field names ที่ถูกต้องจาก DTO
       part1: {
-        ...labelDataDto.part1,
-        partImage: labelDataDto.part1.partImage || 'public/icon/Icon.png',
+        orderId: labelDataDto.part1.orderId || '',
+        sapNo: labelDataDto.part1.sapNo || '',
+        code: labelDataDto.part1.code || '',
+        name: labelDataDto.part1.name || 'Unknown Part',
+        quantity: labelDataDto.part1.quantity || 0,
+        serial: labelDataDto.part1.serial || '',
+        partImage: labelDataDto.part1.partImage || '',
       },
+
+      // Part2 (optional)
       part2: labelDataDto.part2
         ? {
-            ...labelDataDto.part2,
-            partImage: labelDataDto.part2.partImage || 'public/icon/Icon.png',
+            orderId: labelDataDto.part2.orderId || '',
+            sapNo: labelDataDto.part2.sapNo || '',
+            code: labelDataDto.part2.code || '',
+            name: labelDataDto.part2.name || 'Unknown Part',
+            quantity: labelDataDto.part2.quantity || 0,
+            serial: labelDataDto.part2.serial || '',
+            partImage: labelDataDto.part2.partImage || '',
           }
         : undefined,
     };

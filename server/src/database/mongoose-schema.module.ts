@@ -53,6 +53,10 @@ import {
   SerialCounterSchema,
 } from '../schema/serial-counter.schema';
 import { LabelJob, LabelJobSchema } from 'src/schema/label-job.shema';
+import {
+  CoProductRecord,
+  CoProductRecordSchema,
+} from 'src/schema/co-product-reccord.shema';
 
 @Module({
   imports: [
@@ -63,6 +67,7 @@ import { LabelJob, LabelJobSchema } from 'src/schema/label-job.shema';
       { name: AssignOrder.name, schema: AssignOrderSchema },
       { name: AssignEmployee.name, schema: AssignEmployeeSchema },
       { name: SerialCounter.name, schema: SerialCounterSchema },
+      { name: CoProductRecord.name, schema: CoProductRecordSchema },
 
       // Machine Management
       { name: MachineInfo.name, schema: MachineInfoSchema },

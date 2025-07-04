@@ -14,6 +14,8 @@ import { AssignModule } from 'src/assign/assign.module';
 import { MachineModule } from 'src/machine/machine.module';
 import { SapSyncLogService } from './sap-sync/sap-sync-log.service';
 import { SerialCodeService } from './serial-code/serialcode.service';
+import { CoProductService } from './co-product/co-product.service';
+import { CoProductController } from './co-product/co-product.controller';
 
 @Module({
   imports: [MongooseSchemaModule, DatabaseModule, AssignModule, MachineModule],
@@ -22,6 +24,7 @@ import { SerialCodeService } from './serial-code/serialcode.service';
     ProductionOrderController,
     ProductionRecordController,
     SapSyncController,
+    CoProductController,
   ],
   providers: [
     SapOrderService,
@@ -31,6 +34,7 @@ import { SerialCodeService } from './serial-code/serialcode.service';
     SapSyncValidationService,
     SapSyncLogService,
     SerialCodeService,
+    CoProductService,
   ],
   exports: [
     SapOrderService,
@@ -40,6 +44,7 @@ import { SerialCodeService } from './serial-code/serialcode.service';
     SapSyncValidationService,
     SapSyncLogService,
     SerialCodeService,
+    CoProductService,
   ],
 })
 export class ProductionModule {}
