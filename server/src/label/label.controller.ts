@@ -16,9 +16,9 @@ import { Roles } from 'src/auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
-import { GenerateLabelDto, LabelService } from './label.service';
+import { LabelService } from './label.service';
 import { LabelGeneratorService } from './services/label-generator.service';
-import { LabelDataDto } from './dto/generate-label.dto';
+import { GenerateLabelDto, LabelDataDto } from './dto/generate-label.dto';
 
 @Controller('label')
 // @UseGuards(JwtAuthGuard, RolesGuard)
@@ -32,6 +32,7 @@ export class LabelController {
   @Roles(Role.ADMIN, Role.OPERATOR)
   @UsePipes(new ValidationPipe({ transform: true }))
   async generateLabel(@Body() generateLabelDto: GenerateLabelDto) {
+    console.log(generateLabelDto);
     return this.labelService.generateLabel(generateLabelDto);
   }
 

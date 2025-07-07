@@ -422,13 +422,15 @@ export class LabelGeneratorService {
     customFilename?: string,
   ): Promise<string> {
     try {
+      const imagePath = 'mes/b8/label';
       const timestamp = Date.now();
       const today = new Date();
       const year = today.getFullYear();
       const month = String(today.getMonth() + 1).padStart(2, '0');
       const day = String(today.getDate()).padStart(2, '0');
-      const filename = customFilename || `label_${timestamp}.png`;
-      const folderPath = `labels/${year}/${month}/${day}`;
+      const filename =
+        customFilename || `label_${year}-${month}-${day}_${timestamp}.png`;
+      // const folderPath = `labels-${year}-${month}-${day}`;
 
       const mockFile: Express.Multer.File = {
         buffer,
@@ -445,14 +447,11 @@ export class LabelGeneratorService {
 
       const uploadResult = await this.fileClientService.uploadFile(
         mockFile,
-        folderPath,
+        imagePath,
         filename,
       );
 
-      const filePath =
-        uploadResult.data?.filePath ||
-        uploadResult.data?.path ||
-        `${folderPath}/${filename}`;
+      const filePath = uploadResult.data[0].url;
 
       return filePath;
     } catch (error) {
@@ -660,44 +659,37 @@ export class LabelGeneratorService {
   }
 
   private prepareLabelData(labelDataDto: LabelDataDto): LabelData {
-    // Early validation
-    if (!labelDataDto?.part1) {
-      throw new Error('Invalid label data: part1 is required');
-    }
-
-    const defaultImage = 'public/icon/Icon.png';
+    const defaultImage = '';
+    const today = new Date().toISOString().split('T')[0];
 
     return {
-      // Basic info
-      labelNo: labelDataDto.labelNo || '1',
-      customer: labelDataDto.customer || 'Unknown',
-      supplier: labelDataDto.supplier || 'Unknown Supplier',
-      mat: labelDataDto.mat || 'Unknown Material',
-      color: labelDataDto.color || 'Unknown Color',
-      producer: labelDataDto.producer || 'Unknown Producer',
-      date: labelDataDto.date || new Date().toISOString().split('T')[0],
+      labelNo: labelDataDto?.labelNo || '1',
+      customer: labelDataDto?.customer || 'Unknown Customer',
+      supplier: labelDataDto?.supplier || 'Unknown Supplier',
+      mat: labelDataDto?.mat || 'Unknown Material',
+      color: labelDataDto?.color || 'Unknown Color',
+      producer: labelDataDto?.producer || 'Unknown Producer',
+      date: labelDataDto?.date || today,
 
-      // Part1 (required) - ใช้ field names ที่ถูกต้องจาก DTO
       part1: {
-        orderId: labelDataDto.part1.orderId || '',
-        sapNo: labelDataDto.part1.sapNo || '',
-        code: labelDataDto.part1.code || '',
-        name: labelDataDto.part1.name || 'Unknown Part',
-        quantity: labelDataDto.part1.quantity || 0,
-        serial: labelDataDto.part1.serial || '',
-        partImage: labelDataDto.part1.partImage || '',
+        orderId: labelDataDto?.part1?.orderId || 'DEFAULT-ORDER',
+        sapNo: labelDataDto?.part1?.sapNo || 'DEFAULT-SAP',
+        code: labelDataDto?.part1?.code || 'DEFAULT-CODE',
+        name: labelDataDto?.part1?.name || 'Default Part',
+        quantity: labelDataDto?.part1?.quantity || 1,
+        serial: labelDataDto?.part1?.serial || 'DEFAULT-SERIAL',
+        partImage: labelDataDto?.part1?.partImage || defaultImage,
       },
 
-      // Part2 (optional)
-      part2: labelDataDto.part2
+      part2: labelDataDto?.part2
         ? {
-            orderId: labelDataDto.part2.orderId || '',
-            sapNo: labelDataDto.part2.sapNo || '',
-            code: labelDataDto.part2.code || '',
-            name: labelDataDto.part2.name || 'Unknown Part',
-            quantity: labelDataDto.part2.quantity || 0,
-            serial: labelDataDto.part2.serial || '',
-            partImage: labelDataDto.part2.partImage || '',
+            orderId: labelDataDto.part2.orderId || 'DEFAULT-ORDER-2',
+            sapNo: labelDataDto.part2.sapNo || 'DEFAULT-SAP-2',
+            code: labelDataDto.part2.code || 'DEFAULT-CODE-2',
+            name: labelDataDto.part2.name || 'Default Part 2',
+            quantity: labelDataDto.part2.quantity || 1,
+            serial: labelDataDto.part2.serial || 'DEFAULT-SERIAL-2',
+            partImage: labelDataDto.part2.partImage || defaultImage,
           }
         : undefined,
     };
