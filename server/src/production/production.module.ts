@@ -16,9 +16,16 @@ import { SapSyncLogService } from './sap-sync/sap-sync-log.service';
 import { SerialCodeService } from './serial-code/serialcode.service';
 import { CoProductService } from './co-product/co-product.service';
 import { CoProductController } from './co-product/co-product.controller';
+import { LabelModule } from 'src/label/label.module';
 
 @Module({
-  imports: [MongooseSchemaModule, DatabaseModule, AssignModule, MachineModule],
+  imports: [
+    MongooseSchemaModule,
+    DatabaseModule,
+    AssignModule,
+    MachineModule,
+    LabelModule,
+  ],
   controllers: [
     SqlOrderController,
     ProductionOrderController,

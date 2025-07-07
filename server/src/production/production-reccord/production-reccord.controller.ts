@@ -32,6 +32,7 @@ import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
 import { SapProductionSyncService } from '../sap-sync/sap-sync.service';
 import { Roles } from 'src/auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
+import { ProductionRecord } from 'src/schema/production-record.schema';
 
 @Controller('production-records')
 export class ProductionRecordController {
@@ -57,6 +58,27 @@ export class ProductionRecordController {
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getStageOverview(): Promise<ResponseFormat<ProductionStageOverview>> {
     return this.productionRecordService.getStageOverview();
+  }
+
+  // Controller
+  @Post('create-batch')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  async createBatch(
+    @Body() createDtos: CreateProductionRecordDto[],
+    @GetUserId() userId: string,
+  ): Promise<ResponseFormat<ProductionRecord>> {
+    if (!createDtos || createDtos.length === 0 || createDtos.length > 2) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Array must contain 1-2 production records only',
+          data: [],
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return this.productionRecordService.createBatch(createDtos, userId);
   }
 
   @Post('confirm-by-serial')

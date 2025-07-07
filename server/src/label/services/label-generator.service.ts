@@ -23,6 +23,10 @@ export class LabelGeneratorService {
 
     const labelData = this.prepareLabelData(labelDataDto);
 
+    const tagNo = labelData.part1.serial
+      ? parseInt(labelData.part1.serial.split('-')[2] || '0000')
+      : 0;
+
     const drawLabel = async () => {
       // Utils
       const drawText = (text, x, y, font = '16px Arial', bold = false) => {
@@ -67,14 +71,24 @@ export class LabelGeneratorService {
       ctx.font = 'bold 17px Arial';
       ctx.fillText('Manufacturing Execution System B8', 75, 50);
 
-      this.drawCenteredText('1', 560, 20, 60, 40, '50px Arial', true, ctx); // <-- label number
+      this.drawCenteredText(
+        tagNo.toString(),
+        560,
+        20,
+        60,
+        40,
+        '50px Arial',
+        true,
+        ctx,
+      ); // <-- label number
 
       drawText('Model -', 520, 90, '20px Arial', true); // <-- model
       drawBox(0, 60, 640, 40, `Customer Name : ${labelData.customer}`); // <-- customer name
 
       // Boxes
       drawLine(100, 100, 100, 380);
-      drawBox(0, 100, 640, 40, `Supplier    ${labelData.supplier}`);
+      // drawBox(0, 100, 640, 40, `Supplier    ${labelData.supplier}`);
+      drawBox(0, 100, 640, 40, `Supplier    SNC SERENITY CO., LTD.`);
       drawBox(0, 140, 350, 40, `Order ID`);
 
       drawBox(0, 180, 350, 100, '');
@@ -242,7 +256,7 @@ export class LabelGeneratorService {
 
       // Boxes
       drawLine(100, 100, 100, 380);
-      drawBox(0, 100, 640, 40, `Supplier    ${labelData.supplier}`);
+      drawBox(0, 100, 640, 40, `Supplier    SNC SERENITY CO., LTD.`);
       drawBox(0, 140, 350, 40, `Order ID`);
 
       drawBox(0, 180, 350, 50, 'Part Code');

@@ -47,6 +47,9 @@ import { error } from 'console';
 import { Employee } from 'src/schema/employee.schema';
 import { PrinterDevice } from 'src/schema/printer-device.schema';
 import { console } from 'inspector';
+import { GenerateLabelDto } from 'src/label/dto/generate-label.dto';
+import * as redisStore from 'cache-manager-redis-store';
+import { LabelService } from 'src/label/label.service';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -88,6 +91,8 @@ export class ProductionRecordService {
     private readonly machineInfoService: MachineInfoService,
 
     private readonly serialCodeService: SerialCodeService,
+
+    private readonly labelService: LabelService,
   ) {}
 
   private calculateProductionDate(date?: Date): Date {
@@ -2737,5 +2742,72 @@ export class ProductionRecordService {
         data: [],
       };
     }
+  }
+
+  async createBatch(
+    createDtos: CreateProductionRecordDto[],
+    userId: string,
+  ): Promise<ResponseFormat<ProductionRecord>> {
+    try {
+      const createdRecords = [];
+
+      // สร้าง records โดยใช้ service เดิม
+      for (const dto of createDtos) {
+        const result = await this.create(dto, userId);
+        if (result.status === 'success') {
+          createdRecords.push(result.data[0]);
+        } else {
+          throw new Error(result.message);
+        }
+      }
+
+      // เรียงตาม material_number
+      const sortedRecords = this.sortByMaterialNumber(createdRecords);
+
+      // สร้าง label
+      await this.generateLabel(sortedRecords);
+
+      return {
+        status: 'success',
+        message: `${createdRecords.length} records created with label`,
+        data: createdRecords,
+      };
+    } catch (error) {
+      return this.handleServiceError(error);
+    }
+  }
+
+  private sortByMaterialNumber(records: ProductionRecord[]) {
+    return records.sort((a, b) => {
+      const matA = (a.assign_order_id as any).production_order_id
+        .material_number;
+      const matB = (b.assign_order_id as any).production_order_id
+        .material_number;
+      return matA.localeCompare(matB);
+    });
+  }
+
+  private async generateLabel(records: ProductionRecord[]) {
+    const labelDto: GenerateLabelDto = {
+      production_record_ids: records.map((r) => r._id.toString()),
+      label_type: records.length === 1 ? '1_part' : '2_part',
+      printer_id: await this.getPrinterId(records[0]),
+      copies: 1,
+    };
+
+    if (records.length === 2) {
+      labelDto.position_mapping = {
+        position_1: { type: 'main', record_id: records[0]._id.toString() },
+        position_2: { type: 'main', record_id: records[1]._id.toString() },
+      };
+    }
+
+    return this.labelService.generateLabel(labelDto);
+  }
+
+  private async getPrinterId(record: ProductionRecord): Promise<string> {
+    const machineNumber = (record.assign_order_id as any).machine_number;
+    const machine = await this.machineInfoModel.findOne({ machineNumber });
+    return machine?.printer_id?.toString() || 'default-printer-id';
   }
 }
