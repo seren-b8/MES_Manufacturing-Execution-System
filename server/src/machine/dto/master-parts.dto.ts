@@ -1,5 +1,11 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { IsNotEmpty, IsString, IsOptional, IsNumber } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+} from 'class-validator';
 
 export class CreateMasterPartDto {
   @IsNotEmpty()
@@ -29,6 +35,14 @@ export class CreateMasterPartDto {
   @IsOptional()
   @IsString()
   image_url?: string;
+
+  @IsOptional()
+  @IsString()
+  co_product_material?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  is_co_product?: boolean;
 }
 
 export class UpdateMasterPartDto extends PartialType(CreateMasterPartDto) {}

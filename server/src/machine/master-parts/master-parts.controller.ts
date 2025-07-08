@@ -16,6 +16,8 @@ import {
   FileTypeValidator,
   ParseFilePipe,
   MaxFileSizeValidator,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { MasterPartsService } from './master-parts.service';
 import { ResponseFormat } from 'src/shared/interface';
@@ -82,6 +84,7 @@ export class MasterPartsController {
   }
 
   @Post()
+  @UsePipes(new ValidationPipe({ transform: true }))
   @UseInterceptors(FileInterceptor('image'))
   async create(
     @Body() createDto: CreateMasterPartDto,
@@ -103,6 +106,7 @@ export class MasterPartsController {
   }
 
   @Put()
+  @UsePipes(new ValidationPipe({ transform: true }))
   @UseInterceptors(FileInterceptor('image'))
   async update(
     @Body() updateDto: UpdateMasterPartDto,
