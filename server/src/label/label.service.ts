@@ -7,6 +7,7 @@ import { LabelGeneratorService } from './services/label-generator.service';
 import { FileClientService } from 'src/shared/services/file-client/file-client.service';
 import { ResponseFormat } from 'src/shared/interface';
 import { LabelData } from 'src/shared/interface/label-data';
+import axios from 'axios';
 import {
   GenerateLabelDto,
   LabelDataDto,
@@ -14,6 +15,7 @@ import {
 } from './dto/generate-label.dto';
 import { CoProductRecord } from 'src/schema/co-product-reccord.shema';
 import { ProductionRecord } from 'src/schema/production-record.schema';
+import { MachineInfo } from 'src/schema/machine-info.schema';
 
 // export interface GenerateLabelDto {
 //   production_record_ids: string[];
@@ -41,6 +43,8 @@ export class LabelService {
     private readonly coProductRecordModel: Model<CoProductRecord>,
     @InjectModel(ProductionRecord.name)
     private readonly productionRecordModel: Model<ProductionRecord>,
+    @InjectModel(MachineInfo.name)
+    private readonly machineInfoModel: Model<MachineInfo>,
 
     private readonly labelGeneratorService: LabelGeneratorService,
     private readonly fileClientService: FileClientService,
@@ -102,27 +106,51 @@ export class LabelService {
     }
   }
 
-  async printLabel(jobId: string): Promise<ResponseFormat<LabelJob>> {
+  async printLabel(
+    jobId: string,
+    machineNumber: string,
+  ): Promise<ResponseFormat<LabelJob>> {
     try {
       const job = await this.labelJobModel
         .findById(jobId)
         .populate('printer_id')
         .exec();
 
+      const machine = await this.machineInfoModel
+        .findOne({ machine_number: machineNumber })
+        .populate('printer_id')
+        .exec();
+
+      const printerIp =
+        (machine &&
+        typeof machine.printer_id === 'object' &&
+        'ip_device' in machine.printer_id
+          ? (machine.printer_id as any).ip_device
+          : undefined) ||
+        (job &&
+        typeof job.printer_id === 'object' &&
+        'ip_device' in job.printer_id
+          ? (job.printer_id as any).ip_device
+          : undefined);
+
+      if (!printerIp) {
+        throw new Error('Printer IP not found');
+      }
+
       if (!job) {
         throw new Error('Label job not found');
       }
 
-      if (job.status === 'printed') {
-        throw new Error('Label already printed');
-      }
+      // if (job.status === 'printed') {
+      //   throw new Error('Label already printed');
+      // }
 
       // อัพเดทสถานะเป็น sending
       job.status = 'sent';
       await job.save();
 
       // ส่งไปปริ้น (mock - ในที่นี้จะ simulate)
-      await this.sendToPrinter(job);
+      await this.sendToPrinter(job, printerIp);
 
       // อัพเดทสถานะเป็น printed
       job.status = 'printed';
@@ -297,23 +325,63 @@ export class LabelService {
     }
   }
 
-  // Mock printer communication
-  private async sendToPrinter(job: LabelJob): Promise<void> {
-    const printer = job.printer_id as any; // populated
+  private async sendToPrinter(job: LabelJob, printerIp: string): Promise<void> {
+    try {
+      const printer = job.printer_id as any; // populated
+      console.log(
+        `Sending label to printer: ${printer.device_name} (${printer.ip_device})`,
+      );
+      console.log(`Label path: ${job.image_path}`);
+      console.log(`Copies: ${job.copies}`);
 
-    console.log(
-      `Sending label to printer: ${printer.device_name} (${printer.ip_device})`,
-    );
-    console.log(`Label path: ${job.image_path}`);
-    console.log(`Copies: ${job.copies}`);
+      // // Build full image URL
+      // const baseUrl =
+      //   this.configService.get('BASE_URL') || 'http://localhost:3000';
+      // const imageUrl = `${baseUrl}/generated-labels/${job.image_path}`;
 
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Prepare print request
+      const printRequest = {
+        image_url: job.image_path,
+        width: 190, // หรือจาก job settings
+        height: 110, // หรือจาก job settings
+        copies: job.copies || 1,
+      };
 
-    // ในการใช้งานจริง จะมี logic สำหรับส่งไปยัง printer
-    // เช่น HTTP POST, TCP Socket, หรือ printer driver
+      // Send to Python print service
+      const printServiceUrl = `http://${printerIp}:8000/api/print/image`;
 
-    console.log('Label sent successfully');
+      console.log(`Calling print service: ${printServiceUrl}`);
+      console.log(`Print request:`, printRequest);
+
+      const response = await axios.post(printServiceUrl, printRequest, {
+        timeout: 30000,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.data.status !== 'success') {
+        throw new Error(`Print failed: ${response.data.message}`);
+      }
+
+      console.log('Label sent successfully:', response.data.data[0]);
+
+      // อัพเดตสถานะใน database
+      await this.labelJobModel.findByIdAndUpdate(job._id, {
+        status: 'printed',
+        printed_at: new Date(),
+      });
+    } catch (error) {
+      console.error('Error sending to printer:', error);
+
+      // อัพเดตสถานะ error ใน database
+      await this.labelJobModel.findByIdAndUpdate(job._id, {
+        status: 'failed',
+        error_message: (error as Error).message,
+      });
+
+      throw error;
+    }
   }
 
   private async prepareLabelDataFromDto(
@@ -606,5 +674,24 @@ export class LabelService {
         .filter((id) => id)
         .join(', ') || 'Unknown'
     );
+  }
+  async getHealthPrinter(machineNumber: string): Promise<any> {
+    const machineInfo = await this.machineInfoModel
+      .findOne({ machine_number: machineNumber })
+      .populate('printer_id')
+      .exec();
+
+    if (
+      machineInfo &&
+      machineInfo.printer_id &&
+      typeof machineInfo.printer_id === 'object' &&
+      'ip_device' in machineInfo.printer_id
+    ) {
+      return await axios.get(
+        `http://${(machineInfo.printer_id as any).ip_device}:8000/api/print`,
+      );
+    } else {
+      throw new Error('Printer device information not found or not populated');
+    }
   }
 }

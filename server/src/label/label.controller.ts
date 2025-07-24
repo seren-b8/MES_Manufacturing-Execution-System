@@ -19,6 +19,8 @@ import { RolesGuard } from 'src/auth/guard/roles.guard';
 import { LabelService } from './label.service';
 import { LabelGeneratorService } from './services/label-generator.service';
 import { GenerateLabelDto, LabelDataDto } from './dto/generate-label.dto';
+import { machine } from 'os';
+import { PrintLabelDto } from './dto/print-label.dto';
 
 @Controller('label')
 // @UseGuards(JwtAuthGuard, RolesGuard)
@@ -36,10 +38,14 @@ export class LabelController {
     return this.labelService.generateLabel(generateLabelDto);
   }
 
-  @Post(':id/print')
+  @Post('print')
   @Roles(Role.ADMIN, Role.OPERATOR)
-  async printLabel(@Param('id') jobId: string) {
-    return this.labelService.printLabel(jobId);
+  async printLabel(@Body() printLabelDto: PrintLabelDto) {
+    console.log(printLabelDto);
+    return this.labelService.printLabel(
+      printLabelDto.job_id,
+      printLabelDto.machine_number,
+    );
   }
 
   @Post(':id/reprint')
@@ -326,6 +332,24 @@ export class LabelController {
       return {
         status: 'error',
         message: 'Service health check failed',
+        data: [],
+      };
+    }
+  }
+
+  @Get('health/print-service')
+  async getPrintServiceHealth() {
+    try {
+      const health = await this.labelService.getHealthPrinter('MC01');
+      return {
+        status: 'success',
+        message: 'Print service health retrieved',
+        data: [health],
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: `Failed to get print service health: ${(error as Error).message}`,
         data: [],
       };
     }
