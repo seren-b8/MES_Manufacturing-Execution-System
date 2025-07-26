@@ -19,13 +19,14 @@ async function bootstrap() {
   });
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useStaticAssets(join(__dirname, '..', 'public'));
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
+  app
+    .useGlobalPipes
+    // new ValidationPipe({
+    //   transform: false,
+    //   whitelist: true,
+    //   forbidNonWhitelisted: false,
+    // }),
+    ();
 
   await app.listen(3000);
 }

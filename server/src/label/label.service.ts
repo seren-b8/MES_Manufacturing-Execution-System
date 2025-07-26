@@ -327,12 +327,12 @@ export class LabelService {
 
   private async sendToPrinter(job: LabelJob, printerIp: string): Promise<void> {
     try {
-      const printer = job.printer_id as any; // populated
-      console.log(
-        `Sending label to printer: ${printer.device_name} (${printer.ip_device})`,
-      );
-      console.log(`Label path: ${job.image_path}`);
-      console.log(`Copies: ${job.copies}`);
+      // const printer = job.printer_id as any; // populated
+      // console.log(
+      //   `Sending label to printer: ${printer.device_name} (${printer.ip_device})`,
+      // );
+      // console.log(`Label path: ${job.image_path}`);
+      // console.log(`Copies: ${job.copies}`);
 
       // // Build full image URL
       // const baseUrl =
@@ -350,8 +350,8 @@ export class LabelService {
       // Send to Python print service
       const printServiceUrl = `http://${printerIp}:8000/api/print/image`;
 
-      console.log(`Calling print service: ${printServiceUrl}`);
-      console.log(`Print request:`, printRequest);
+      // console.log(`Calling print service: ${printServiceUrl}`);
+      // console.log(`Print request:`, printRequest);
 
       const response = await axios.post(printServiceUrl, printRequest, {
         timeout: 30000,
@@ -364,7 +364,7 @@ export class LabelService {
         throw new Error(`Print failed: ${response.data.message}`);
       }
 
-      console.log('Label sent successfully:', response.data.data[0]);
+      // console.log('Label sent successfully:', response.data.data[0]);
 
       // อัพเดตสถานะใน database
       await this.labelJobModel.findByIdAndUpdate(job._id, {
@@ -675,6 +675,7 @@ export class LabelService {
         .join(', ') || 'Unknown'
     );
   }
+
   async getHealthPrinter(machineNumber: string): Promise<any> {
     const machineInfo = await this.machineInfoModel
       .findOne({ machine_number: machineNumber })

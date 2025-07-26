@@ -32,7 +32,7 @@ export class AssignEmployeeController {
 
   @Put('close-by-user')
   @HttpCode(200)
-  @UsePipes(new ValidationPipe({ transform: true }))
+  // @UsePipes(new ValidationPipe({ transform: true }))
   async closeByUser(
     @Body() closeByUserDto: CloseByUserDto,
   ): Promise<ResponseFormat<AssignEmployee>> {

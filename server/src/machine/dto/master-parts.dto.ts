@@ -1,4 +1,5 @@
 import { PartialType } from '@nestjs/mapped-types';
+import { Transform } from 'class-transformer';
 import {
   IsNotEmpty,
   IsString,
@@ -26,6 +27,13 @@ export class CreateMasterPartDto {
 
   @IsNotEmpty()
   @IsNumber()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      const num = parseFloat(value);
+      return isNaN(num) ? value : num;
+    }
+    return value;
+  })
   weight: number;
 
   @IsOptional()
@@ -42,6 +50,15 @@ export class CreateMasterPartDto {
 
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return value === 'true';
+    }
+    if (typeof value === 'number') {
+      return Boolean(value);
+    }
+    return value;
+  })
   is_co_product?: boolean;
 }
 

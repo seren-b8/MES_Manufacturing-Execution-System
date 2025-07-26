@@ -462,6 +462,14 @@ export class MachineInfoService {
                   $expr: { $eq: ['$material_number', '$$materialNumber'] },
                 },
               },
+              {
+                $lookup: {
+                  from: collectionNames.part,
+                  localField: 'co_product_material',
+                  foreignField: 'material_number',
+                  as: 'co_product_info',
+                },
+              },
               ...cavityPipeline,
             ],
             as: 'part',
@@ -737,6 +745,22 @@ export class MachineInfoService {
                   weight: productionOrder.part?.[0]?.weight ?? 0,
                   weight_runner:
                     productionOrder.part?.[0]?.cavities?.[0]?.runner ?? 0,
+                  is_co_product:
+                    productionOrder.part?.[0]?.is_co_product ?? false, // เพิ่มบรรทัดนี้
+
+                  co_product: productionOrder.part?.[0]?.co_product_info?.[0]
+                    ? {
+                        material_number:
+                          productionOrder.part?.[0]?.co_product_info?.[0]
+                            .material_number,
+                        material_description:
+                          productionOrder.part?.[0]?.co_product_info?.[0]
+                            .material_description,
+                        weight:
+                          productionOrder.part?.[0]?.co_product_info?.[0]
+                            .weight ?? 0,
+                      }
+                    : null,
                 },
               },
               production_summary: activeOrder.current_summary ?? {},
@@ -802,6 +826,9 @@ export class MachineInfoService {
         { assign_order_id: 1 },
         { background: true },
       );
+      await this.masterPartModel.collection.createIndex({
+        co_product_material: 1,
+      });
     } catch (error) {
       console.error('Index creation error:', error);
     }

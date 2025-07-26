@@ -84,7 +84,14 @@ export class MasterPartsController {
   }
 
   @Post()
-  @UsePipes(new ValidationPipe({ transform: true }))
+  @UsePipes(
+    new ValidationPipe({
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  )
   @UseInterceptors(FileInterceptor('image'))
   async create(
     @Body() createDto: CreateMasterPartDto,

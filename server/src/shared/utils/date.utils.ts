@@ -10,3 +10,15 @@ export const formatDate = (date: Date | string): string => {
   // Return formatted date string
   return `${year}-${month}-${day}`;
 };
+
+export const formatDateForLabel = (date: string): string => {
+  const d = date.split('-');
+  if (d.length !== 3) {
+    throw new Error('Invalid date format. Expected format: YYYY-MM-DD');
+  }
+  const year = d[0];
+  const month = d[1];
+  const day = d[2];
+
+  return `${day}/${month}/${year}`;
+};

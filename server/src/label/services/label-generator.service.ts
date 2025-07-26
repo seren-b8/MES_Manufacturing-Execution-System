@@ -11,6 +11,7 @@ import { FileClientService } from 'src/shared/services/file-client/file-client.s
 import { labelData } from '../../production/dto/production-reccord.dto';
 import { GenerateLabelDto, LabelDataDto } from '../dto/generate-label.dto';
 import { CreateLabelRequest, LabelData } from 'src/shared/interface/label-data';
+import { formatDateForLabel } from 'src/shared/utils/date.utils';
 
 @Injectable()
 export class LabelGeneratorService {
@@ -29,7 +30,7 @@ export class LabelGeneratorService {
 
     const drawLabel = async () => {
       // Utils
-      const drawText = (text, x, y, font = '16px Arial', bold = false) => {
+      const drawText = (text, x, y, font = '16px Arial', bold = true) => {
         ctx.font = bold ? `bold ${font}` : font;
         ctx.fillText(text, x, y);
       };
@@ -142,7 +143,16 @@ export class LabelGeneratorService {
       this.drawSmartText(labelData.mat, 450, 180, 190, 50, 25, 12, ctx); // <-- mat (Smart Text)
       this.drawSmartText(labelData.color, 450, 230, 190, 50, 25, 12, ctx); // <-- Color (Smart Text)
       this.drawSmartText(labelData.producer, 450, 280, 190, 50, 25, 12, ctx); // <-- Producer (Smart Text)
-      this.drawSmartText(labelData.date, 450, 330, 190, 50, 25, 12, ctx); // <-- Date (Smart Text)
+      this.drawSmartText(
+        formatDateForLabel(labelData.date),
+        450,
+        330,
+        190,
+        50,
+        25,
+        12,
+        ctx,
+      ); // <-- Date (Smart Text)
 
       // Quantity
       this.drawCenteredText(
@@ -185,6 +195,10 @@ export class LabelGeneratorService {
     if (!labelDataDto.part2) {
       throw new Error('Part2 data is required for 2-part label');
     }
+
+    const tagNo = labelDataDto.part1.serial
+      ? parseInt(labelDataDto.part1.serial.split('-')[2] || '0000')
+      : 0;
 
     const labelData = this.prepareLabelData(labelDataDto);
 
@@ -241,7 +255,7 @@ export class LabelGeneratorService {
       ctx.fillText('Manufacturing Execution System B8', 75, 50);
 
       this.drawCenteredText(
-        labelData.labelNo,
+        tagNo.toString(),
         560,
         20,
         60,
@@ -328,7 +342,16 @@ export class LabelGeneratorService {
       this.drawSmartText(labelData.mat, 450, 180, 190, 50, 25, 12, ctx); // <-- mat (Smart Text)
       this.drawSmartText(labelData.color, 450, 230, 190, 50, 25, 12, ctx); // <-- Color (Smart Text)
       this.drawSmartText(labelData.producer, 450, 280, 190, 50, 25, 12, ctx); // <-- Producer (Smart Text)
-      this.drawSmartText(labelData.date, 450, 330, 190, 50, 25, 12, ctx); // <-- Date (Smart Text)
+      this.drawSmartText(
+        formatDateForLabel(labelData.date),
+        450,
+        330,
+        190,
+        50,
+        25,
+        12,
+        ctx,
+      ); // <-- Date (Smart Text)
 
       // Quantity
       this.drawSmartText(
@@ -358,7 +381,7 @@ export class LabelGeneratorService {
       ctx.fillText('RoHS2', 360, 520);
 
       // Footer
-      ctx.font = '12px Arial';
+      ctx.font = 'bold 12px Arial';
       ctx.fillText(labelData.part1.serial, 5, 545); // <-- QR Code text
       ctx.fillText(
         'F - PRO – 001 LABEL MES | Effective Date 03–05–2568 Rev.0',
@@ -521,7 +544,7 @@ export class LabelGeneratorService {
       ctx.strokeRect(x, y, size, size);
 
       ctx.fillStyle = '#666666';
-      ctx.font = '12px Arial';
+      ctx.font = 'bold 12px Arial';
       const text = 'QR ERROR';
       const textWidth = ctx.measureText(text).width;
       ctx.fillText(text, x + (size - textWidth) / 2, y + size / 2);
@@ -583,7 +606,7 @@ export class LabelGeneratorService {
     const startY = y + padding + (availableHeight - totalHeight) / 2 + fontSize;
 
     ctx.fillStyle = '#000000';
-    ctx.font = `${fontSize}px Arial`;
+    ctx.font = `bold ${fontSize}px Arial`;
 
     lines.forEach((line, index) => {
       const lineY = startY + index * fontSize * 1.2;
