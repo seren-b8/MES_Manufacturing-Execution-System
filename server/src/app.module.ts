@@ -44,7 +44,7 @@ const validateConfig = (config: Record<string, unknown>) => {
     ThrottlerModule.forRoot([
       {
         ttl: 30000,
-        limit: 1000,
+        limit: 500,
       },
     ]),
     DatabaseModule,
