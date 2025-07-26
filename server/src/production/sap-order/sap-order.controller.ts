@@ -3,9 +3,10 @@ import { SapOrderService } from './sap-order.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { response } from 'express';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('/sql-order')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
 export class SqlOrderController {
   constructor(private readonly sqlOrderService: SapOrderService) {}
 

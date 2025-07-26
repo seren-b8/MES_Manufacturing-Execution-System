@@ -1,9 +1,10 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ProductionOrderService } from './production-order.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('/production-orders')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
 export class ProductionOrderController {
   constructor(
     private readonly productionOrderService: ProductionOrderService,

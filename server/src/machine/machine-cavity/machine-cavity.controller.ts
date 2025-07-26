@@ -18,9 +18,10 @@ import {
   UpdateMasterCavityDto,
 } from '../dto/master-cavity.dto';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('machine-cavity')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
 export class MachineCavityController {
   constructor(private readonly machineCavityService: MachineCavityService) {}
 

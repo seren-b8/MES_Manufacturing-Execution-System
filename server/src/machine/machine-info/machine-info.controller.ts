@@ -28,11 +28,12 @@ import { MachineAnalysisCacheInterceptor } from '../interceptors/machine-analysi
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 import { SimpleCacheInterceptor } from '../interceptors/simple-cache.interceptor';
 import { Cron } from '@nestjs/schedule';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 // Controller
 @Controller('machine-info')
 @UseInterceptors(CacheInterceptor)
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
 export class MachineInfoController {
   private readonly logger = new Logger(MachineInfoController.name);
 

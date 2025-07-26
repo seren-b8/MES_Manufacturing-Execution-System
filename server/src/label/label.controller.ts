@@ -23,7 +23,7 @@ import { machine } from 'os';
 import { PrintLabelDto } from './dto/print-label.dto';
 
 @Controller('label')
-// @UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LabelController {
   constructor(
     private readonly labelService: LabelService,
@@ -31,7 +31,7 @@ export class LabelController {
   ) {}
 
   @Post('generate')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  // @Roles(Role.ADMIN, Role.OPERATOR)
   @UsePipes(new ValidationPipe({ transform: true }))
   async generateLabel(@Body() generateLabelDto: GenerateLabelDto) {
     console.log(generateLabelDto);
@@ -39,7 +39,7 @@ export class LabelController {
   }
 
   @Post('print')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  // @Roles(Role.ADMIN, Role.OPERATOR)
   async printLabel(@Body() printLabelDto: PrintLabelDto) {
     console.log(printLabelDto);
     return this.labelService.printLabel(
@@ -49,7 +49,7 @@ export class LabelController {
   }
 
   @Post(':id/reprint')
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  // @Roles(Role.ADMIN, Role.OPERATOR)
   async reprintLabel(@Param('id') originalJobId: string) {
     return this.labelService.reprintLabel(originalJobId);
   }

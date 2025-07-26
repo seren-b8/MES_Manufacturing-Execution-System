@@ -15,9 +15,10 @@ import { ResponseFormat } from 'src/shared/interface';
 import { SapSyncLogService } from './sap-sync-log.service';
 import { Role } from 'src/auth/enum/roles.enum';
 import { Roles } from 'src/auth/decorator/roles.decorator';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('sap-sync')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
 export class SapSyncController {
   constructor(
     private readonly sapSyncService: SapProductionSyncService,

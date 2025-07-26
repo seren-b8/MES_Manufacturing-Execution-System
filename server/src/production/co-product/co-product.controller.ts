@@ -16,20 +16,21 @@ import { Roles } from 'src/auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
 import { CoProductService } from './co-product.service';
 import { CreateCoProductDto } from '../dto/co-product.dto';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('co-products')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, CustomThrottlerGuard)
 export class CoProductController {
   constructor(private readonly coProductService: CoProductService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.OPERATOR)
+  // @Roles(Role.ADMIN, Role.OPERATOR)
   async createCoProduct(@Body() createCoProductDto: CreateCoProductDto) {
     return this.coProductService.createCoProductRecord(createCoProductDto);
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  // @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getCoProducts(
     @Query('assign_order_id') assignOrderId?: string,
     @Query('material_number') materialNumber?: string,
@@ -41,7 +42,7 @@ export class CoProductController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  // @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getCoProduct(@Param('id') id: string) {
     return this.coProductService.getCoProductRecord(id);
   }

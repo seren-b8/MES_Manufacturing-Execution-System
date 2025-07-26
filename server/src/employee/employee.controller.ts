@@ -17,8 +17,10 @@ import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
 import { Role } from 'src/auth/enum/roles.enum';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';
 import { CacheTTL } from '@nestjs/cache-manager';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('employee')
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
 export class EmployeeController {
   constructor(private readonly employeeSyncService: EmployeeService) {}
 

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { DatabaseModule } from './database/database.module';
+import { APP_GUARD } from '@nestjs/core';
 import { MongooseSchemaModule } from './database/mongoose-schema.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -17,6 +17,7 @@ import { MesCacheModule } from './shared/cache/cache.module';
 import { FileClientModule } from './shared/services/file-client/file-client.module';
 import { ExcelModule } from './excel/excel.module';
 import { LabelModule } from './label/label.module';
+import { DatabaseModule } from './database/database.module';
 
 const validateConfig = (config: Record<string, unknown>) => {
   const requiredKeys = ['SECRET_KEY'];
@@ -42,14 +43,8 @@ const validateConfig = (config: Record<string, unknown>) => {
     }),
     ThrottlerModule.forRoot([
       {
-        name: 'default',
-        ttl: 60000,
-        limit: 1000, // เพิ่มจาก 500 เป็น 1000
-      },
-      {
-        name: 'auth', // แยก limit สำหรับ auth endpoints
-        ttl: 60000,
-        limit: 100,
+        ttl: 30000,
+        limit: 1000,
       },
     ]),
     DatabaseModule,
@@ -67,10 +62,10 @@ const validateConfig = (config: Record<string, unknown>) => {
   controllers: [AppController],
   providers: [
     AppService,
-    {
-      provide: 'APP_GUARD',
-      useClass: CustomThrottlerGuard,
-    },
+    // {
+    //   provide: APP_GUARD,
+    //   useClass: CustomThrottlerGuard,
+    // },
   ],
 })
 export class AppModule {

@@ -20,9 +20,10 @@ import {
 } from '../dto/printer.dto';
 import { PrinterDevicesService } from './printer.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('printer/devices')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, CustomThrottlerGuard)
 export class PrinterDevicesController {
   constructor(private readonly printerDevicesService: PrinterDevicesService) {}
 

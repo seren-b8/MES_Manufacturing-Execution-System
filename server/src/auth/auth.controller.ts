@@ -26,8 +26,11 @@ import { Role } from './enum/roles.enum';
 import { RolesGuard } from './guard/roles.guard';
 import { Roles } from './decorator/roles.decorator';
 import e from 'express';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('/auth')
+@UseGuards(ThrottlerGuard)
+@Throttle({ default: { limit: 200, ttl: 60000 } })
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 

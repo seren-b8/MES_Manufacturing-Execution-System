@@ -8,6 +8,7 @@ import {
   Param,
   HttpException,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { MasterNotGoodService } from './master-not-good.service';
 import {
@@ -16,8 +17,11 @@ import {
 } from '../dto/master-not-good.dto';
 import { ResponseFormat } from 'src/shared/interface';
 import { MasterNotGood } from 'src/schema/master-not-good.schema';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
+import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 
 @Controller('master-not-good')
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
 export class MasterNotGoodController {
   constructor(private readonly masterNotGoodService: MasterNotGoodService) {}
 

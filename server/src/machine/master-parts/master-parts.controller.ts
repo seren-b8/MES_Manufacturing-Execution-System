@@ -28,9 +28,10 @@ import {
   UpdateMasterPartDto,
 } from '../dto/master-parts.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('master-parts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
 export class MasterPartsController {
   constructor(private readonly masterPartsService: MasterPartsService) {}
 

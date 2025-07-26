@@ -33,6 +33,7 @@ import { SapProductionSyncService } from '../sap-sync/sap-sync.service';
 import { Roles } from 'src/auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
 import { ProductionRecord } from 'src/schema/production-record.schema';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
 @Controller('production-records')
 export class ProductionRecordController {
@@ -42,19 +43,21 @@ export class ProductionRecordController {
   ) {}
 
   @Get('daily')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
   async getdaily() {
     const date = new Date();
     return await this.productionRecordService.getDailySummary(date);
   }
 
   @Get('summary/by-stage')
+  @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getSummaryByStage(): Promise<ResponseFormat<ProductionStageSummary>> {
     return this.productionRecordService.findSummaryByStage();
   }
 
   @Get('summary/stage-overview')
+  @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getStageOverview(): Promise<ResponseFormat<ProductionStageOverview>> {
     return this.productionRecordService.getStageOverview();
@@ -62,7 +65,7 @@ export class ProductionRecordController {
 
   // Controller
   @Post('create-batch')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
   async createBatch(
     @Body() createDtos: CreateProductionRecordDto[],
     @GetUserId() userId: string,
