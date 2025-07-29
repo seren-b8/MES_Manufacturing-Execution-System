@@ -186,17 +186,18 @@ export class AuthService {
 
   async changePassword(
     ChangePasswordDto: ChangePasswordDto,
+    userId: string,
   ): Promise<ResponseFormat<User[]>> {
     try {
       const user = await this.userModel.findOne({
         employee_id: ChangePasswordDto.employee_id,
       });
 
-      if (!user) {
+      if (!user || user._id.toString() !== userId) {
         throw new HttpException(
           {
             status: 'error',
-            message: 'User not found',
+            message: !user ? 'User not found' : 'Unauthorized',
             data: [],
           },
           HttpStatus.NOT_FOUND,

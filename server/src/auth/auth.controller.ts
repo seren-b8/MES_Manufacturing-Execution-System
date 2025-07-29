@@ -27,6 +27,7 @@ import { RolesGuard } from './guard/roles.guard';
 import { Roles } from './decorator/roles.decorator';
 import e from 'express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { GetUserId } from './decorator/get-current-user.decorator';
 
 @Controller('/auth')
 @UseGuards(ThrottlerGuard)
@@ -68,8 +69,9 @@ export class AuthController {
   async updatePassword(
     @Body()
     ChangePasswordDto: ChangePasswordDto,
+    @GetUserId() userId: string,
   ): Promise<ResponseFormat<User[]>> {
-    return this.authService.changePassword(ChangePasswordDto);
+    return this.authService.changePassword(ChangePasswordDto, userId);
   }
 
   // @Delete('delete-users/:id')
