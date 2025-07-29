@@ -9,6 +9,8 @@ import { MasterPart } from 'src/schema/master_parts.schema';
 import { SerialCodeService } from '../serial-code/serialcode.service';
 import { ResponseFormat } from 'src/shared/interface';
 import { CreateCoProductDto } from '../dto/co-product.dto';
+import { toObjectId } from 'src/shared/utils/type.utils';
+import { AssignEmployee } from 'src/schema/assign-employee.schema';
 
 @Injectable()
 export class CoProductService {
@@ -17,6 +19,8 @@ export class CoProductService {
     private readonly coProductRecordModel: Model<CoProductRecord>,
     @InjectModel(AssignOrder.name)
     private readonly assignOrderModel: Model<AssignOrder>,
+    @InjectModel(AssignEmployee.name)
+    private readonly assignEmployeeModel: Model<AssignEmployee>,
     @InjectModel(ProductionOrder.name)
     private readonly productionOrderModel: Model<ProductionOrder>,
     @InjectModel(MasterPart.name)
@@ -34,6 +38,15 @@ export class CoProductService {
       );
       if (!assignOrder) {
         throw new Error('Assign order not found');
+      }
+
+      // 2. ตรวจสอบ assign employee
+      const assignEmployees = await this.assignEmployeeModel.find({
+        assign_order_id: toObjectId(createCoProductDto.assign_order_id),
+        status: 'active',
+      });
+      if (!assignEmployees || assignEmployees.length === 0) {
+        throw new Error('Assign employees not found');
       }
 
       // 2. ดึงข้อมูล production order
@@ -63,7 +76,10 @@ export class CoProductService {
 
       // 5. สร้าง co-product record
       const coProductRecord = await this.coProductRecordModel.create({
-        assign_order_id: createCoProductDto.assign_order_id,
+        assign_order_id: toObjectId(createCoProductDto.assign_order_id),
+        assign_employee_ids: assignEmployees.map((emp) =>
+          toObjectId(emp._id.toString()),
+        ),
         co_material_number: masterPart.co_product_material,
         co_quantity: createCoProductDto.co_quantity,
         serial_code: serialCode,

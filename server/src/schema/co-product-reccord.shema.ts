@@ -2,6 +2,8 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Types } from 'mongoose';
 import { Document } from 'mongoose';
 import { ProductionRecord } from './production-record.schema';
+import { AssignEmployee } from './assign-employee.schema';
+import { AssignOrder } from './assign-order.schema';
 
 @Schema({
   collection: 'co_product_records',
@@ -9,11 +11,16 @@ import { ProductionRecord } from './production-record.schema';
   versionKey: false,
 })
 export class CoProductRecord extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'AssignOrder', required: true })
+  @Prop({ type: Types.ObjectId, ref: AssignOrder.name, required: true })
   assign_order_id: Types.ObjectId;
 
-  @Prop({ required: true })
-  co_material_number: string;
+  @Prop({
+    required: true,
+    index: true,
+    ref: AssignEmployee.name,
+    type: [Types.ObjectId],
+  })
+  assign_employee_ids: Types.ObjectId[];
 
   @Prop({ required: true })
   co_quantity: number;
