@@ -29,6 +29,12 @@ export class CoProductController {
     return this.coProductService.createCoProductRecord(createCoProductDto);
   }
 
+  @Get('all')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  async getAllCoProducts() {
+    return this.coProductService.getAll();
+  }
+
   @Get()
   // @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getCoProducts(

@@ -11,22 +11,76 @@ import { ResponseFormat } from 'src/shared/interface';
 import { CreateCoProductDto } from '../dto/co-product.dto';
 import { toObjectId } from 'src/shared/utils/type.utils';
 import { AssignEmployee } from 'src/schema/assign-employee.schema';
+import { LabelService } from 'src/label/label.service';
+import { ProductionRecord } from 'src/schema/production-record.schema';
+import { MachineInfo } from 'src/schema/machine-info.schema';
+import { PrinterDevice } from 'src/schema/printer-device.schema';
+import { GenerateLabelDto } from 'src/label/dto/generate-label.dto';
 
 @Injectable()
 export class CoProductService {
   constructor(
     @InjectModel(CoProductRecord.name)
     private readonly coProductRecordModel: Model<CoProductRecord>,
+
     @InjectModel(AssignOrder.name)
     private readonly assignOrderModel: Model<AssignOrder>,
+
     @InjectModel(AssignEmployee.name)
     private readonly assignEmployeeModel: Model<AssignEmployee>,
+
     @InjectModel(ProductionOrder.name)
     private readonly productionOrderModel: Model<ProductionOrder>,
+
     @InjectModel(MasterPart.name)
     private readonly masterPartModel: Model<MasterPart>,
+
+    @InjectModel(MachineInfo.name)
+    private readonly machineInfoModel: Model<MachineInfo>,
+
+    @InjectModel(PrinterDevice.name)
+    private readonly printerDeviceModel: Model<PrinterDevice>,
+
     private readonly serialCodeService: SerialCodeService,
+    private readonly labelService: LabelService,
   ) {}
+
+  async getAll(): Promise<ResponseFormat<CoProductRecord>> {
+    try {
+      const records = await this.coProductRecordModel
+        .aggregate([
+          {
+            $lookup: {
+              from: 'assign_order',
+              localField: 'assign_order_id',
+              foreignField: '_id',
+              as: 'assign_order',
+            },
+          },
+          {
+            $unwind: '$assign_order',
+          },
+          {
+            $sort: { createdAt: -1 },
+          },
+        ])
+        .exec();
+      return {
+        status: 'success',
+        message: `Found ${records.length} co-product records`,
+        data: records,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to get co-product records: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
 
   async createCoProductRecord(
     createCoProductDto: CreateCoProductDto,
@@ -87,6 +141,15 @@ export class CoProductService {
         remark: createCoProductDto.remark,
       });
 
+      const label = await this.generateLabel([coProductRecord]);
+
+      if (createCoProductDto.machine_number) {
+        await this.labelService.printLabel(
+          String(label.data[0]._id),
+          createCoProductDto.machine_number,
+        );
+      }
+
       return {
         status: 'success',
         message: 'Co-product record created successfully',
@@ -101,6 +164,47 @@ export class CoProductService {
         },
         HttpStatus.BAD_REQUEST,
       );
+    }
+  }
+
+  private async generateLabel(records: CoProductRecord[]) {
+    const labelDto: GenerateLabelDto = {
+      co_product_record_ids: records.map((r) => r._id.toString()),
+      label_type: (records.length === 1
+        ? 'co_product_separate'
+        : 'co_product_combined') as
+        | 'co_product_separate'
+        | 'co_product_combined',
+      printer_id: await this.getPrinterId(records[0]),
+      copies: 1,
+    };
+    return this.labelService.generateLabel(labelDto);
+  }
+
+  private async getPrinterId(record: CoProductRecord): Promise<string> {
+    const machineNumber = (record.assign_order_id as any).machine_number;
+    const machine = await this.machineInfoModel.findOne({
+      machine_number: machineNumber,
+    });
+    return (
+      machine?.printer_id?.toString() || (await this.getDefaultPrinterId())
+    );
+  }
+
+  private async getDefaultPrinterId(): Promise<string> {
+    try {
+      // หา printer ตัวแรกที่ active
+      const defaultPrinter = await this.printerDeviceModel
+        .findOne({ status: 'active' })
+        .exec();
+
+      if (!defaultPrinter) {
+        throw new Error('No active printer found');
+      }
+
+      return defaultPrinter._id.toString();
+    } catch (error) {
+      throw new Error('Cannot find any printer in system');
     }
   }
 

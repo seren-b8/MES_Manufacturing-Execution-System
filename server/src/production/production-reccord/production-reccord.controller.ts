@@ -34,6 +34,7 @@ import { Roles } from 'src/auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
+import { machine } from 'os';
 
 @Controller('production-records')
 export class ProductionRecordController {
@@ -67,10 +68,18 @@ export class ProductionRecordController {
   @Post('create-batch')
   @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
   async createBatch(
-    @Body() createDtos: CreateProductionRecordDto[],
+    @Body()
+    createData: {
+      create_production_record: CreateProductionRecordDto[];
+      machine_number?: string;
+    },
     @GetUserId() userId: string,
   ): Promise<ResponseFormat<ProductionRecord>> {
-    if (!createDtos || createDtos.length === 0 || createDtos.length > 2) {
+    if (
+      !createData.create_production_record ||
+      createData.create_production_record.length === 0 ||
+      createData.create_production_record.length > 2
+    ) {
       throw new HttpException(
         {
           status: 'error',
@@ -81,7 +90,11 @@ export class ProductionRecordController {
       );
     }
 
-    return this.productionRecordService.createBatch(createDtos, userId);
+    return this.productionRecordService.createReccordBatch(
+      createData.create_production_record,
+      userId,
+      createData.machine_number,
+    );
   }
 
   @Post('confirm-by-serial')

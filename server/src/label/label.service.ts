@@ -16,6 +16,7 @@ import {
 import { CoProductRecord } from 'src/schema/co-product-reccord.shema';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
+import { toObjectId } from 'src/shared/utils/type.utils';
 
 // export interface GenerateLabelDto {
 //   production_record_ids: string[];
@@ -54,6 +55,25 @@ export class LabelService {
     generateLabelDto: GenerateLabelDto,
   ): Promise<ResponseFormat<LabelJob>> {
     try {
+      const hasProduction =
+        generateLabelDto.production_record_ids &&
+        generateLabelDto.production_record_ids.length > 0;
+      const hasCoProduct =
+        generateLabelDto.co_product_record_ids &&
+        generateLabelDto.co_product_record_ids.length > 0;
+
+      if (!hasProduction && !hasCoProduct) {
+        throw new Error(
+          'At least one production or co-product record ID must be provided',
+        );
+      }
+
+      // console.log('Label generation request:', {
+      //   production_ids: generateLabelDto.production_record_ids,
+      //   co_product_ids: generateLabelDto.co_product_record_ids,
+      //   label_type: generateLabelDto.label_type,
+      // });
+
       // ตรวจสอบ printer
       const printer = await this.printerDeviceModel.findById(
         generateLabelDto.printer_id,
@@ -78,11 +98,33 @@ export class LabelService {
 
       // สร้าง LabelJob record
       const labelJob = await this.labelJobModel.create({
-        production_record_ids: generateLabelDto.production_record_ids,
-        co_product_record_ids: generateLabelDto.co_product_record_ids,
+        production_record_ids: (
+          generateLabelDto.production_record_ids || []
+        ).map((id) => toObjectId(id)),
+        co_product_record_ids: (
+          generateLabelDto.co_product_record_ids || []
+        ).map((id) => toObjectId(id)),
         label_type: generateLabelDto.label_type,
-        printer_id: generateLabelDto.printer_id,
-        position_mapping: generateLabelDto.position_mapping,
+        printer_id: toObjectId(generateLabelDto.printer_id),
+        // position_mapping: generateLabelDto.position_mapping,
+        position_mapping: generateLabelDto.position_mapping
+          ? {
+              position_1: {
+                type: generateLabelDto.position_mapping?.position_1.type,
+                record_id: toObjectId(
+                  generateLabelDto.position_mapping?.position_1.record_id,
+                ),
+              },
+              position_2: generateLabelDto.position_mapping?.position_2
+                ? {
+                    type: generateLabelDto.position_mapping.position_2.type,
+                    record_id: toObjectId(
+                      generateLabelDto.position_mapping.position_2.record_id,
+                    ),
+                  }
+                : undefined,
+            }
+          : undefined,
         image_path: filePath,
         image_size: buffer.length,
         copies: generateLabelDto.copies || 1,
@@ -196,10 +238,14 @@ export class LabelService {
 
       // สร้าง reprint job (ใช้ไฟล์เดิม)
       const reprintJob = await this.labelJobModel.create({
-        production_record_ids: originalJob.production_record_ids,
-        co_product_record_ids: originalJob.co_product_record_ids,
+        production_record_ids: (originalJob.production_record_ids || []).map(
+          (id) => toObjectId(id),
+        ),
+        co_product_record_ids: (originalJob.co_product_record_ids || []).map(
+          (id) => toObjectId(id),
+        ),
         label_type: originalJob.label_type,
-        printer_id: originalJob.printer_id,
+        printer_id: toObjectId(originalJob.printer_id),
         position_mapping: originalJob.position_mapping,
         image_path: originalJob.image_path, // ใช้ไฟล์เดิม
         image_size: originalJob.image_size,
@@ -388,49 +434,264 @@ export class LabelService {
     generateLabelDto: GenerateLabelDto,
   ): Promise<LabelDataDto> {
     try {
-      const { production_record_ids, label_type, position_mapping } =
-        generateLabelDto;
-
-      // ดึงข้อมูล production records
-      const records = await this.getProductionRecordsWithDetails(
+      const {
         production_record_ids,
-      );
+        co_product_record_ids,
+        label_type,
+        position_mapping,
+      } = generateLabelDto;
 
-      if (!records || records.length === 0) {
-        throw new Error('No production records found');
-      }
+      let records = [];
+      let coRecords = [];
 
-      // สร้าง LabelDataDto
-      const labelDataDto: LabelDataDto = {
-        labelNo: this.generateLabelNumber(),
-        customer: records[0].cavity_customer || 'Unknown Customer',
-        supplier: 'Serenity',
-        mat: records[0].cavity_mat || 'Unknown Material',
-        color: records[0].cavity_color || 'Unknown Color',
-        producer: this.getEmployeeIds(records[0].employees),
-        date: this.formatDateForLabel(records[0].production_date),
-        part1: this.createPartDataFromRecord(records[0]),
-        part2: undefined, // จะถูกกำหนดใหม่ด้านล่าง
-      };
-
-      // จัดการ part2 สำหรับ label ประเภทต่างๆ
-      if (label_type === '2_part' && records.length >= 2) {
-        labelDataDto.part2 = this.createPartDataFromRecord(records[1]);
-      } else if (label_type === 'co_product_combined' && position_mapping) {
-        // จัดการ co-product combined
-        labelDataDto.part2 = await this.handleCoProductMapping(
-          position_mapping,
-          records,
+      // ดึงข้อมูล production records (ถ้ามี)
+      if (production_record_ids && production_record_ids.length > 0) {
+        records = await this.getProductionRecordsWithDetails(
+          production_record_ids,
         );
       }
 
-      return labelDataDto;
+      // ดึงข้อมูล co-product records (ถ้ามี)
+      if (co_product_record_ids && co_product_record_ids.length > 0) {
+        coRecords = await this.getCoProductRecordsWithDetails(
+          co_product_record_ids,
+        );
+      }
+
+      // ตรวจสอบว่ามีข้อมูลอย่างน้อย 1 อย่าง
+      if (records.length === 0 && coRecords.length === 0) {
+        throw new Error('No production or co-product records found');
+      }
+
+      return this.buildLabelDataByType(
+        label_type,
+        records,
+        coRecords,
+        position_mapping,
+      );
     } catch (error) {
       console.error('Error preparing label data from DTO:', error);
       throw new Error(
         `Failed to prepare label data: ${(error as Error).message}`,
       );
     }
+  }
+
+  private buildLabelDataByType(
+    labelType: string,
+    records: any[],
+    coRecords: any[],
+    positionMapping?: any,
+  ): LabelDataDto {
+    // กำหนด base data จาก record แรกที่มี
+    const baseRecord = records.length > 0 ? records[0] : coRecords[0];
+
+    const labelDataDto: LabelDataDto = {
+      labelNo: this.generateLabelNumber(),
+      customer: baseRecord.cavity_customer || 'Unknown Customer',
+      supplier: 'Serenity',
+      mat: baseRecord.cavity_mat || 'Unknown Material',
+      color: baseRecord.cavity_color || 'Unknown Color',
+      producer: this.getEmployeeIds(baseRecord.employees),
+      date: this.formatDateForLabel(baseRecord.production_date),
+      part1: undefined,
+      part2: undefined,
+    };
+
+    switch (labelType) {
+      case 'co_product_separate':
+        // ใช้ co-product เป็น part1
+        labelDataDto.part1 = this.createPartDataFromCoProduct(coRecords[0]);
+        break;
+
+      case 'co_product_combined':
+        // ใช้ position_mapping เพื่อกำหนด part1 และ part2
+        if (positionMapping) {
+          labelDataDto.part1 = this.getPartDataFromMapping(
+            positionMapping.position_1,
+            records,
+            coRecords,
+          );
+          labelDataDto.part2 = this.getPartDataFromMapping(
+            positionMapping.position_2,
+            records,
+            coRecords,
+          );
+        }
+        break;
+
+      default:
+        // '1_part', '2_part' - ใช้ logic เดิม
+        labelDataDto.part1 = this.createPartDataFromRecord(records[0]);
+        if (labelType === '2_part' && records.length >= 2) {
+          labelDataDto.part2 = this.createPartDataFromRecord(records[1]);
+        }
+    }
+
+    return labelDataDto;
+  }
+
+  private getPartDataFromMapping(
+    mapping: any,
+    records: any[],
+    coRecords: any[],
+  ): PartDataDto {
+    if (mapping.type === 'co') {
+      const coRecord = coRecords.find(
+        (r) => r._id.toString() === mapping.record_id,
+      );
+      return this.createPartDataFromCoProduct(coRecord);
+    } else {
+      const record = records.find(
+        (r) => r._id.toString() === mapping.record_id,
+      );
+      return this.createPartDataFromRecord(record);
+    }
+  }
+
+  private async getCoProductRecordsWithDetails(
+    recordIds: string[],
+  ): Promise<any[]> {
+    const coRecords = await this.coProductRecordModel.aggregate([
+      {
+        $match: {
+          _id: { $in: recordIds.map((id) => new Types.ObjectId(id)) },
+        },
+      },
+      {
+        $lookup: {
+          from: 'assign_order',
+          localField: 'assign_order_id',
+          foreignField: '_id',
+          as: 'assign_order',
+        },
+      },
+      {
+        $unwind: { path: '$assign_order', preserveNullAndEmptyArrays: true },
+      },
+      {
+        $lookup: {
+          from: 'production_order',
+          localField: 'assign_order.production_order_id',
+          foreignField: '_id',
+          as: 'production_order',
+        },
+      },
+      {
+        $unwind: {
+          path: '$production_order',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: 'master_parts',
+          localField: 'production_order.material_number',
+          foreignField: 'material_number',
+          as: 'part_info',
+        },
+      },
+      {
+        $unwind: {
+          path: '$part_info',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: 'master_parts',
+          localField: 'part_info.co_product_material',
+          foreignField: 'material_number',
+          as: 'co_part_info',
+        },
+      },
+      {
+        $unwind: {
+          path: '$co_part_info',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: 'master_cavity',
+          let: { part_id: '$part_info._id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $in: ['$$part_id', '$parts'] },
+              },
+            },
+          ],
+          as: 'cavity_info',
+        },
+      },
+      {
+        $lookup: {
+          from: 'assign_employee',
+          localField: 'assign_employee_ids',
+          foreignField: '_id',
+          as: 'assign_employees',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'assign_employees.user_id',
+          foreignField: '_id',
+          as: 'users',
+        },
+      },
+      {
+        $lookup: {
+          from: 'employee',
+          localField: 'users.employee_id',
+          foreignField: 'employee_id',
+          as: 'employees',
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          serial_code: 1,
+          co_quantity: 1,
+          // is_not_good: 1,
+          production_date: 1,
+          createdAt: 1,
+          // Order Information
+          order_id: '$production_order.order_id',
+          material_number: '$co_part_info.material_number',
+          // material_description: '$production_order.material_description',
+          machine_number: '$assign_order.machine_number',
+          // Part Information
+          part_number: '$co_part_info.part_number',
+          part_name: '$co_part_info.part_name',
+          part_model: '$co_part_info.part_model',
+          weight: '$co_part_info.weight',
+          image_url: '$co_part_info.image_url',
+          // Cavity Information
+          cavity_customer: {
+            $arrayElemAt: ['$cavity_info.customer', 0],
+          },
+          cavity_color: { $arrayElemAt: ['$cavity_info.color', 0] },
+          cavity_mat: { $arrayElemAt: ['$cavity_info.mat', 0] },
+          // Employee Information
+          employees: {
+            $map: {
+              input: '$employees',
+              as: 'emp',
+              in: {
+                employee_id: '$$emp.employee_id',
+                first_name: '$$emp.first_name',
+                last_name: '$$emp.last_name',
+                department: '$$emp.department',
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    return coRecords;
   }
 
   private async getProductionRecordsWithDetails(
@@ -633,13 +894,13 @@ export class LabelService {
 
   private createPartDataFromCoProduct(coRecord: any): PartDataDto {
     return {
-      orderId: 'CO-PRODUCT',
-      sapNo: coRecord.co_material_number || 'UNKNOWN-SAP',
-      code: coRecord.part_info?.part_number || 'UNKNOWN-CODE',
-      name: coRecord.part_info?.part_name || 'Unknown Co-Product',
-      quantity: coRecord.co_quantity || 1,
+      orderId: coRecord.order_id || 'UNKNOWN-ORDER',
+      sapNo: coRecord.material_number || 'UNKNOWN-SAP',
+      code: coRecord.part_number || 'UNKNOWN-CODE',
+      name: coRecord.part_name || 'Unknown Co-Product',
+      quantity: coRecord.co_quantity || 0,
       serial: coRecord.serial_code || 'UNKNOWN-SERIAL',
-      partImage: coRecord.part_info?.image_url || '',
+      partImage: coRecord.image_url || '',
     };
   }
 

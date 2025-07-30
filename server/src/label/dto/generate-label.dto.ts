@@ -51,9 +51,10 @@ export class PositionMappingDto {
 }
 
 export class GenerateLabelDto {
+  @IsOptional()
   @IsArray()
   @IsString({ each: true }) // Each item in the array must be a string
-  production_record_ids: string[];
+  production_record_ids?: string[];
 
   @IsOptional()
   @IsArray()

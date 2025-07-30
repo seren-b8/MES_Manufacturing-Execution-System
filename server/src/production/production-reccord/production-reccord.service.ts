@@ -50,6 +50,7 @@ import { console } from 'inspector';
 import { GenerateLabelDto } from 'src/label/dto/generate-label.dto';
 import * as redisStore from 'cache-manager-redis-store';
 import { LabelService } from 'src/label/label.service';
+import * as _ from 'lodash';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -79,6 +80,9 @@ export class ProductionRecordService {
     @InjectModel(User.name) private userModel: Model<User>,
 
     @InjectModel(Employee.name) private employeeModel: Model<Employee>,
+
+    @InjectModel(PrinterDevice.name)
+    private printerDeviceModel: Model<PrinterDevice>,
 
     @InjectModel(SerialCounter.name)
     private serialCounterModel: Model<SerialCounter>,
@@ -254,7 +258,7 @@ export class ProductionRecordService {
 
       // กรณีไม่พบ cavity
       if (!cavity) {
-        console.log('No cavity found for material:', materialNumber);
+        // console.log('No cavity found for material:', materialNumber);
         return { cavityData: null, partData: null };
       }
 
@@ -424,7 +428,7 @@ export class ProductionRecordService {
           assign_order_id: createDto.assign_order_id,
         });
         assignEmployeeIds.push(newAssignEmployee.data[0]._id);
-        console.log('New Assign Employee:', newAssignEmployee);
+        // console.log('New Assign Employee:', newAssignEmployee);
       }
 
       // ตรวจสอบจำนวน
@@ -1961,7 +1965,7 @@ export class ProductionRecordService {
         code: data?.serial_number ?? '-',
         image_url: labelData?.image_url ?? '',
       };
-      console.log('printPayload', printPayload);
+      // console.log('printPayload', printPayload);
 
       // ทำการส่งคำขอพิมพ์ไปยังเครื่องพิมพ์
       await axios.post(printServiceUrl, printPayload);
@@ -2744,10 +2748,11 @@ export class ProductionRecordService {
     }
   }
 
-  async createBatch(
+  async createReccordBatch(
     createDtos: CreateProductionRecordDto[],
     userId: string,
-  ): Promise<ResponseFormat<ProductionRecord>> {
+    machineNumber?: string,
+  ): Promise<ResponseFormat<any>> {
     try {
       const createdRecords = [];
 
@@ -2761,16 +2766,41 @@ export class ProductionRecordService {
         }
       }
 
+      // ตรวจสอบว่ามีข้อมูลที่สร้างได้
+      if (createdRecords.length === 0) {
+        throw new Error('No records were created');
+      }
+
+      const populatedRecords = await this.productionRecordModel.populate(
+        createdRecords,
+        [
+          {
+            path: 'assign_order_id',
+            populate: {
+              path: 'production_order_id',
+              select: 'material_number',
+            },
+          },
+        ],
+      );
+
       // เรียงตาม material_number
-      const sortedRecords = this.sortByMaterialNumber(createdRecords);
+      const sortedRecords = this.sortByMaterialNumber(populatedRecords);
 
       // สร้าง label
-      await this.generateLabel(sortedRecords);
+      const label = await this.generateLabel(sortedRecords);
+
+      if (machineNumber) {
+        await this.labelService.printLabel(
+          String(label.data[0]._id),
+          machineNumber,
+        );
+      }
 
       return {
         status: 'success',
         message: `${createdRecords.length} records created with label`,
-        data: createdRecords,
+        data: label.data,
       };
     } catch (error) {
       return this.handleServiceError(error);
@@ -2783,17 +2813,31 @@ export class ProductionRecordService {
         .material_number;
       const matB = (b.assign_order_id as any).production_order_id
         .material_number;
+
+      if (!matA || !matB) {
+        console.error('Missing material_number for sorting:', {
+          recordA_id: a._id,
+          recordB_id: b._id,
+          matA,
+          matB,
+        });
+        return 0; // ไม่เรียงลำดับถ้าข้อมูลไม่ครบ
+      }
       return matA.localeCompare(matB);
     });
   }
 
   private async generateLabel(records: ProductionRecord[]) {
+    // console.log('Generating label for records:', records);
+
     const labelDto: GenerateLabelDto = {
       production_record_ids: records.map((r) => r._id.toString()),
       label_type: records.length === 1 ? '1_part' : '2_part',
       printer_id: await this.getPrinterId(records[0]),
       copies: 1,
     };
+
+    // console.log('Generating label with DTO:', labelDto);
 
     if (records.length === 2) {
       labelDto.position_mapping = {
@@ -2807,7 +2851,28 @@ export class ProductionRecordService {
 
   private async getPrinterId(record: ProductionRecord): Promise<string> {
     const machineNumber = (record.assign_order_id as any).machine_number;
-    const machine = await this.machineInfoModel.findOne({ machineNumber });
-    return machine?.printer_id?.toString() || 'default-printer-id';
+    const machine = await this.machineInfoModel.findOne({
+      machine_number: machineNumber,
+    });
+    return (
+      machine?.printer_id?.toString() || (await this.getDefaultPrinterId())
+    );
+  }
+
+  private async getDefaultPrinterId(): Promise<string> {
+    try {
+      // หา printer ตัวแรกที่ active
+      const defaultPrinter = await this.printerDeviceModel
+        .findOne({ status: 'active' })
+        .exec();
+
+      if (!defaultPrinter) {
+        throw new Error('No active printer found');
+      }
+
+      return defaultPrinter._id.toString();
+    } catch (error) {
+      throw new Error('Cannot find any printer in system');
+    }
   }
 }
