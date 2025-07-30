@@ -12,7 +12,7 @@ import { CoProductRecord } from './co-product-reccord.shema';
 export class LabelJob extends Document {
   // Main records
   @Prop({ type: [Types.ObjectId], ref: ProductionRecord.name })
-  production_record_ids: Types.ObjectId[];
+  production_record_ids?: Types.ObjectId[];
 
   // Co-product records
   @Prop({ type: [Types.ObjectId], ref: CoProductRecord.name })

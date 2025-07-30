@@ -48,6 +48,16 @@ export class LabelController {
     );
   }
 
+  @Post('print-with-record-id')
+  async printWithRecordId(
+    @Body() printWithRecordIdDto: { record_id: string; machine_number: string },
+  ) {
+    return this.labelService.printWithReccordId(
+      printWithRecordIdDto.record_id,
+      printWithRecordIdDto.machine_number,
+    );
+  }
+
   @Post(':id/reprint')
   // @Roles(Role.ADMIN, Role.OPERATOR)
   async reprintLabel(@Param('id') originalJobId: string) {

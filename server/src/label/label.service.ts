@@ -17,6 +17,7 @@ import { CoProductRecord } from 'src/schema/co-product-reccord.shema';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { toObjectId } from 'src/shared/utils/type.utils';
+import { machine } from 'os';
 
 // export interface GenerateLabelDto {
 //   production_record_ids: string[];
@@ -277,6 +278,7 @@ export class LabelService {
     status?: string,
     printerId?: string,
     isReprint?: boolean,
+    type?: string,
   ): Promise<ResponseFormat<LabelJob>> {
     try {
       const filter: any = {};
@@ -364,6 +366,41 @@ export class LabelService {
         {
           status: 'error',
           message: `Failed to delete label job: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async printWithReccordId(
+    recordId: string,
+    // recordType: 'production' | 'co_product',
+    machineNumber: string,
+  ): Promise<ResponseFormat<LabelJob>> {
+    try {
+      // ตรวจสอบว่าเป็น production หรือ co-product
+      const job = await this.labelJobModel
+        .findOne({
+          $or: [
+            { production_record_ids: toObjectId(recordId) },
+            { co_product_record_ids: toObjectId(recordId) },
+          ],
+        })
+        .populate('printer_id')
+        .exec();
+
+      if (!job) {
+        throw new Error('Label job not found for the given record ID');
+      }
+
+      // เรียกใช้ printLabel ด้วย job ID
+      return await this.printLabel(job._id.toString(), machineNumber);
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to print label by record ID: ${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,

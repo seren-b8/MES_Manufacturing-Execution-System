@@ -197,6 +197,34 @@ export class ProductionOrderService {
         },
         {
           $lookup: {
+            from: 'master_parts',
+            localField: 'material_number',
+            foreignField: 'material_number',
+            as: 'part_info',
+          },
+        },
+        {
+          $unwind: {
+            path: '$part_info',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
+            from: 'master_parts',
+            localField: 'part_info.co_product_material',
+            foreignField: 'material_number',
+            as: 'co_part_info',
+          },
+        },
+        {
+          $unwind: {
+            path: '$co_part_info',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
             from: collectionNames.assignOrder,
             let: { orderId: '$_id' },
             pipeline: [
@@ -246,8 +274,52 @@ export class ProductionOrderService {
         },
         {
           $project: {
-            all_assign_orders: 0,
-            active_assign_orders: 0,
+            _id: 1,
+            plant: 1,
+            order_id: 1,
+            material_number: 1,
+            material_description: 1,
+            basic_start_date: 1,
+            basic_finish_date: 1,
+            target_quantity: 1,
+            unit: 1,
+            scrap_quantity: 1,
+            mrp_controller: 1,
+            mrp_controller_name: 1,
+            production_supervisor: 1,
+            group_routing: 1,
+            operation_task_list_number: 1,
+            counter_number: 1,
+            sequence_number: 1,
+            task_list_node: 1,
+            group_counter: 1,
+            activity: 1,
+            operation_short_text: 1,
+            object_id: 1,
+            work_center: 1,
+            setup_time_1: 1,
+            setup_time_2: 1,
+            setup_time_3: 1,
+            lot: 1,
+            plan_cycle_time: 1,
+            plan_actual_time: 1,
+            plan_target_day: 1,
+            show_job: 1,
+            log_date: 1,
+            condition_amount: 1,
+            assign_stage: 1,
+            sql_active: 1,
+            sql_last_sync: 1,
+            createdAt: 1,
+            updatedAt: 1,
+            assign_orders: 1,
+            // ข้อมูลจาก part_info
+            is_co_product: {
+              $ifNull: ['$part_info.is_co_product', false],
+            },
+            co_product_material_number: '$part_info.co_product_material',
+            co_product_part_name: '$co_part_info.part_name',
+            co_product_part_number: '$co_part_info.part_number',
           },
         },
       ]);
