@@ -43,6 +43,12 @@ export class ProductionRecordController {
     private readonly sapSyncService: SapProductionSyncService,
   ) {}
 
+  @Get('find-by-serial/:serial_code')
+  // @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
+  async findBySerial(@Param('serial_code') serialCode: string) {
+    return await this.productionRecordService.findBySerial(serialCode);
+  }
+
   @Get('daily')
   @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
   async getdaily() {

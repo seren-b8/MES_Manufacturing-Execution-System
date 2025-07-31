@@ -2875,4 +2875,68 @@ export class ProductionRecordService {
       throw new Error('Cannot find any printer in system');
     }
   }
+
+  async findBySerial(serialCode: string): Promise<ResponseFormat<any>> {
+    try {
+      const record = await this.productionRecordModel.aggregate([
+        {
+          $match: { serial_code: serialCode },
+        },
+        {
+          $lookup: {
+            from: 'assign_order',
+            localField: 'assign_order_id',
+            foreignField: '_id',
+            as: 'assign_order',
+          },
+        },
+        { $unwind: '$assign_order' },
+        {
+          $lookup: {
+            from: 'production_order',
+            localField: 'assign_order.production_order_id',
+            foreignField: '_id',
+            as: 'production_order',
+          },
+        },
+        { $unwind: '$production_order' },
+        {
+          $lookup: {
+            from: 'master_parts',
+            localField: 'production_order.material_number',
+            foreignField: 'material_number',
+            as: 'part_info',
+          },
+        },
+        { $unwind: '$part_info' },
+        {
+          $project: {
+            _id: 0,
+            serial_code: 1,
+            quantity: 1,
+            // is_not_good: 1,
+            // production_date: 1,
+            // createdAt: 1,
+            // assign_order_id: '$assign_order._id',
+            // order_id: '$production_order.order_id',
+            material_number: '$production_order.material_number',
+            material_description: '$production_order.material_description',
+
+            part_number: '$part_info.part_number',
+            part_name: '$part_info.part_name',
+          },
+        },
+      ]);
+      if (!record) {
+        throw new Error('No record found');
+      }
+      return {
+        status: 'success',
+        message: 'Record found',
+        data: [record],
+      };
+    } catch (error) {
+      return this.handleServiceError(error);
+    }
+  }
 }
