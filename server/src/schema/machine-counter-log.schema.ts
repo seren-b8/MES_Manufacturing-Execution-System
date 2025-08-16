@@ -33,6 +33,26 @@ export class MachineCounterLog extends Document {
   })
   is_reset_suspected: boolean;
 
+  @Prop({
+    type: Boolean,
+    required: true,
+    default: false,
+  })
+  is_abnormal_change: boolean;
+
+  @Prop({
+    type: Number,
+    required: true,
+  })
+  time_since_last_update_ms: number;
+
+  @Prop({
+    type: Boolean,
+    required: true,
+    default: false,
+  })
+  forced_by_time_threshold: boolean;
+
   createdAt?: Date; // จาก timestamps: true
 }
 

@@ -57,6 +57,10 @@ import {
   CoProductRecord,
   CoProductRecordSchema,
 } from 'src/schema/co-product-reccord.shema';
+import {
+  ProductionPlanning,
+  ProductionPlanningSchema,
+} from 'src/schema/production-planning';
 
 @Module({
   imports: [
@@ -68,6 +72,7 @@ import {
       { name: AssignEmployee.name, schema: AssignEmployeeSchema },
       { name: SerialCounter.name, schema: SerialCounterSchema },
       { name: CoProductRecord.name, schema: CoProductRecordSchema },
+      { name: ProductionPlanning.name, schema: ProductionPlanningSchema },
 
       // Machine Management
       { name: MachineInfo.name, schema: MachineInfoSchema },

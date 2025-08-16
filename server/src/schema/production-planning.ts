@@ -1,8 +1,9 @@
-import { Prop, Schema } from '@nestjs/mongoose';
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { ProductionOrder } from './production-order.schema';
 import { Types } from 'mongoose';
 import { MasterPart } from './master_parts.schema';
 import { User } from './user.schema';
+import { Document } from 'mongoose';
 
 @Schema({
   collection: 'production_planning',
@@ -40,17 +41,16 @@ export class ProductionPlanning extends Document {
   @Prop({ required: true })
   sequence_order: number;
 
-  @Prop({ type: Date, required: true })
-  planned_start_time: Date;
-
-  @Prop({ type: Date, required: true })
-  planned_end_time: Date;
-
   @Prop()
   estimated_hours?: number; // คำนวณจากข้อมูล master
 
-  @Prop()
-  man_power?: number; // **เก็บเพิ่ม**
+  @Prop({
+    type: {
+      day: { type: Number, default: 0 },
+      night: { type: Number, default: 0 },
+    },
+  })
+  man_power?: { day: number; night: number };
 
   @Prop({
     type: String,
@@ -60,11 +60,18 @@ export class ProductionPlanning extends Document {
   status: string;
 
   @Prop()
-  setup_time?: number;
-
-  @Prop()
   remark?: string;
 
   @Prop({ type: Types.ObjectId, ref: User.name })
   planned_by: Types.ObjectId;
 }
+export const ProductionPlanningSchema =
+  SchemaFactory.createForClass(ProductionPlanning);
+ProductionPlanningSchema.index({
+  machine_number: 1,
+  planned_date: 1,
+  sequence_order: 1,
+});
+ProductionPlanningSchema.index({ production_order_id: 1 });
+ProductionPlanningSchema.index({ material_id: 1 });
+ProductionPlanningSchema.index({ status: 1 });

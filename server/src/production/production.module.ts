@@ -17,6 +17,8 @@ import { SerialCodeService } from './serial-code/serialcode.service';
 import { CoProductService } from './co-product/co-product.service';
 import { CoProductController } from './co-product/co-product.controller';
 import { LabelModule } from 'src/label/label.module';
+import { ProductionPlanningController } from './planning/planning.controller';
+import { ProductionPlanningService } from './planning/planning.service';
 
 @Module({
   imports: [
@@ -32,6 +34,7 @@ import { LabelModule } from 'src/label/label.module';
     ProductionRecordController,
     SapSyncController,
     CoProductController,
+    ProductionPlanningController,
   ],
   providers: [
     SapOrderService,
@@ -42,6 +45,7 @@ import { LabelModule } from 'src/label/label.module';
     SapSyncLogService,
     SerialCodeService,
     CoProductService,
+    ProductionPlanningService,
   ],
   exports: [
     SapOrderService,
@@ -52,6 +56,7 @@ import { LabelModule } from 'src/label/label.module';
     SapSyncLogService,
     SerialCodeService,
     CoProductService,
+    ProductionPlanningService,
   ],
 })
 export class ProductionModule {}
