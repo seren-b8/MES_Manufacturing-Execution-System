@@ -17,6 +17,7 @@ import { CoProductRecord } from 'src/schema/co-product-reccord.shema';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { toObjectId } from 'src/shared/utils/type.utils';
+import * as moment from 'moment-timezone';
 import { machine } from 'os';
 
 // export interface GenerateLabelDto {
@@ -946,16 +947,14 @@ export class LabelService {
     return Date.now().toString().slice(-6);
   }
 
-  private formatDateForLabel(date: Date | string): string {
+  private formatDateForLabel(date?: Date | string): string {
     if (!date) {
-      return new Date().toISOString().split('T')[0];
+      // ใช้เวลาปัจจุบันในเขตเวลาไทย
+      return moment().tz('Asia/Bangkok').format('YYYY-MM-DD');
     }
 
-    if (typeof date === 'string') {
-      return date.split('T')[0];
-    }
-
-    return date.toISOString().split('T')[0];
+    // แปลงวันที่ให้เป็นเขตเวลาไทยก่อน
+    return moment(date).tz('Asia/Bangkok').format('YYYY-MM-DD');
   }
 
   private getEmployeeIds(employees: any[]): string {

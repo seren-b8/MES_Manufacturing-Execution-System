@@ -26,7 +26,11 @@ import { Role } from 'src/auth/enum/roles.enum';
 import * as moment from 'moment-timezone';
 import { MachineAnalysisCacheInterceptor } from '../interceptors/machine-analysis-cache.interceptor';
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
-import { SimpleCacheInterceptor } from '../interceptors/simple-cache.interceptor';
+import {
+  LongCacheInterceptor,
+  ShortCacheInterceptor,
+  SimpleCacheInterceptor,
+} from '../interceptors/simple-cache.interceptor';
 import { Cron } from '@nestjs/schedule';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 
@@ -51,7 +55,7 @@ export class MachineInfoController {
 
   @Get('analysis')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  @UseInterceptors(SimpleCacheInterceptor, new TimeoutInterceptor(20000))
+  @UseInterceptors(LongCacheInterceptor, new TimeoutInterceptor(20000))
   async getMachineAnalysis(
     @Query('start_date') start_date: string,
     @Query('end_date') end_date: string,
@@ -160,7 +164,7 @@ export class MachineInfoController {
   }
 
   @Get()
-  @CacheTTL(3)
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
   async getAllMachinesDetails() {
     return await this.machineInfoService.getAllMachinesDetails();
   }

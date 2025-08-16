@@ -485,32 +485,140 @@ export class ProductionRecordService {
     limit: number = 10,
   ): Promise<ResponseFormat<ProductionRecord>> {
     try {
-      const skip = (page - 1) * limit;
+      // Debug query
+      console.log('Original query:', query);
+      console.log(
+        'Query types:',
+        Object.keys(query).map((key) => `${key}: ${typeof query[key]}`),
+      );
 
-      const records = await this.productionRecordModel
-        .find(query)
-        .populate('master_not_good_id', 'case_english case_thai')
-        .populate({
-          path: 'assign_order_id',
-          populate: {
-            path: 'production_order_id',
-            select:
-              'order_id material_number material_description target_quantity',
-          },
-        })
-        .populate({
-          path: 'assign_employee_ids',
-          populate: {
-            path: 'user_id',
-            select: 'employee_id',
-          },
-        })
-        .populate('confirmed_by', 'employee_id')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit);
+      // แปลง string เป็น number และกำหนดค่า default
+      const pageNum = parseInt(page.toString()) || 1;
+      const limitNum = parseInt(limit.toString()) || 10;
 
-      const total = await this.productionRecordModel.countDocuments(query);
+      // จำกัดค่า limit สูงสุด
+      const maxLimit = Math.min(limitNum, 1000);
+      const skip = (pageNum - 1) * maxLimit;
+
+      const pipeline = [
+        // Match stage - กรองข้อมูลตาม query
+        { $match: query },
+
+        // Lookup master_not_good
+        {
+          $lookup: {
+            from: 'master_not_good',
+            localField: 'master_not_good_id',
+            foreignField: '_id',
+            as: 'master_not_good',
+            pipeline: [{ $project: { case_english: 1, case_thai: 1 } }],
+          },
+        },
+
+        // Lookup assign_order และ production_order
+        {
+          $lookup: {
+            from: 'assign_order',
+            localField: 'assign_order_id',
+            foreignField: '_id',
+            as: 'assign_order_id',
+            pipeline: [
+              {
+                $lookup: {
+                  from: 'production_order',
+                  localField: 'production_order_id',
+                  foreignField: '_id',
+                  as: 'production_order_id',
+                  pipeline: [
+                    {
+                      $project: {
+                        order_id: 1,
+                        material_number: 1,
+                        material_description: 1,
+                        target_quantity: 1,
+                      },
+                    },
+                  ],
+                },
+              },
+              {
+                $addFields: {
+                  production_order_id: {
+                    $arrayElemAt: ['$production_order_id', 0],
+                  },
+                },
+              },
+            ],
+          },
+        },
+
+        // Lookup assign_employee และ user
+        {
+          $lookup: {
+            from: 'assign_employee',
+            localField: 'assign_employee_ids',
+            foreignField: '_id',
+            as: 'assign_employee_ids',
+            pipeline: [
+              {
+                $lookup: {
+                  from: 'users',
+                  localField: 'user_id',
+                  foreignField: '_id',
+                  as: 'user_id',
+                  pipeline: [{ $project: { employee_id: 1 } }],
+                },
+              },
+              {
+                $addFields: {
+                  user_id: { $arrayElemAt: ['$user_id', 0] },
+                },
+              },
+            ],
+          },
+        },
+
+        // Lookup confirmed_by user
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'confirmed_by',
+            foreignField: '_id',
+            as: 'confirmed_by_user',
+            pipeline: [{ $project: { employee_id: 1 } }],
+          },
+        },
+
+        // แปลง array fields และรักษาโครงสร้างเดิม
+        {
+          $addFields: {
+            master_not_good_id: { $arrayElemAt: ['$master_not_good', 0] },
+            assign_order_id: { $arrayElemAt: ['$assign_order_id', 0] },
+            confirmed_by: { $arrayElemAt: ['$confirmed_by_user', 0] },
+          },
+        },
+
+        // เอา field ที่ไม่ต้องการออก
+        {
+          $unset: ['confirmed_by_user', 'master_not_good'],
+        },
+
+        // Sort
+        { $sort: { createdAt: -1 } },
+
+        // Facet for pagination
+        {
+          $facet: {
+            data: [{ $skip: skip }, { $limit: maxLimit }],
+            count: [{ $count: 'total' }],
+          },
+        },
+      ];
+
+      const result = await this.productionRecordModel.aggregate(pipeline as []);
+
+      const records = result[0]?.data || [];
+      const total = result[0]?.count[0]?.total || 0;
 
       return {
         status: 'success',
@@ -518,9 +626,9 @@ export class ProductionRecordService {
         data: records,
         pagination: {
           total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
+          page: pageNum,
+          limit: maxLimit,
+          totalPages: Math.ceil(total / maxLimit),
         },
       };
     } catch (error) {

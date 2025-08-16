@@ -11,6 +11,10 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  DefaultValuePipe,
+  ParseIntPipe,
+  ParseBoolPipe,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   CreateProductionRecordDto,
@@ -35,6 +39,9 @@ import { Role } from 'src/auth/enum/roles.enum';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 import { machine } from 'os';
+import { CacheTTL } from '@nestjs/cache-manager';
+import { ShortCacheInterceptor } from 'src/machine/interceptors/simple-cache.interceptor';
+import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 
 @Controller('production-records')
 export class ProductionRecordController {
@@ -181,19 +188,23 @@ export class ProductionRecordController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
   async findAll(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
     @Query('start_date') startDate?: string,
     @Query('end_date') endDate?: string,
-    @Query('is_not_good') isNotGood?: boolean,
+    @Query('is_not_good', new ParseBoolPipe({ optional: true }))
+    isNotGood?: boolean,
     @Query('confirmation_status') confirmationStatus?: string,
-    @Query('is_synced_to_sap') isSyncedToSap?: boolean,
+    @Query('is_synced_to_sap', new ParseBoolPipe({ optional: true }))
+    isSyncedToSap?: boolean,
     @Query('assign_order_id') assignOrderId?: string,
     @Query('serial_code') serialCode?: string,
   ) {
     const query: any = {};
 
+    // Date range
     if (startDate && endDate) {
       query.createdAt = {
         $gte: new Date(startDate),
@@ -201,6 +212,7 @@ export class ProductionRecordController {
       };
     }
 
+    // ObjectId validation
     if (assignOrderId) {
       if (!Types.ObjectId.isValid(assignOrderId)) {
         throw new BadRequestException('Invalid assign_order_id format');
@@ -208,21 +220,25 @@ export class ProductionRecordController {
       query.assign_order_id = new Types.ObjectId(assignOrderId);
     }
 
+    // Boolean fields - จะได้ boolean แล้วจาก ParseBoolPipe
     if (isNotGood !== undefined) {
       query.is_not_good = isNotGood;
-    }
-
-    if (confirmationStatus) {
-      query.confirmation_status = confirmationStatus;
     }
 
     if (isSyncedToSap !== undefined) {
       query.is_synced_to_sap = isSyncedToSap;
     }
 
-    if (serialCode !== undefined) {
-      query.serial_code = serialCode;
+    // String fields
+    if (confirmationStatus) {
+      query.confirmation_status = confirmationStatus;
     }
+
+    if (serialCode) {
+      query.serial_code = { $regex: serialCode, $options: 'i' }; // case insensitive search
+    }
+
+    // console.log('Final query:', JSON.stringify(query, null, 2));
 
     return await this.productionRecordService.findAll(query, page, limit);
   }
