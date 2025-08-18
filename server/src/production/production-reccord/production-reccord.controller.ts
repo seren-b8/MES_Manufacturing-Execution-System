@@ -40,7 +40,7 @@ import { ProductionRecord } from 'src/schema/production-record.schema';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 import { machine } from 'os';
 import { CacheTTL } from '@nestjs/cache-manager';
-import { ShortCacheInterceptor } from 'src/machine/interceptors/simple-cache.interceptor';
+import { MicroCacheInterceptor } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 
 @Controller('production-records')
@@ -188,7 +188,7 @@ export class ProductionRecordController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
+  @UseInterceptors(MicroCacheInterceptor, new TimeoutInterceptor(20000))
   async findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,

@@ -28,7 +28,7 @@ import { MachineAnalysisCacheInterceptor } from '../interceptors/machine-analysi
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 import {
   LongCacheInterceptor,
-  ShortCacheInterceptor,
+  MicroCacheInterceptor,
   SimpleCacheInterceptor,
 } from '../interceptors/simple-cache.interceptor';
 import { Cron } from '@nestjs/schedule';
@@ -164,7 +164,7 @@ export class MachineInfoController {
   }
 
   @Get()
-  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
+  @UseInterceptors(MicroCacheInterceptor, new TimeoutInterceptor(20000))
   async getAllMachinesDetails() {
     return await this.machineInfoService.getAllMachinesDetails();
   }

@@ -217,8 +217,12 @@ export class SimpleCacheInterceptor
     };
   }
 }
-export class ShortCacheInterceptor extends SimpleCacheInterceptor {
+export class MicroCacheInterceptor extends SimpleCacheInterceptor {
   protected readonly ttl = 3 * 1000; // 3 sec
+}
+
+export class ShortCacheInterceprot extends SimpleCacheInterceptor {
+  protected readonly ttl = 60 * 1000; //1 minite
 }
 
 export class LongCacheInterceptor extends SimpleCacheInterceptor {

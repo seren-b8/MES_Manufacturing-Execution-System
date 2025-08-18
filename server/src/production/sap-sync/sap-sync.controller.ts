@@ -19,7 +19,7 @@ import { Roles } from 'src/auth/decorator/roles.decorator';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 import {
   LongCacheInterceptor,
-  ShortCacheInterceptor,
+  MicroCacheInterceptor,
 } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 
@@ -65,7 +65,7 @@ export class SapSyncController {
   }
 
   @Get('logs')
-  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
+  @UseInterceptors(MicroCacheInterceptor, new TimeoutInterceptor(20000))
   async getSyncLogs(
     @Query('status') status?: 'pending' | 'completed' | 'failed',
     @Query('sync_type') syncType?: 'EMP' | 'SNC',
@@ -101,7 +101,7 @@ export class SapSyncController {
   }
 
   @Get('pending-tids-summary')
-  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
+  @UseInterceptors(MicroCacheInterceptor, new TimeoutInterceptor(20000))
   @Roles(Role.ADMIN)
   async getPendingTidsSummary() {
     return this.sapSyncLogService.getPendingTidsSummary();

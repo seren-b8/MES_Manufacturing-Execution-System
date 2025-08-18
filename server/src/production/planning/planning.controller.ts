@@ -22,6 +22,7 @@ import {
   UpdatePlanningDto,
 } from '../dto/planning.dto';
 import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
+import { Cron } from '@nestjs/schedule';
 
 @Controller('production-planning')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -256,5 +257,41 @@ export class ProductionPlanningController {
     }
 
     return this.productionPlanningService.findAll(query);
+  }
+
+  // ใน ProductionPlanningController
+  @Put(':id/bind-order')
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async bindOrder(
+    @Param('id') planningId: string,
+    @Body() body: { production_order_id: string },
+  ) {
+    return this.productionPlanningService.bindProductionOrder(
+      planningId,
+      body.production_order_id,
+    );
+  }
+
+  @Put(':id/unbind-order')
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async unbindOrder(@Param('id') planningId: string) {
+    return this.productionPlanningService.unbindProductionOrder(planningId);
+  }
+
+  @Get('available-orders/:materialId')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  async getAvailableOrders(@Param('materialId') materialId: string) {
+    return this.productionPlanningService.getAvailableOrders(materialId);
+  }
+
+  // ใน Controller หรือ Service
+  @Cron('*/5 * * * *') // ทุก 5 นาที
+  async autoSyncPlanningStatus() {
+    try {
+      await this.productionPlanningService.syncAllPlanningStatus();
+      console.log('Auto-sync planning status completed');
+    } catch (error) {
+      console.error('Auto-sync planning status failed:', error);
+    }
   }
 }
