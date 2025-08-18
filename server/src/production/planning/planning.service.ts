@@ -538,12 +538,9 @@ export class ProductionPlanningService {
   // Reorder sequences
   async reorderSequences(
     machineNumber: string,
-    date: string,
     sequences: { id: string; sequence: number }[],
   ): Promise<ResponseFormat<ProductionPlanning>> {
     try {
-      const targetDate = moment(date).startOf('day').toDate();
-
       // เรียงลำดับตาม sequence ที่ต้องการ
       sequences.sort((a, b) => a.sequence - b.sequence);
 
@@ -561,8 +558,8 @@ export class ProductionPlanningService {
         );
       }
 
-      // Return updated planning
-      return this.findByMachineAndDate(machineNumber, date);
+      // Return updated planning for this machine
+      return this.findAll({ machine_number: machineNumber });
     } catch (error) {
       throw new HttpException(
         {

@@ -87,16 +87,13 @@ export class ProductionPlanningController {
   }
 
   // Reorder planning sequences
-  @Put('machine/:machineNumber/date/:date/reorder')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Put('machine/:machineNumber/reorder')
   async reorderSequences(
     @Param('machineNumber') machineNumber: string,
-    @Param('date') date: string,
     @Body('sequences') sequences: { id: string; sequence: number }[],
   ) {
     return this.productionPlanningService.reorderSequences(
       machineNumber,
-      date,
       sequences,
     );
   }
