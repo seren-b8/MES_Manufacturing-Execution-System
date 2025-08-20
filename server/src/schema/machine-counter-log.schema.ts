@@ -27,6 +27,12 @@ export class MachineCounterLog extends Document {
   previous_value: number;
 
   @Prop({
+    type: Number,
+    required: true,
+  })
+  counter_change: number;
+
+  @Prop({
     type: Boolean,
     required: true,
     default: false,

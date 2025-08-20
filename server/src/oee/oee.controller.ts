@@ -79,6 +79,6 @@ export class OEEController {
       timeFrame,
     );
 
-    return { count: data.length };
+    return data;
   }
 }

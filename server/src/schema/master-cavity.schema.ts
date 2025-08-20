@@ -20,7 +20,10 @@ export class MasterCavity extends Document {
   tonnage: number;
 
   @Prop()
-  cycle_time: number;
+  cycle_time: number; // เก็บไว้เพื่อ backward compatibility
+
+  @Prop()
+  target_cycle_time: number;
 
   @Prop()
   customer: string;
