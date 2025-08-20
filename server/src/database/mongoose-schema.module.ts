@@ -61,6 +61,7 @@ import {
   ProductionPlanning,
   ProductionPlanningSchema,
 } from 'src/schema/production-planning';
+import { OEEHourly, OEEHourlySchema } from 'src/schema/oee-hourly.schema';
 
 @Module({
   imports: [
@@ -77,6 +78,9 @@ import {
       // Machine Management
       { name: MachineInfo.name, schema: MachineInfoSchema },
       { name: TimelineMachine.name, schema: TimelineMachineSchema },
+
+      //OEE
+      { name: OEEHourly.name, schema: OEEHourlySchema },
 
       // Printter Management
       { name: PrinterDevice.name, schema: PrinterDeviceSchema },

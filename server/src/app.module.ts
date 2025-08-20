@@ -18,6 +18,7 @@ import { FileClientModule } from './shared/services/file-client/file-client.modu
 import { ExcelModule } from './excel/excel.module';
 import { LabelModule } from './label/label.module';
 import { DatabaseModule } from './database/database.module';
+import { OEEModule } from './oee/oee.module';
 
 const validateConfig = (config: Record<string, unknown>) => {
   const requiredKeys = ['SECRET_KEY'];
@@ -58,6 +59,7 @@ const validateConfig = (config: Record<string, unknown>) => {
     FileClientModule,
     ExcelModule,
     LabelModule,
+    OEEModule,
   ],
   controllers: [AppController],
   providers: [
