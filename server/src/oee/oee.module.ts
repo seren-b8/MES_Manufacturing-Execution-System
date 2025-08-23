@@ -7,11 +7,13 @@ import { QualityService } from './services/quality.service';
 import { AvailabilityService } from './services/availability.service';
 import { PerformanceService } from './services/performance.service';
 import { MongooseSchemaModule } from 'src/database/mongoose-schema.module';
+import { MachineModule } from 'src/machine/machine.module';
 
 @Module({
   imports: [
     MongooseSchemaModule,
     ScheduleModule.forRoot(),
+    MachineModule,
     // TODO: Import required modules (ProductionModule, MachineModule, AssignModule)
   ],
   controllers: [OEEController],

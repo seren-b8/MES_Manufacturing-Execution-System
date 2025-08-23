@@ -5,6 +5,7 @@ import { Model } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/schema/assign-order.schema';
 import { ProductionOrder } from 'src/schema/production-order.schema';
+import { machine } from 'os';
 
 @Injectable()
 export class ProductionOrderService {
@@ -184,16 +185,22 @@ export class ProductionOrderService {
    */
 
   async getJobWaiting(
-    workCenter: string,
+    workCenter?: string,
   ): Promise<ResponseFormat<ProductionOrder>> {
     try {
       const collectionNames = {
         assignOrder: this.assignOderModel.collection.collectionName,
       };
 
+      const matchCondition: any = { sql_active: true };
+
+      if (workCenter) {
+        matchCondition.work_center = workCenter;
+      }
+
       const jobWaiting = await this.productionOrderModel.aggregate([
         {
-          $match: { sql_active: true, work_center: workCenter },
+          $match: matchCondition,
         },
         {
           $lookup: {
@@ -220,6 +227,20 @@ export class ProductionOrderService {
         {
           $unwind: {
             path: '$co_part_info',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
+            from: 'machine_info',
+            localField: 'work_center',
+            foreignField: 'work_center',
+            as: 'machine_info',
+          },
+        },
+        {
+          $unwind: {
+            path: '$machine_info',
             preserveNullAndEmptyArrays: true,
           },
         },
@@ -297,6 +318,7 @@ export class ProductionOrderService {
             operation_short_text: 1,
             object_id: 1,
             work_center: 1,
+            machine_number: '$machine_info.machine_number',
             setup_time_1: 1,
             setup_time_2: 1,
             setup_time_3: 1,

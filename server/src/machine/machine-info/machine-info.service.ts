@@ -1380,7 +1380,14 @@ export class MachineInfoService {
 
       // 2. สร้างเงื่อนไขสำหรับการค้นหา
       const findCondition: any = {
-        createdAt: { $gte: start, $lte: end },
+        $or: [
+          // ข้อมูลในช่วงที่ต้องการ
+          { createdAt: { $gte: start, $lte: end } },
+          {
+            // ข้อมูลก่อนหน้า 1 record (latest before start time)
+            createdAt: { $lt: start },
+          },
+        ],
       };
 
       if (machineNumbers?.length) {

@@ -17,6 +17,8 @@ import { CustomCacheKeyGenerator } from 'src/shared/utils/custom-cache-key.gener
 import { MachineAnalysisCacheInterceptor } from './interceptors/machine-analysis-cache.interceptor';
 import { MesCacheModule } from 'src/shared/cache/cache.module';
 import { FileClientModule } from 'src/shared/services/file-client/file-client.module';
+import { TimelineMachineCleanupController } from './timeline-machine/timeline-machine-cleanup.controller';
+import { TimelineMachineCleanupService } from './timeline-machine/timeline-machine-cleanup.service';
 
 @Module({
   imports: [
@@ -32,6 +34,7 @@ import { FileClientModule } from 'src/shared/services/file-client/file-client.mo
     MasterNotGoodController,
     MasterPartsController,
     PrinterDevicesController,
+    TimelineMachineCleanupController,
   ],
   providers: [
     MachineService,
@@ -42,6 +45,7 @@ import { FileClientModule } from 'src/shared/services/file-client/file-client.mo
     PrinterDevicesService,
     CustomCacheKeyGenerator,
     MachineAnalysisCacheInterceptor,
+    TimelineMachineCleanupService,
   ],
   exports: [MachineInfoService],
 })

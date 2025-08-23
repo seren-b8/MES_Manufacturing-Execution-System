@@ -42,34 +42,34 @@ export class OEEService {
     }
   }
 
-  async calculateOEE(
-    machineNumber: string,
-    timeframe: TimeFrame,
-  ): Promise<ResponseFormat<OEEResponseDto>> {
-    try {
-      // TODO: Calculate using parallel processing
-      const [quality, availability, performance] = await Promise.all([
-        this.qualityService.calculate(machineNumber, timeframe),
-        this.availabilityService.calculate(machineNumber, timeframe),
-        this.performanceService.calculate(machineNumber, timeframe),
-      ]);
+  // async calculateOEE(
+  //   machineNumber: string,
+  //   timeframe: TimeFrame,
+  // ): Promise<ResponseFormat<OEEResponseDto>> {
+  //   try {
+  //     // TODO: Calculate using parallel processing
+  //     const [quality, availability, performance] = await Promise.all([
+  //       this.qualityService.calculate(machineNumber, timeframe),
+  //       this.availabilityService.calculate(machineNumber, timeframe),
+  //       this.performanceService.calculate(machineNumber, timeframe),
+  //     ]);
 
-      // TODO: Calculate final OEE
-      // TODO: Return formatted response
+  //     // TODO: Calculate final OEE
+  //     // TODO: Return formatted response
 
-      return {
-        status: 'success',
-        message: 'OEE calculated successfully',
-        data: [],
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        message: 'Failed to calculate OEE',
-        data: [],
-      };
-    }
-  }
+  //     return {
+  //       status: 'success',
+  //       message: 'OEE calculated successfully',
+  //       data: [],
+  //     };
+  //   } catch (error) {
+  //     return {
+  //       status: 'error',
+  //       message: 'Failed to calculate OEE',
+  //       data: [],
+  //     };
+  //   }
+  // }
 
   async getHourlyOEE(
     machineNumber: string,
@@ -119,13 +119,13 @@ export class OEEService {
     // TODO: Scheduled job to save daily OEE
   }
 
-  private getCurrentShiftTimeframe(machineNumber: string): TimeFrame {
-    // TODO: Calculate current shift timeframe using moment-timezone
-    return {
-      machine_number: machineNumber,
-      start_time: new Date(),
-      end_time: new Date(),
-      shift_type: 'day',
-    };
-  }
+  // private getCurrentShiftTimeframe(machineNumber: string): TimeFrame {
+  //   // TODO: Calculate current shift timeframe using moment-timezone
+  //   return {
+  //     machine_number: machineNumber,
+  //     start_time: new Date(),
+  //     end_time: new Date(),
+  //     shift_type: 'day',
+  //   };
+  // }
 }

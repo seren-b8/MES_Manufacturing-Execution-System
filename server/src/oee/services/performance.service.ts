@@ -9,6 +9,7 @@ import { ProductionOrder } from 'src/schema/production-order.schema';
 import { MachineCounterLog } from 'src/schema/machine-counter-log.schema';
 import { now } from 'moment';
 import { MachineInfo } from 'src/schema/machine-info.schema';
+import { MinLength } from 'class-validator';
 
 @Injectable()
 export class PerformanceService {
@@ -25,95 +26,98 @@ export class PerformanceService {
   ) {}
 
   async calculate(
-    machineNumber: string,
+    machineNumbers: string[],
     timeframe: TimeFrame,
-  ): Promise<number> {
-    // TODO: Implement performance calculation logic
-    return 0;
+  ): Promise<Map<string, number>> {
+    // เปลี่ยน return type
+    try {
+      return await this.calculateMultiMachine(machineNumbers, timeframe);
+    } catch (error) {
+      console.error('Error calculating performance:', error);
+      // Return empty Map with 0 values for all machines
+      const results = new Map();
+      machineNumbers.forEach((machine) => results.set(machine, 0));
+      return results;
+    }
   }
 
-  async getCycleTime(
-    machineNumber: string,
+  async getMultiMachinePerformanceArray(
+    machineNumbers: string[],
     timeFrame: TimeFrame,
-  ): Promise<any> {
-    try {
-      const machineLog = await this.machineCounterLogModel.find({
-        machine_number: machineNumber,
-        is_reset_suspected: false,
-        is_abnormal_change: false,
-        forced_by_time_threshold: false,
-        createdAt: {
-          $gte: new Date(timeFrame.start_time),
-          $lte: new Date(timeFrame.end_time),
-        },
-      });
+  ): Promise<any[]> {
+    const mapResult = await this.getMultiMachineCycleTime(
+      machineNumbers,
+      timeFrame,
+    );
+    return this.processPerformanceData(mapResult);
+  }
 
+  async getMultiMachineCycleTime(
+    machineNumbers: string[],
+    timeFrame: TimeFrame,
+  ): Promise<Map<string, any>> {
+    try {
+      const machineLogs = await this.machineCounterLogModel.aggregate([
+        {
+          $match: {
+            machine_number: { $in: machineNumbers }, // แก้จุดนี้
+            is_reset_suspected: false,
+            is_abnormal_change: false,
+            forced_by_time_threshold: false,
+            createdAt: {
+              $gte: new Date(timeFrame.start_time),
+              $lte: new Date(timeFrame.end_time),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: '$machine_number', // group ตาม machine
+            actualShots: { $sum: '$counter_change' },
+            logCount: { $sum: 1 },
+          },
+        },
+      ]);
       const timeframeDurationMs =
         new Date(timeFrame.end_time).getTime() -
         new Date(timeFrame.start_time).getTime();
 
       const timeframeDurationSeconds = timeframeDurationMs / 1000;
 
-      const targetCycleTime = await this.getTargetCycleTime(machineNumber);
+      const targetCycleTimes =
+        await this.getMultiMachineTargetCycleTime(machineNumbers);
 
-      const theoreticalShots = timeframeDurationSeconds / targetCycleTime;
+      const results = new Map();
 
-      const actualShots = machineLog.reduce(
-        (sum, log) => sum + log.counter_change,
-        0,
-      );
+      machineNumbers.forEach((machineNumber) => {
+        const machineLog = machineLogs.find((log) => log._id === machineNumber);
+        const actualShots = machineLog?.actualShots || 0;
+        const targetCycleTime = targetCycleTimes.get(machineNumber) || 0;
 
-      const performance = (actualShots / theoreticalShots) * 100;
+        const theoreticalShots =
+          targetCycleTime > 0 ? timeframeDurationSeconds / targetCycleTime : 0;
+        const performance =
+          theoreticalShots > 0 ? (actualShots / theoreticalShots) * 100 : 0;
 
-      return {
-        performance,
-        actualShots,
-        theoreticalShots,
-        targetCycleTime,
-        timeframeDurationSeconds,
-      };
+        results.set(machineNumber, {
+          performance,
+          actualShots,
+          theoreticalShots,
+          targetCycleTime,
+          timeframeDurationSeconds,
+        });
+      });
+
+      return results;
     } catch (error) {
       console.error('Error getting target cycle time:', error);
       return null;
     }
   }
 
-  async getTargetCycleTime(machineNumber: string): Promise<number> {
-    const machineData = await this.getMachineWithTargetCycleTime(machineNumber);
-
-    if (
-      !machineData ||
-      !machineData.active_orders ||
-      machineData.active_orders.length === 0
-    ) {
-      throw new Error('No active orders found for machine');
-    }
-
-    const activeOrder = machineData.active_orders[0];
-    const cavity_count = activeOrder.cavity_info?.cavity_count || 1;
-    const cavity_cycle_time = activeOrder.cavity_info?.cavity_cycle_time || 0;
-
-    // ใช้ order แรกที่มี target_cycle_time
-    const orderWithCycleTime = machineData.active_orders.find(
-      (order) => order.target_cycle_time && order.target_cycle_time > 0,
-    );
-
-    if (!orderWithCycleTime) {
-      throw new Error('No valid target cycle time found');
-    }
-    let targetCycleTime = orderWithCycleTime.target_cycle_time;
-    if (cavity_cycle_time <= 0 && cavity_count != 0) {
-      targetCycleTime = targetCycleTime * cavity_count;
-    } else if (cavity_cycle_time > 0) {
-      targetCycleTime = cavity_cycle_time;
-    }
-
-    return targetCycleTime;
-  }
-
-  private async getMachineWithTargetCycleTime(machineNumber: string) {
-    const result = await this.machineinfoModel.aggregate([
-      { $match: { machine_number: machineNumber } },
+  private async getMultiMachineWithTargetCycleTime(machineNumbers: string[]) {
+    const results = await this.machineinfoModel.aggregate([
+      { $match: { machine_number: { $in: machineNumbers } } },
 
       {
         $lookup: {
@@ -220,6 +224,116 @@ export class PerformanceService {
       },
     ]);
 
-    return result[0];
+    // แปลงเป็น Map สำหรับการค้นหาง่าย
+    const resultMap = new Map();
+    results.forEach((machine) => {
+      resultMap.set(machine.machine_number, machine);
+    });
+
+    return resultMap;
+  }
+
+  async getMultiMachineTargetCycleTime(
+    machineNumbers: string[],
+  ): Promise<Map<string, number>> {
+    const machineDataMap =
+      await this.getMultiMachineWithTargetCycleTime(machineNumbers);
+    const results = new Map();
+
+    machineNumbers.forEach((machineNumber) => {
+      try {
+        const machineData = machineDataMap.get(machineNumber);
+
+        if (
+          !machineData ||
+          !machineData.active_orders ||
+          machineData.active_orders.length === 0
+        ) {
+          results.set(machineNumber, 0);
+          return;
+        }
+
+        // Logic เดิมสำหรับคำนวณ target cycle time
+        const activeOrder = machineData.active_orders[0];
+        const cavity_count = activeOrder.cavity_info?.cavity_count || 1;
+        const cavity_cycle_time =
+          activeOrder.cavity_info?.cavity_cycle_time || 0;
+
+        const activeOrderCount = machineData.active_orders.length;
+
+        const orderWithCycleTime = machineData.active_orders.find(
+          (order) => order.target_cycle_time && order.target_cycle_time > 0,
+        );
+
+        if (!orderWithCycleTime) {
+          results.set(machineNumber, 0);
+          return;
+        }
+
+        let targetCycleTime = orderWithCycleTime.target_cycle_time;
+
+        if (cavity_cycle_time <= 0 && cavity_count != 0) {
+          targetCycleTime = targetCycleTime * (cavity_count / activeOrderCount);
+        } else if (cavity_cycle_time > 0) {
+          targetCycleTime = cavity_cycle_time;
+        }
+
+        results.set(machineNumber, targetCycleTime);
+      } catch (error) {
+        console.error(
+          `Error calculating target cycle time for ${machineNumber}:`,
+          error,
+        );
+        results.set(machineNumber, 0);
+      }
+    });
+
+    return results;
+  }
+
+  async calculateMultiMachine(
+    machineNumbers: string[],
+    timeframe: TimeFrame,
+  ): Promise<Map<string, number>> {
+    try {
+      const cycleTimeResults = await this.getMultiMachineCycleTime(
+        machineNumbers,
+        timeframe,
+      );
+
+      const performanceResults = new Map();
+
+      // ตรวจสอบว่า cycleTimeResults เป็น Map หรือไม่
+      if (cycleTimeResults instanceof Map) {
+        cycleTimeResults.forEach((result, machineNumber) => {
+          performanceResults.set(machineNumber, result.performance || 0);
+        });
+      } else {
+        // Fallback: ถ้าไม่ได้ Map กลับมา
+        machineNumbers.forEach((machine) => {
+          performanceResults.set(machine, 0);
+        });
+      }
+
+      return performanceResults;
+    } catch (error) {
+      console.error('Error in calculateMultiMachine:', error);
+      const fallbackResults = new Map();
+      machineNumbers.forEach((machine) => fallbackResults.set(machine, 0));
+      return fallbackResults;
+    }
+  }
+
+  private processPerformanceData(performanceMap: Map<string, any>): any[] {
+    return Array.from(performanceMap.entries()).map(
+      ([machineNumber, data]) => ({
+        machineNumber,
+        performance: Math.round(data.performance * 100) / 100, // ปรับทศนิยม 2 ตำแหน่ง
+        actualShots: data.actualShots,
+        theoreticalShots: Math.round(data.theoreticalShots * 100) / 100,
+        targetCycleTime: data.targetCycleTime,
+        timeframeDurationSeconds: data.timeframeDurationSeconds,
+      }),
+    );
   }
 }

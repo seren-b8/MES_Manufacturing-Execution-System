@@ -354,15 +354,10 @@ export class AssignOrderService {
           updateDto.status === 'completed' &&
           !updateDto.datetime_close_order
         ) {
-          throw new HttpException(
-            {
-              status: 'error',
-              message:
-                'datetime_close_order is required when completing an order',
-              data: [],
-            },
-            HttpStatus.BAD_REQUEST,
-          );
+          updateDto = {
+            ...updateDto,
+            datetime_close_order: moment().tz('Asia/Bangkok').toDate(),
+          };
         }
       }
 

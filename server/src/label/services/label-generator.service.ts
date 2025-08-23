@@ -125,7 +125,16 @@ export class LabelGeneratorService {
         12,
         ctx,
       ); // <-- Order ID (Smart Text)
-      this.drawSmartText(labelData.part1.code, 100, 180, 250, 100, 60, 12, ctx); // <-- Part Code (Smart Text)
+      this.drawAutoSizeText(
+        labelData.part1.code,
+        100,
+        180,
+        250,
+        100,
+        60,
+        12,
+        ctx,
+      ); // <-- Part Code (Smart Text)
       this.drawSmartText(labelData.part1.name, 100, 280, 250, 100, 60, 12, ctx); // <-- Part Name (Smart Text)
 
       drawLine(450, 140, 450, 380);
@@ -614,6 +623,44 @@ export class LabelGeneratorService {
       const centerX = x + padding + (availableWidth - textWidth) / 2;
       ctx.fillText(line, centerX, lineY);
     });
+  }
+
+  private drawAutoSizeText(
+    text: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    maxFontSize: number = 20,
+    minFontSize: number = 10,
+    ctx: CanvasRenderingContext2D,
+  ): void {
+    if (!text) return;
+
+    const padding = 5;
+    const availableWidth = width - padding * 2;
+
+    let fontSize = maxFontSize;
+
+    // ลดขนาดตัวอักษรจนกว่าจะพอดีกับความกว้าง
+    for (fontSize = maxFontSize; fontSize >= minFontSize; fontSize--) {
+      ctx.font = `bold ${fontSize}px Arial`;
+      const textWidth = ctx.measureText(text).width;
+
+      if (textWidth <= availableWidth) {
+        break;
+      }
+    }
+
+    // วาดข้อความตรงกลาง
+    ctx.fillStyle = '#000000';
+    ctx.font = `bold ${fontSize}px Arial`;
+
+    const textWidth = ctx.measureText(text).width;
+    const centerX = x + padding + (availableWidth - textWidth) / 2;
+    const centerY = y + height / 2 + fontSize / 4;
+
+    ctx.fillText(text, centerX, centerY);
   }
 
   private wrapText(
