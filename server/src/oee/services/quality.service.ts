@@ -14,13 +14,10 @@ export class QualityService {
     private assignOrderModel: Model<AssignOrder>,
   ) {}
 
-  async calculate(
-    machineNumbers: string[],
-    timeframe: TimeFrame,
-  ): Promise<any> {
+  async calculate(timeframe: TimeFrame): Promise<any> {
     try {
       const qualityData = await this.getMultiMachineQualityData(
-        machineNumbers,
+        timeframe.machine_numbers,
         timeframe,
       );
 
@@ -67,11 +64,15 @@ export class QualityService {
         {
           $unwind: '$assign_order',
         },
-        {
-          $match: {
-            'assign_order.machine_number': { $in: machineNumbers },
-          },
-        },
+        ...(machineNumbers.length > 0
+          ? [
+              {
+                $match: {
+                  'assign_order.machine_number': { $in: machineNumbers },
+                },
+              },
+            ]
+          : []),
         {
           $group: {
             _id: {

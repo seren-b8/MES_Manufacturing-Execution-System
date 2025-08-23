@@ -27,8 +27,6 @@ export class AvailabilityService {
         ? statusResponse
         : statusResponse?.data || [];
 
-      console.log(machineData);
-
       const results = new Map<string, number>();
 
       // ตรวจสอบว่าเป็น array ก่อน forEach
@@ -53,8 +51,6 @@ export class AvailabilityService {
   }
 
   private calculateMachineAvailability(machineData: any): number {
-    console.log(`=== ${machineData.machine_number} ===`);
-
     if (!machineData.intervals || machineData.intervals.length === 0) {
       console.log('No intervals data');
       return 0;
@@ -68,17 +64,11 @@ export class AvailabilityService {
       const offTime = interval.OFF || 0;
       const alarmTime = interval.ALARM || 0;
 
-      console.log(`Interval ${index}:`, { onTime, offTime, alarmTime });
-
       totalOnTime += onTime;
       totalTime += onTime + offTime + alarmTime;
     });
 
     const availability = totalTime > 0 ? (totalOnTime / totalTime) * 100 : 0;
-
-    console.log(
-      `Total: ON=${totalOnTime}, Total=${totalTime}, Availability=${availability}%`,
-    );
 
     return Math.round(availability * 100) / 100;
   }
@@ -105,7 +95,9 @@ export class AvailabilityService {
           timeframe.start_time,
           timeframe.end_time,
           60,
-          timeframe.machine_numbers,
+          timeframe.machine_numbers.length < 1
+            ? null
+            : timeframe.machine_numbers,
         );
 
       // แก้ไข: เข้าถึง data field

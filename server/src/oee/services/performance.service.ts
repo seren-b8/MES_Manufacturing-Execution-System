@@ -41,10 +41,8 @@ export class PerformanceService {
     }
   }
 
-  async getMultiMachinePerformanceArray(
-    machineNumbers: string[],
-    timeFrame: TimeFrame,
-  ): Promise<any[]> {
+  async getMultiMachinePerformanceArray(timeFrame: TimeFrame): Promise<any[]> {
+    const machineNumbers = timeFrame.machine_numbers || [];
     const mapResult = await this.getMultiMachineCycleTime(
       machineNumbers,
       timeFrame,
@@ -60,7 +58,9 @@ export class PerformanceService {
       const machineLogs = await this.machineCounterLogModel.aggregate([
         {
           $match: {
-            machine_number: { $in: machineNumbers }, // แก้จุดนี้
+            ...(machineNumbers.length > 0
+              ? { machine_number: { $in: machineNumbers } }
+              : {}),
             is_reset_suspected: false,
             is_abnormal_change: false,
             forced_by_time_threshold: false,
@@ -89,7 +89,12 @@ export class PerformanceService {
 
       const results = new Map();
 
-      machineNumbers.forEach((machineNumber) => {
+      const machineList =
+        machineNumbers.length > 0
+          ? machineNumbers
+          : machineLogs.map((log) => log._id);
+
+      machineList.forEach((machineNumber) => {
         const machineLog = machineLogs.find((log) => log._id === machineNumber);
         const actualShots = machineLog?.actualShots || 0;
         const targetCycleTime = targetCycleTimes.get(machineNumber) || 0;
@@ -117,8 +122,15 @@ export class PerformanceService {
 
   private async getMultiMachineWithTargetCycleTime(machineNumbers: string[]) {
     const results = await this.machineinfoModel.aggregate([
-      { $match: { machine_number: { $in: machineNumbers } } },
-
+      ...(machineNumbers.length > 0
+        ? [
+            {
+              $match: {
+                machine_number: { $in: machineNumbers },
+              },
+            },
+          ]
+        : []),
       {
         $lookup: {
           from: 'assign_order',
@@ -240,7 +252,12 @@ export class PerformanceService {
       await this.getMultiMachineWithTargetCycleTime(machineNumbers);
     const results = new Map();
 
-    machineNumbers.forEach((machineNumber) => {
+    const machineList =
+      machineNumbers.length > 0
+        ? machineNumbers
+        : Array.from(machineDataMap.keys());
+
+    machineList.forEach((machineNumber) => {
       try {
         const machineData = machineDataMap.get(machineNumber);
 
