@@ -6,6 +6,7 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { OEEService } from './services/oee.service';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
@@ -21,6 +22,11 @@ import { AvailabilityService } from './services/availability.service';
 import { Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { GetHourlyOEEDto } from './dto/get-hourly-oee.dto';
+import {
+  MicroCacheInterceptor,
+  ShortCacheInterceprot,
+} from 'src/machine/interceptors/simple-cache.interceptor';
+import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 
 @Controller('oee')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,6 +39,7 @@ export class OEEController {
   ) {}
 
   @Get('realtime')
+  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getRealTimeOEE() {
     return this.oeeService.calculateRealTimeOEE();
