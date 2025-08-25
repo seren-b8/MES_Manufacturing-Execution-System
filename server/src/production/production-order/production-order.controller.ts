@@ -1,7 +1,16 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ProductionOrderService } from './production-order.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
+import { ShortCacheInterceprot } from 'src/machine/interceptors/simple-cache.interceptor';
+import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 
 @Controller('/production-orders')
 @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
@@ -39,6 +48,7 @@ export class ProductionOrderController {
   }
 
   @Get()
+  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
   async findAll(@Query() query: any) {
     return this.productionOrderService.findAll(query);
   }

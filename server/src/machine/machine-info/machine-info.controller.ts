@@ -132,6 +132,7 @@ export class MachineInfoController {
 
   // ดึงข้อมูลเครื่องจักรทั้งหมดพร้อมเครื่องพิมพ์
   @Get('with-printers')
+  @UseInterceptors(MicroCacheInterceptor, new TimeoutInterceptor(20000))
   @Roles(Role.ADMIN)
   getAllMachinesWithPrinters() {
     return this.machineInfoService.getAllMachinesWithPrinters();

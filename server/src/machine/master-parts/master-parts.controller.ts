@@ -29,6 +29,8 @@ import {
 } from '../dto/master-parts.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
+import { ShortCacheInterceprot } from '../interceptors/simple-cache.interceptor';
+import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 
 @Controller('master-parts')
 @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
@@ -80,6 +82,7 @@ export class MasterPartsController {
   }
 
   @Get()
+  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
   async findAll(@Query() query: any): Promise<ResponseFormat<MasterPart>> {
     return this.masterPartsService.findAll(query);
   }

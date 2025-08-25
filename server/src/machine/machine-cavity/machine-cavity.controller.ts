@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { MachineCavityService } from './machine-cavity.service';
 import { ResponseFormat } from 'src/shared/interface';
@@ -19,6 +20,8 @@ import {
 } from '../dto/master-cavity.dto';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
+import { ShortCacheInterceprot } from '../interceptors/simple-cache.interceptor';
+import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 
 @Controller('machine-cavity')
 @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
@@ -34,6 +37,7 @@ export class MachineCavityController {
   }
 
   @Get()
+  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
   async findAll(@Query() query: any): Promise<ResponseFormat<MasterCavity>> {
     return this.machineCavityService.findAll(query);
   }
