@@ -6,7 +6,7 @@ import { AvailabilityService } from './availability.service';
 import { PerformanceService } from './performance.service';
 import { OEEHourly } from 'src/schema/oee-hourly.schema';
 // import { OEEDaily } from '../schemas/oee-daily.schema';
-import { TimeFrame } from 'src/shared/interface/oee';
+import { ShiftConfig, TimeFrame } from 'src/shared/interface/oee';
 import { OEEResponseDto } from '../dto/timeframe.dto';
 import { ResponseFormat } from 'src/shared/interface';
 import * as moment from 'moment-timezone';
@@ -272,19 +272,80 @@ export class OEEService {
 
   private calculateProductionShiftTimeFrame(): TimeFrame {
     const now = moment().tz('Asia/Bangkok');
+    const shiftConfig: ShiftConfig = {
+      day: { start: 8, end: 20 }, // 08:00 - 20:00
+      night: { start: 20, end: 8 }, // 20:00 - 08:00
+    };
 
-    // คำนวณ start_time = 8:00 AM วันนี้
-    const startTime = now.clone().startOf('day').add(8, 'hours');
+    // ปรับนาทีลงเลข 5 และ 0
+    const adjustedEndTime = this.roundDownToFiveMinutes(now);
 
-    // ถ้าเวลาปัจจุบันก่อน 8:00 AM ให้ใช้ 8:00 AM เมื่อวาน
-    if (now.hour() < 8) {
-      startTime.subtract(1, 'day');
-    }
+    // หาช่วงกะปัจจุบัน
+    const shiftInfo = this.getCurrentShiftInfo(now, shiftConfig);
 
     return {
       machine_numbers: [],
-      start_time: startTime.toDate(),
-      end_time: now.toDate(),
+      start_time: shiftInfo.shift_start.toDate(),
+      end_time: adjustedEndTime.toDate(),
+      shift_type: shiftInfo.shift_type,
+    };
+  }
+  private roundDownToFiveMinutes(time: moment.Moment): moment.Moment {
+    const minutes = time.minutes();
+    const roundedMinutes = Math.floor(minutes / 5) * 5;
+    return time.clone().minutes(roundedMinutes).seconds(0).milliseconds(0);
+  }
+
+  private getCurrentShiftInfo(currentTime: moment.Moment, config: ShiftConfig) {
+    const hour = currentTime.hour();
+    let shiftType: 'day' | 'night';
+    let shiftStart: moment.Moment;
+    let nextShiftStart: moment.Moment;
+
+    // กะกลางวัน: 08:00 - 20:00
+    if (hour >= config.day.start && hour < config.day.end) {
+      shiftType = 'day';
+      shiftStart = currentTime
+        .clone()
+        .startOf('day')
+        .add(config.day.start, 'hours');
+      nextShiftStart = currentTime
+        .clone()
+        .startOf('day')
+        .add(config.day.end, 'hours');
+    }
+    // กะกลางคืน: 20:00 - 08:00
+    else {
+      shiftType = 'night';
+      if (hour >= config.night.start) {
+        // เวลา 20:00-23:59 (วันเดียวกัน)
+        shiftStart = currentTime
+          .clone()
+          .startOf('day')
+          .add(config.night.start, 'hours');
+        nextShiftStart = currentTime
+          .clone()
+          .add(1, 'day')
+          .startOf('day')
+          .add(config.day.start, 'hours');
+      } else {
+        // เวลา 00:00-07:59 (วันถัดไป)
+        shiftStart = currentTime
+          .clone()
+          .subtract(1, 'day')
+          .startOf('day')
+          .add(config.night.start, 'hours');
+        nextShiftStart = currentTime
+          .clone()
+          .startOf('day')
+          .add(config.day.start, 'hours');
+      }
+    }
+
+    return {
+      shift_type: shiftType,
+      shift_start: shiftStart,
+      next_shift_start: nextShiftStart,
     };
   }
 

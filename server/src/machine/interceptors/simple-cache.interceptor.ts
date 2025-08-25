@@ -222,7 +222,7 @@ export class MicroCacheInterceptor extends SimpleCacheInterceptor {
 }
 
 export class ShortCacheInterceprot extends SimpleCacheInterceptor {
-  protected readonly ttl = 60 * 1000; //1 minite
+  protected readonly ttl = 60 * 3 * 1000; //1 minite
 }
 
 export class LongCacheInterceptor extends SimpleCacheInterceptor {

@@ -10,3 +10,8 @@ export interface ProcessedMachineData {
   quality: number;
   assignOrderIds: string[];
 }
+
+interface ShiftConfig {
+  day: { start: number; end: number }; // 08:00 - 20:00
+  night: { start: number; end: number }; // 20:00 - 08:00
+}

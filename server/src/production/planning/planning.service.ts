@@ -14,6 +14,7 @@ import {
   UpdatePlanningDto,
 } from '../dto/planning.dto';
 import { toObjectId } from 'src/shared/utils/type.utils';
+import { machine } from 'os';
 
 @Injectable()
 export class ProductionPlanningService {
@@ -314,6 +315,21 @@ export class ProductionPlanningService {
         {
           $unwind: {
             path: '$planned_by',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        {
+          $lookup: {
+            from: 'machine_info',
+            localField: 'machine_number',
+            foreignField: 'machine_number',
+            as: 'machine_info',
+          },
+        },
+        {
+          $unwind: {
+            path: '$machine_info',
             preserveNullAndEmptyArrays: true,
           },
         },

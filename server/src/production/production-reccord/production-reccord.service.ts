@@ -713,7 +713,7 @@ export class ProductionRecordService {
         // Add confirmation related fields
         updateDto = {
           ...updateDto,
-          confirmed_by: new Types.ObjectId(updateDto.confirmed_by).toString(),
+          confirmed_by: toObjectId(updateDto.confirmed_by),
           confirmed_at: moment().toDate(),
         };
       }
