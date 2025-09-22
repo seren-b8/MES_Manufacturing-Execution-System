@@ -238,8 +238,6 @@ export class ProductionRecordController {
       query.serial_code = { $regex: serialCode, $options: 'i' }; // case insensitive search
     }
 
-    // console.log('Final query:', JSON.stringify(query, null, 2));
-
     return await this.productionRecordService.findAll(query, page, limit);
   }
 

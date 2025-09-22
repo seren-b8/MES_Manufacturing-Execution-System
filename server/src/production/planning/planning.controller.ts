@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
@@ -23,6 +24,10 @@ import {
 } from '../dto/planning.dto';
 import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
 import { Cron } from '@nestjs/schedule';
+import {
+  MicroCacheInterceptor,
+  ShortCacheInterceprot,
+} from 'src/machine/interceptors/simple-cache.interceptor';
 
 @Controller('production-planning')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -44,6 +49,7 @@ export class ProductionPlanningController {
 
   // Get all planning with optional filters
   @Get()
+  @UseInterceptors(MicroCacheInterceptor)
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async findAll(@Query() query: PlanningQueryDto) {
     return this.productionPlanningService.findAll(query);

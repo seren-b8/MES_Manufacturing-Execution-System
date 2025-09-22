@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import moment from 'moment';
+import * as moment from 'moment-timezone';
 import { Model, Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/schema/assign-order.schema';
@@ -258,7 +258,6 @@ export class ProductionPlanningService {
       const planning = await this.productionPlanningModel.aggregate([
         { $match: filter },
 
-        // เพิ่ม status priority field
         {
           $addFields: {
             status_priority: {
@@ -281,6 +280,7 @@ export class ProductionPlanningService {
             localField: 'production_order_id',
             foreignField: '_id',
             as: 'production_order_id',
+            pipeline: [{ $project: { _id: 0 } }],
           },
         },
         {
@@ -295,6 +295,7 @@ export class ProductionPlanningService {
             localField: 'material_id',
             foreignField: '_id',
             as: 'material_id',
+            pipeline: [{ $project: { _id: 0 } }],
           },
         },
         {
@@ -309,7 +310,14 @@ export class ProductionPlanningService {
             localField: 'planned_by',
             foreignField: '_id',
             as: 'planned_by',
-            pipeline: [{ $project: { employee_id: 1 } }],
+            pipeline: [
+              {
+                $project: {
+                  employee_id: 1,
+                  _id: 0,
+                },
+              },
+            ],
           },
         },
         {
@@ -318,13 +326,13 @@ export class ProductionPlanningService {
             preserveNullAndEmptyArrays: true,
           },
         },
-
         {
           $lookup: {
             from: 'machine_info',
             localField: 'machine_number',
             foreignField: 'machine_number',
             as: 'machine_info',
+            pipeline: [{ $project: { line: 1, _id: 0 } }],
           },
         },
         {
@@ -333,8 +341,11 @@ export class ProductionPlanningService {
             preserveNullAndEmptyArrays: true,
           },
         },
-
-        // เรียงตาม machine -> status priority -> sequence
+        {
+          $addFields: {
+            line: '$machine_info.line',
+          },
+        },
         {
           $sort: {
             machine_number: 1,
@@ -342,11 +353,12 @@ export class ProductionPlanningService {
             sequence_order: 1,
           },
         },
-
-        // ลบ field ที่ไม่ต้องการ
         {
           $project: {
             status_priority: 0,
+            machine_info: 0,
+            'man_power._id': 0,
+            __v: 0,
           },
         },
       ]);
@@ -646,6 +658,9 @@ export class ProductionPlanningService {
     machineNumber?: string,
   ): Promise<ResponseFormat<any>> {
     try {
+      const createdCount =
+        await this.autoCreatePlanningForActiveOrders(machineNumber);
+
       const filter: any = {
         status: { $nin: ['completed', 'cancelled'] },
       };
@@ -681,7 +696,7 @@ export class ProductionPlanningService {
 
       return {
         status: 'success',
-        message: `Synced ${changedCount} planning status updates`,
+        message: `Auto-created ${createdCount} new plans, synced ${changedCount} status updates`,
         data: [],
       };
     } catch (error) {
@@ -694,6 +709,77 @@ export class ProductionPlanningService {
         } as ResponseFormat<never>,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
+    }
+  }
+
+  private async autoCreatePlanningForActiveOrders(
+    machineNumber?: string,
+  ): Promise<number> {
+    try {
+      const filter: any = { status: 'active' };
+      if (machineNumber) {
+        filter.machine_number = machineNumber;
+      }
+
+      const activeOrders = await this.assignOrderModel
+        .find(filter)
+        .populate('production_order_id')
+        .lean();
+
+      let createdCount = 0;
+
+      for (const assignOrder of activeOrders) {
+        try {
+          // Type safety checks
+          const productionOrder = assignOrder.production_order_id as any;
+          if (!productionOrder?._id) continue;
+
+          // ตรวจสอบว่ามี planning อยู่แล้วหรือไม่
+          const existingPlanning = await this.productionPlanningModel.findOne({
+            production_order_id: productionOrder._id,
+          });
+
+          if (existingPlanning) continue;
+
+          // ตรวจสอบ sql_active
+          if (productionOrder.sql_active === false) continue;
+
+          const nextSequence = await this.getNextSequenceOrder(
+            assignOrder.machine_number,
+          );
+
+          await this.productionPlanningModel.create({
+            machine_number: assignOrder.machine_number,
+            planned_date: moment().tz('Asia/Bangkok').startOf('day').toDate(),
+            plan_type: 'sap_order',
+            production_order_id: toObjectId(productionOrder._id),
+            total_order_quantity: productionOrder.target_quantity || 0,
+            planned_quantity: productionOrder.target_quantity || 0,
+            sequence_order: nextSequence,
+            status: 'in_progress',
+            planned_by: productionOrder.planned_by
+              ? toObjectId(productionOrder.planned_by)
+              : null,
+            remark: 'Auto-created from active assign order',
+          });
+
+          createdCount++;
+        } catch (itemError) {
+          console.error(
+            `Failed to create planning for assign order ${assignOrder._id}:`,
+            (itemError as Error).message,
+          );
+          // ไม่ throw error เพื่อให้ continue กับรายการถัดไป
+        }
+      }
+
+      return createdCount;
+    } catch (error) {
+      console.error(
+        'Error in autoCreatePlanningForActiveOrders:',
+        (error as Error).message,
+      );
+      return 0;
     }
   }
 
