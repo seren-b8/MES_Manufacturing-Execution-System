@@ -25,6 +25,7 @@ export class OEEService {
   async calculateRealTimeOEE(): Promise<ResponseFormat<any>> {
     try {
       const timeFrame = this.calculateProductionShiftTimeFrame();
+      console.log(timeFrame);
 
       const quality = await this.qualityService.calculate(timeFrame);
       const avalilability =

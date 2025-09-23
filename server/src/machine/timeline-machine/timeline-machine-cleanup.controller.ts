@@ -13,6 +13,7 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
 import { TimelineMachineCleanupService } from './timeline-machine-cleanup.service';
 import { Cron } from '@nestjs/schedule';
+import * as moment from 'moment-timezone';
 
 // DTOs
 export class CleanupTimelineDto {
@@ -77,7 +78,7 @@ export class TimelineMachineCleanupController {
     };
   }
 
-  @Cron('0 0 0 * * *', {
+  @Cron('0 0 * * * *', {
     name: 'timeline-auto-cleanup',
     timeZone: 'Asia/Bangkok',
   })
@@ -90,32 +91,27 @@ export class TimelineMachineCleanupController {
     try {
       this.logger.log('🧹 Starting auto cleanup cron job...');
       // คำนวณวันที่ (เมื่อวาน ถึง เมื่อวาน-1)
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      const now = moment().tz('Asia/Bangkok');
+      const yesterday = now.clone().subtract(1, 'day').startOf('day');
 
       const dayBeforeYesterday = new Date();
       dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
 
-      // Format วันที่เป็น YYYY-MM-DD
-      const endDate = yesterday.toISOString().split('T')[0];
-      const startDate = dayBeforeYesterday.toISOString().split('T')[0];
-
       const cleanupDto: CleanupTimelineDto = {
         date_range: {
-          start: startDate,
-          end: endDate,
+          start: yesterday.format('YYYY-MM-DD'),
+          end: now.format('YYYY-MM-DD'), // ถึงวันปัจจุบัน
         },
         dry_run: this.cronDryRun,
         batch_size: this.cronBatchSize,
       };
 
-      // ทำการ cleanup
       const result =
         await this.timelineMachineService.executeCleanup(cleanupDto);
 
       this.logger.log('✅ Auto cleanup cron job completed successfully', {
         deletedCount: result.total_removed_records,
-        dateRange: { startDate, endDate },
+        dateRange: cleanupDto.date_range,
         dryRun: this.cronDryRun,
       });
     } catch (error) {
