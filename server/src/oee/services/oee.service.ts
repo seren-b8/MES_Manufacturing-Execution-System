@@ -25,7 +25,7 @@ export class OEEService {
   async calculateRealTimeOEE(): Promise<ResponseFormat<any>> {
     try {
       const timeFrame = this.calculateProductionShiftTimeFrame();
-      console.log(timeFrame);
+      // console.log(timeFrame);
 
       const quality = await this.qualityService.calculate(timeFrame);
       const avalilability =
@@ -291,6 +291,7 @@ export class OEEService {
       shift_type: shiftInfo.shift_type,
     };
   }
+
   private roundDownToFiveMinutes(time: moment.Moment): moment.Moment {
     const minutes = time.minutes();
     const roundedMinutes = Math.floor(minutes / 5) * 5;

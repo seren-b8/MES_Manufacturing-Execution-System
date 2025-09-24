@@ -78,7 +78,7 @@ export class TimelineMachineCleanupController {
     };
   }
 
-  @Cron('0 0 * * * *', {
+  @Cron('0 0 0 * * *', {
     name: 'timeline-auto-cleanup',
     timeZone: 'Asia/Bangkok',
   })

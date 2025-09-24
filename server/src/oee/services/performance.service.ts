@@ -353,4 +353,48 @@ export class PerformanceService {
       }),
     );
   }
+
+  private calculateFactoryPerformance(performanceArray: any[]): any {
+    const factoryTotals = performanceArray.reduce(
+      (acc, machine) => {
+        acc.totalActualShots += machine.actualShots;
+        acc.totalTheoreticalShots += machine.theoreticalShots;
+        acc.totalTimeframeDuration += machine.timeframeDurationSeconds;
+        acc.activeMachines += machine.actualShots > 0 ? 1 : 0;
+        return acc;
+      },
+      {
+        totalActualShots: 0,
+        totalTheoreticalShots: 0,
+        totalTimeframeDuration: 0,
+        activeMachines: 0,
+      },
+    );
+
+    // คำนวณ Factory Performance จากยอดรวม
+    const factoryPerformance =
+      factoryTotals.totalTheoreticalShots > 0
+        ? Math.round(
+            (factoryTotals.totalActualShots /
+              factoryTotals.totalTheoreticalShots) *
+              100 *
+              100,
+          ) / 100
+        : 0;
+
+    return {
+      machineNumber: 'ALL',
+      performance: factoryPerformance,
+      actualShots: factoryTotals.totalActualShots,
+      theoreticalShots:
+        Math.round(factoryTotals.totalTheoreticalShots * 100) / 100,
+      targetCycleTime:
+        factoryTotals.totalTimeframeDuration / factoryTotals.activeMachines ||
+        0, // เฉลี่ย
+      timeframeDurationSeconds:
+        factoryTotals.totalTimeframeDuration / factoryTotals.activeMachines ||
+        0,
+      activeMachines: factoryTotals.activeMachines,
+    };
+  }
 }

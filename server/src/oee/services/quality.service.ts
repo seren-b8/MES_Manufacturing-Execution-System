@@ -22,6 +22,7 @@ export class QualityService {
       );
 
       return this.processMachineData(qualityData.orderSummary);
+      // return this.calculateFactoryTotal(qualityData.orderSummary);
     } catch (error) {
       console.error('Error calculating quality:', error);
       return 0;
@@ -171,21 +172,71 @@ export class QualityService {
     return Object.keys(machineGroups).map((machineNumber) => {
       const orders = machineGroups[machineNumber];
 
-      // Calculate average quality
-      const totalQuality = orders.reduce(
-        (sum, order) => sum + order.quality,
+      // คำนวณ quality จากยอดรวม (ไม่ใช่ค่าเฉลี่ย)
+      const totalGoodPieces = orders.reduce(
+        (sum, order) => sum + order.goodPieces,
         0,
       );
-      const avgQuality = Math.round(totalQuality / orders.length);
+      const totalNotGoodPieces = orders.reduce(
+        (sum, order) => sum + order.notGoodPieces,
+        0,
+      );
+      const totalPieces = totalGoodPieces + totalNotGoodPieces;
+
+      const quality =
+        totalPieces > 0
+          ? Math.round((totalGoodPieces / totalPieces) * 100 * 100) / 100
+          : 0;
 
       // Collect assign order IDs
       const assignOrderIds = orders.map((order) => order.assignOrderId);
 
       return {
         machineNumber,
-        quality: avgQuality,
+        quality: quality,
         assignOrderIds,
       };
     });
+  }
+
+  private calculateFactoryQuality(orderSummary: any[]): any {
+    // รวมข้อมูลทั้งโรงงาน
+    const factoryTotals = orderSummary.reduce(
+      (acc, order) => {
+        acc.totalGoodPieces += order.goodPieces;
+        acc.totalNotGoodPieces += order.notGoodPieces;
+        acc.totalPieces += order.totalPieces;
+        acc.assignOrderIds.push(order.assignOrderId);
+        return acc;
+      },
+      {
+        totalGoodPieces: 0,
+        totalNotGoodPieces: 0,
+        totalPieces: 0,
+        assignOrderIds: [],
+      },
+    );
+
+    // คำนวณ Factory Quality
+    const factoryQuality =
+      factoryTotals.totalPieces > 0
+        ? Math.round(
+            (factoryTotals.totalGoodPieces / factoryTotals.totalPieces) *
+              100 *
+              100,
+          ) / 100
+        : 0;
+
+    // Remove duplicates from assignOrderIds
+    const uniqueAssignOrderIds = [...new Set(factoryTotals.assignOrderIds)];
+
+    return {
+      machineNumber: 'ALL',
+      quality: factoryQuality,
+      totalGoodPieces: factoryTotals.totalGoodPieces,
+      totalNotGoodPieces: factoryTotals.totalNotGoodPieces,
+      totalPieces: factoryTotals.totalPieces,
+      assignOrderIds: uniqueAssignOrderIds,
+    };
   }
 }

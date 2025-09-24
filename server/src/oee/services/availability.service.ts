@@ -150,4 +150,45 @@ export class AvailabilityService {
       }),
     );
   }
+
+  private calculateFactoryAvailability(availabilityArray: any[]): any {
+    // ต้องดึงข้อมูล detailed breakdown เพื่อคำนวณ factory total
+    const factoryTotals = availabilityArray.reduce(
+      (acc, machine) => {
+        // หาก availabilityArray มีเฉพาะ availability % ต้องใช้ getAvailabilityDetails แทน
+        acc.totalOnTime += machine.totalOnTime || 0;
+        acc.totalOffTime += machine.totalOffTime || 0;
+        acc.totalAlarmTime += machine.totalAlarmTime || 0;
+        acc.activeMachines += 1;
+        return acc;
+      },
+      {
+        totalOnTime: 0,
+        totalOffTime: 0,
+        totalAlarmTime: 0,
+        activeMachines: 0,
+      },
+    );
+
+    const totalTime =
+      factoryTotals.totalOnTime +
+      factoryTotals.totalOffTime +
+      factoryTotals.totalAlarmTime;
+
+    // คำนวณ Factory Availability จากเวลารวม
+    const factoryAvailability =
+      totalTime > 0
+        ? Math.round((factoryTotals.totalOnTime / totalTime) * 100 * 100) / 100
+        : 0;
+
+    return {
+      machineNumber: 'ALL',
+      availability: factoryAvailability,
+      totalOnTime: factoryTotals.totalOnTime,
+      totalOffTime: factoryTotals.totalOffTime,
+      totalAlarmTime: factoryTotals.totalAlarmTime,
+      totalTime: totalTime,
+      activeMachines: factoryTotals.activeMachines,
+    };
+  }
 }
