@@ -103,7 +103,7 @@ export class OEEService {
         );
       // return availability;
       // return quality;
-      return performance as any;
+      // return performance as any;
 
       const machineList =
         timeFrame.machine_numbers?.length > 0
@@ -484,7 +484,7 @@ export class OEEService {
     );
 
     const validPerformanceData = performanceArray.filter(
-      (p) => (p.actualShots || 0) > 0 || (p.theoreticalShots || 0) > 0,
+      (p) => (p.actualShots || 0) > 0 && (p.theoreticalShots || 0) > 0,
     );
 
     // Factory Quality Total
@@ -549,20 +549,20 @@ export class OEEService {
       performance: Math.round(factoryPerformance * 100) / 100,
       oee: Math.round(factoryOEE * 100) / 100,
 
-      // Factory Summary Data
-      totalGoodPieces: qualityTotals.totalGoodPieces,
-      totalNotGoodPieces: qualityTotals.totalNotGoodPieces,
-      totalPieces: totalPieces,
-      totalOnTime: Math.round(availabilityTotals.totalOnTime * 100) / 100,
-      totalActualShots: performanceTotals.totalActualShots,
-      totalTheoreticalShots:
-        Math.round(performanceTotals.totalTheoreticalShots * 100) / 100,
+      // // Factory Summary Data
+      // totalGoodPieces: qualityTotals.totalGoodPieces,
+      // totalNotGoodPieces: qualityTotals.totalNotGoodPieces,
+      // totalPieces: totalPieces,
+      // totalOnTime: Math.round(availabilityTotals.totalOnTime * 100) / 100,
+      // totalActualShots: performanceTotals.totalActualShots,
+      // totalTheoreticalShots:
+      //   Math.round(performanceTotals.totalTheoreticalShots * 100) / 100,
 
-      // Machine counts
-      activeMachines: qualityArray.length,
-      validQualityMachines: validQualityData.length,
-      validAvailabilityMachines: validAvailabilityData.length,
-      validPerformanceMachines: validPerformanceData.length,
+      // // Machine counts
+      // activeMachines: qualityArray.length,
+      // validQualityMachines: validQualityData.length,
+      // validAvailabilityMachines: validAvailabilityData.length,
+      // validPerformanceMachines: validPerformanceData.length,
     };
   }
 

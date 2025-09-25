@@ -10,7 +10,7 @@ export class OEEHourly extends Document {
   @Prop({ required: true, index: true })
   machine_number: string;
 
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   hour: Date;
 
   @Prop({

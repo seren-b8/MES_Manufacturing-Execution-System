@@ -23,8 +23,8 @@ export class Material {
   @Prop()
   material_description: string;
 
-  @Prop({ required: true })
-  unit_of_measurement: string;
+  //   @Prop({ required: true })
+  //   unit_of_measurement: string;
 
   // ใช้ Array ของ CurrentStockSchema สำหรับการเก็บสต็อกในแต่ละ location
   @Prop({ type: [CurrentStockSchema] })
