@@ -156,23 +156,19 @@ export class QualityService {
   }
 
   private processMachineData(orderSummary: any[]): ProcessedMachineData[] {
-    // Group by machine number
     const machineGroups = orderSummary.reduce((acc, item) => {
       const machineNumber = item.machineNumber;
-
       if (!acc[machineNumber]) {
         acc[machineNumber] = [];
       }
-
       acc[machineNumber].push(item);
       return acc;
     }, {});
 
-    // Process each machine group
     return Object.keys(machineGroups).map((machineNumber) => {
       const orders = machineGroups[machineNumber];
 
-      // คำนวณ quality จากยอดรวม (ไม่ใช่ค่าเฉลี่ย)
+      // คำนวณยอดรวม
       const totalGoodPieces = orders.reduce(
         (sum, order) => sum + order.goodPieces,
         0,
@@ -182,18 +178,19 @@ export class QualityService {
         0,
       );
       const totalPieces = totalGoodPieces + totalNotGoodPieces;
-
       const quality =
         totalPieces > 0
           ? Math.round((totalGoodPieces / totalPieces) * 100 * 100) / 100
           : 0;
 
-      // Collect assign order IDs
       const assignOrderIds = orders.map((order) => order.assignOrderId);
 
       return {
         machineNumber,
         quality: quality,
+        goodPieces: totalGoodPieces, // ✅ เพิ่ม
+        notGoodPieces: totalNotGoodPieces, // ✅ เพิ่ม
+        totalPieces: totalPieces, // ✅ เพิ่ม
         assignOrderIds,
       };
     });

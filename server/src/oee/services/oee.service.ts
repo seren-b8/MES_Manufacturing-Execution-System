@@ -25,7 +25,6 @@ export class OEEService {
   async calculateRealTimeOEE(): Promise<ResponseFormat<any>> {
     try {
       const timeFrame = this.calculateProductionShiftTimeFrame();
-      // console.log(timeFrame);
 
       const quality = await this.qualityService.calculate(timeFrame);
       const avalilability =
@@ -90,6 +89,83 @@ export class OEEService {
     }
   }
 
+  async newRealTimeOEE(): Promise<ResponseFormat<any>> {
+    try {
+      const timeFrame = this.calculateProductionShiftTimeFrame();
+
+      const quality = await this.qualityService.calculate(timeFrame);
+
+      const availability =
+        await this.availabilityService.getAvailabilityDetails(timeFrame);
+      const performance =
+        await this.performanceService.getMultiMachinePerformanceArray(
+          timeFrame,
+        );
+      // return availability;
+      // return quality;
+      return performance as any;
+
+      const machineList =
+        timeFrame.machine_numbers?.length > 0
+          ? timeFrame.machine_numbers
+          : this.getAllUniqueMachines(quality, availability, performance);
+
+      // วิธีรวมข้อมูลใน array
+      const combinedData = machineList.map((machineNumber) => {
+        // หา quality data
+        const qualityData = quality.find(
+          (q) => q.machineNumber === machineNumber,
+        );
+
+        // หา availability data
+        const availabilityData = availability.find(
+          (a) => a.machineNumber === machineNumber,
+        );
+
+        // หา performance data
+        const performanceData = performance.find(
+          (p) => p.machineNumber === machineNumber,
+        );
+
+        return {
+          machineNumber,
+          quality: qualityData?.quality || 0,
+          availability: availabilityData?.availability || 0,
+          performance: performanceData?.performance || 0,
+
+          // คำนวณ OEE
+          oee:
+            Math.round(
+              (((qualityData?.quality || 0) *
+                (availabilityData?.availability || 0) *
+                (performanceData?.performance || 0)) /
+                10000) *
+                100,
+            ) / 100,
+        };
+      });
+
+      const factoryTotal = this.calculateFactoryOEE(
+        quality,
+        availability,
+        performance,
+      );
+
+      return {
+        status: 'success',
+        message: 'Real-time OEE calculated successfully',
+        data: [...combinedData, factoryTotal],
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message:
+          (error as Error).message || 'Failed to calculate real-time OEE',
+        data: [],
+      };
+    }
+  }
+
   // async calculateOEE(
   //   machineNumber: string,
   //   timeframe: TimeFrame,
@@ -118,22 +194,6 @@ export class OEEService {
   //     };
   //   }
   // }
-
-  private getAllUniqueMachines(
-    quality: any[],
-    availability: any[],
-    performance: any[],
-  ): string[] {
-    const machines = new Set<string>();
-    quality.forEach((q) => q.machineNumber && machines.add(q.machineNumber));
-    availability.forEach(
-      (a) => a.machineNumber && machines.add(a.machineNumber),
-    );
-    performance.forEach(
-      (p) => p.machineNumber && machines.add(p.machineNumber),
-    );
-    return Array.from(machines);
-  }
 
   async saveHourlyOEE(): Promise<ResponseFormat<any>> {
     try {
@@ -271,6 +331,22 @@ export class OEEService {
     // TODO: Scheduled job to save daily OEE
   }
 
+  private getAllUniqueMachines(
+    quality: any[],
+    availability: any[],
+    performance: any[],
+  ): string[] {
+    const machines = new Set<string>();
+    quality.forEach((q) => q.machineNumber && machines.add(q.machineNumber));
+    availability.forEach(
+      (a) => a.machineNumber && machines.add(a.machineNumber),
+    );
+    performance.forEach(
+      (p) => p.machineNumber && machines.add(p.machineNumber),
+    );
+    return Array.from(machines);
+  }
+
   private calculateProductionShiftTimeFrame(): TimeFrame {
     const now = moment().tz('Asia/Bangkok');
     const shiftConfig: ShiftConfig = {
@@ -389,5 +465,116 @@ export class OEEService {
     }
 
     return frames;
+  }
+
+  private calculateFactoryOEE(
+    qualityArray: any[],
+    availabilityArray: any[],
+    performanceArray: any[],
+  ): any {
+    // Filter เฉพาะเครื่องที่มีข้อมูล
+    const validQualityData = qualityArray.filter(
+      (q) => (q.goodPieces || 0) + (q.notGoodPieces || 0) > 0,
+    );
+
+    const validAvailabilityData = availabilityArray.filter(
+      (a) =>
+        (a.totalOnTime || 0) + (a.totalOffTime || 0) + (a.totalAlarmTime || 0) >
+        0,
+    );
+
+    const validPerformanceData = performanceArray.filter(
+      (p) => (p.actualShots || 0) > 0 || (p.theoreticalShots || 0) > 0,
+    );
+
+    // Factory Quality Total
+    const qualityTotals = validQualityData.reduce(
+      (acc, q) => {
+        acc.totalGoodPieces += q.goodPieces || 0;
+        acc.totalNotGoodPieces += q.notGoodPieces || 0;
+        return acc;
+      },
+      { totalGoodPieces: 0, totalNotGoodPieces: 0 },
+    );
+
+    // Factory Availability Total
+    const availabilityTotals = validAvailabilityData.reduce(
+      (acc, a) => {
+        acc.totalOnTime += a.totalOnTime || 0;
+        acc.totalOffTime += a.totalOffTime || 0;
+        acc.totalAlarmTime += a.totalAlarmTime || 0;
+        return acc;
+      },
+      { totalOnTime: 0, totalOffTime: 0, totalAlarmTime: 0 },
+    );
+
+    // Factory Performance Total
+    const performanceTotals = validPerformanceData.reduce(
+      (acc, p) => {
+        acc.totalActualShots += p.actualShots || 0;
+        acc.totalTheoreticalShots += p.theoreticalShots || 0;
+        return acc;
+      },
+      { totalActualShots: 0, totalTheoreticalShots: 0 },
+    );
+
+    // Calculate Factory Metrics
+    const totalPieces =
+      qualityTotals.totalGoodPieces + qualityTotals.totalNotGoodPieces;
+    const totalTime =
+      availabilityTotals.totalOnTime +
+      availabilityTotals.totalOffTime +
+      availabilityTotals.totalAlarmTime;
+
+    const factoryQuality =
+      totalPieces > 0 ? (qualityTotals.totalGoodPieces / totalPieces) * 100 : 0;
+
+    const factoryAvailability =
+      totalTime > 0 ? (availabilityTotals.totalOnTime / totalTime) * 100 : 0;
+
+    const factoryPerformance =
+      performanceTotals.totalTheoreticalShots > 0
+        ? (performanceTotals.totalActualShots /
+            performanceTotals.totalTheoreticalShots) *
+          100
+        : 0;
+
+    const factoryOEE =
+      (factoryQuality * factoryAvailability * factoryPerformance) / 10000;
+
+    return {
+      machineNumber: 'ALL',
+      quality: Math.round(factoryQuality * 100) / 100,
+      availability: Math.round(factoryAvailability * 100) / 100,
+      performance: Math.round(factoryPerformance * 100) / 100,
+      oee: Math.round(factoryOEE * 100) / 100,
+
+      // Factory Summary Data
+      totalGoodPieces: qualityTotals.totalGoodPieces,
+      totalNotGoodPieces: qualityTotals.totalNotGoodPieces,
+      totalPieces: totalPieces,
+      totalOnTime: Math.round(availabilityTotals.totalOnTime * 100) / 100,
+      totalActualShots: performanceTotals.totalActualShots,
+      totalTheoreticalShots:
+        Math.round(performanceTotals.totalTheoreticalShots * 100) / 100,
+
+      // Machine counts
+      activeMachines: qualityArray.length,
+      validQualityMachines: validQualityData.length,
+      validAvailabilityMachines: validAvailabilityData.length,
+      validPerformanceMachines: validPerformanceData.length,
+    };
+  }
+
+  async calculateFactoryOEEOnly(timeFrame: TimeFrame): Promise<any> {
+    const quality = await this.qualityService.calculate(timeFrame);
+    const availability =
+      await this.availabilityService.getAvailabilityDetails(timeFrame);
+    // const availability =
+    //   await this.availabilityService.getAvailabilityArray(timeFrame);
+    const performance =
+      await this.performanceService.getMultiMachinePerformanceArray(timeFrame);
+
+    return this.calculateFactoryOEE(quality, availability, performance);
   }
 }

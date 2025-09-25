@@ -125,7 +125,7 @@ export class AvailabilityService {
             totalTime > 0 ? (totalOnTime / totalTime) * 100 : 0;
 
           results.push({
-            machine_number: machine.machine_number,
+            machineNumber: machine.machine_number,
             availability: Math.round(availability * 100) / 100,
             totalOnTime,
             totalOffTime,
@@ -142,6 +142,7 @@ export class AvailabilityService {
       return [];
     }
   }
+
   private processAvailabilityData(availabilityMap: Map<string, number>): any[] {
     return Array.from(availabilityMap.entries()).map(
       ([machineNumber, availability]) => ({

@@ -42,7 +42,8 @@ export class OEEController {
   @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getRealTimeOEE() {
-    return this.oeeService.calculateRealTimeOEE();
+    // return this.oeeService.calculateRealTimeOEE();
+    return this.oeeService.newRealTimeOEE();
   }
 
   @Get('hourly')
@@ -67,6 +68,12 @@ export class OEEController {
   @Get('avalibility')
   async getAvalibility(@Body() timeFrame: TimeFrame) {
     const data = await this.availabilityService.getAvailabilityArray(timeFrame);
+    return data;
+  }
+
+  @Get('factory')
+  async getOEEFactory(@Body() timeFrame: TimeFrame) {
+    const data = await this.oeeService.calculateFactoryOEEOnly(timeFrame);
     return data;
   }
 
