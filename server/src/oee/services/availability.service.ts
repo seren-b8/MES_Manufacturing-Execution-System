@@ -1,7 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { MachineInfoService } from 'src/machine/machine-info/machine-info.service';
 import { TimeFrame } from 'src/shared/interface/oee';
+import { number } from 'yargs';
 
+export interface AvailabilityRecord {
+  machineNumber: string;
+  availability: number; // ปรับทศนิยม 2 ตำแหน่ง
+  totalOnTime: number; // หน่วยเป็นเวลา (วินาที/นาที)
+  totalOffTime: number; // หน่วยเป็นเวลา (วินาที/นาที)
+  totalAlarmTime: number; // หน่วยเป็นเวลา (วินาที/นาที)
+  totalTime: number; // หน่วยเป็นเวลา (วินาที/นาที) - คือเวลาทั้งหมดที่พิจารณา
+  intervals: any; // รายละเอียดของช่วงเวลา
+}
 @Injectable()
 export class AvailabilityService {
   constructor(private readonly machineInfoService: MachineInfoService) {}
@@ -88,7 +98,9 @@ export class AvailabilityService {
   }
 
   // Get detailed breakdown
-  async getAvailabilityDetails(timeframe: TimeFrame): Promise<any> {
+  async getAvailabilityDetails(
+    timeframe: TimeFrame,
+  ): Promise<AvailabilityRecord[]> {
     try {
       const statusResponse =
         await this.machineInfoService.getMachineStatusByPeriod(
@@ -125,8 +137,8 @@ export class AvailabilityService {
             totalTime > 0 ? (totalOnTime / totalTime) * 100 : 0;
 
           results.push({
-            machineNumber: machine.machine_number,
-            availability: Math.round(availability * 100) / 100,
+            machineNumber: machine.machine_number as string,
+            availability: (Math.round(availability * 100) / 100) as number,
             totalOnTime,
             totalOffTime,
             totalAlarmTime,

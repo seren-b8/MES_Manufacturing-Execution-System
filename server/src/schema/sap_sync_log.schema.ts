@@ -5,6 +5,7 @@ import { ProductionRecord } from './production-record.schema';
 @Schema({
   collection: 'sap_sync_logs',
   timestamps: true,
+  versionKey: false,
 })
 export class SAPSyncLog {
   // ข้อมูลอ้างอิง

@@ -5,7 +5,7 @@ import { Model, Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/schema/assign-order.schema';
 import { ProductionOrder } from 'src/schema/production-order.schema';
-import { ProductionPlanning } from 'src/schema/production-planning';
+import { ProductionPlanning } from 'src/schema/production-planning.schema';
 import { MasterPart } from 'src/schema/master_parts.schema';
 import { User } from 'src/schema/user.schema';
 import {

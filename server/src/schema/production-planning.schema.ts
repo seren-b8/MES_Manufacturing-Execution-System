@@ -8,6 +8,7 @@ import { Document } from 'mongoose';
 @Schema({
   collection: 'production_planning',
   timestamps: true,
+  versionKey: false,
 })
 export class ProductionPlanning extends Document {
   // ข้อมูลพื้นฐาน

@@ -11,6 +11,14 @@ import { now } from 'moment';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { MinLength } from 'class-validator';
 
+export interface ProcessedPerformanceRecord {
+  machineNumber: string;
+  performance: number; // ปรับทศนิยม 2 ตำแหน่ง
+  actualShots: number;
+  theoreticalShots: number; // ปรับทศนิยม 2 ตำแหน่ง
+  targetCycleTime: number;
+  timeframeDurationSeconds: number;
+}
 @Injectable()
 export class PerformanceService {
   constructor(
@@ -41,7 +49,9 @@ export class PerformanceService {
     }
   }
 
-  async getMultiMachinePerformanceArray(timeFrame: TimeFrame): Promise<any[]> {
+  async getMultiMachinePerformanceArray(
+    timeFrame: TimeFrame,
+  ): Promise<ProcessedPerformanceRecord[]> {
     const machineNumbers = timeFrame.machine_numbers || [];
     const mapResult = await this.getMultiMachineCycleTime(
       machineNumbers,
@@ -341,7 +351,9 @@ export class PerformanceService {
     }
   }
 
-  private processPerformanceData(performanceMap: Map<string, any>): any[] {
+  private processPerformanceData(
+    performanceMap: Map<string, any>,
+  ): ProcessedPerformanceRecord[] {
     return Array.from(performanceMap.entries()).map(
       ([machineNumber, data]) => ({
         machineNumber,

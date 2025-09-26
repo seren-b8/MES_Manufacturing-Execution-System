@@ -6,7 +6,11 @@ import { MachineInfo } from './machine-info.schema';
 import { ProductionOrder } from './production-order.schema';
 import { Material } from './material.schema';
 
-@Schema({ collection: 'material_transaction' })
+@Schema({
+  collection: 'material_transaction',
+  timestamps: true,
+  versionKey: false,
+})
 export class MaterialTransaction {
   @Prop({ required: true, enum: ['receive', 'transfer', 'consume'] })
   transaction_type: string;
@@ -40,6 +44,6 @@ export class MaterialTransaction {
   machine_id: Types.ObjectId;
 }
 
-export type TransactionDocument = MaterialTransaction & Document;
-export const TransactionSchema =
+export type MaterialTransactionDocument = MaterialTransaction & Document;
+export const MaterialTransactionSchema =
   SchemaFactory.createForClass(MaterialTransaction);

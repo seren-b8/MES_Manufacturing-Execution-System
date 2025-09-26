@@ -4,7 +4,14 @@ import { Model } from 'mongoose';
 import { ProcessedMachineData, TimeFrame } from 'src/shared/interface/oee';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { AssignOrder } from 'src/schema/assign-order.schema';
-
+export interface QualityRecord {
+  machineNumber: string;
+  quality: number; // เปอร์เซ็นต์คุณภาพ (Quality Percentage)
+  goodPieces: number; // จำนวนชิ้นงานที่ดี
+  notGoodPieces: number; // จำนวนชิ้นงานที่ไม่ดี/ของเสีย
+  totalPieces: number; // จำนวนชิ้นงานทั้งหมด (goodPieces + notGoodPieces)
+  assignOrderIds: string[]; // อาร์เรย์ของ ID คำสั่งซื้อที่เกี่ยวข้อง
+}
 @Injectable()
 export class QualityService {
   constructor(
@@ -14,7 +21,7 @@ export class QualityService {
     private assignOrderModel: Model<AssignOrder>,
   ) {}
 
-  async calculate(timeframe: TimeFrame): Promise<any> {
+  async calculate(timeframe: TimeFrame): Promise<QualityRecord[]> {
     try {
       const qualityData = await this.getMultiMachineQualityData(
         timeframe.machine_numbers,
@@ -25,7 +32,7 @@ export class QualityService {
       // return this.calculateFactoryTotal(qualityData.orderSummary);
     } catch (error) {
       console.error('Error calculating quality:', error);
-      return 0;
+      return [];
     }
   }
 
@@ -155,7 +162,7 @@ export class QualityService {
     }
   }
 
-  private processMachineData(orderSummary: any[]): ProcessedMachineData[] {
+  private processMachineData(orderSummary: any[]): QualityRecord[] {
     const machineGroups = orderSummary.reduce((acc, item) => {
       const machineNumber = item.machineNumber;
       if (!acc[machineNumber]) {

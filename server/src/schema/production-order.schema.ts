@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ collection: 'production_order', timestamps: true })
+@Schema({ collection: 'production_order', timestamps: true, versionKey: false })
 export class ProductionOrder extends Document {
   @Prop({ default: null })
   plant: string;

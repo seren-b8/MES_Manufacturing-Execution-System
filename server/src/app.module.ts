@@ -19,6 +19,8 @@ import { ExcelModule } from './excel/excel.module';
 import { LabelModule } from './label/label.module';
 import { DatabaseModule } from './database/database.module';
 import { OEEModule } from './oee/oee.module';
+import { MaterialModule } from './material/material.module';
+import { PlannedDowntimeModule } from './planned-downtime/planned-downtime.module';
 
 const validateConfig = (config: Record<string, unknown>) => {
   const requiredKeys = ['SECRET_KEY'];
@@ -60,6 +62,8 @@ const validateConfig = (config: Record<string, unknown>) => {
     ExcelModule,
     LabelModule,
     OEEModule,
+    MaterialModule,
+    PlannedDowntimeModule,
   ],
   controllers: [AppController],
   providers: [

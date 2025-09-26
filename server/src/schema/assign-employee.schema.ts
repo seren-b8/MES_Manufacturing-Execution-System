@@ -6,6 +6,7 @@ import { User } from './user.schema';
 @Schema({
   collection: 'assign_employee',
   timestamps: true,
+  versionKey: false,
 })
 export class AssignEmployee extends Document {
   // Employee Information

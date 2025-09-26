@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import mongoose, { Document } from 'mongoose';
 
-@Schema({ collection: 'master_parts' })
+@Schema({ collection: 'master_parts', timestamps: true, versionKey: false })
 export class MasterPart extends Document {
   @Prop({ required: true, unique: true })
   material_number: string;

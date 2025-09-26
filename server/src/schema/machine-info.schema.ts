@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { PrinterDevice } from './printer-device.schema';
 
-@Schema({ timestamps: false, collection: 'machine_info' })
+@Schema({ timestamps: false, collection: 'machine_info', versionKey: false })
 export class MachineInfo extends Document {
   @Prop({ default: null })
   line: string; // changed from Line

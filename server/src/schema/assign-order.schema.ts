@@ -5,6 +5,7 @@ import { ProductionOrder } from './production-order.schema';
 @Schema({
   collection: 'assign_order',
   timestamps: true,
+  versionKey: false,
 })
 export class AssignOrder extends Document {
   @Prop({

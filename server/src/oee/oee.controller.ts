@@ -82,7 +82,7 @@ export class OEEController {
     timeZone: 'Asia/Bangkok',
   })
   async handleHourlyOEE() {
-    console.log('save hourly OEE...');
+    // console.log('save hourly OEE...');
     await this.oeeService.saveHourlyOEE();
   }
 }

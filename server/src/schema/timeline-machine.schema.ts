@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ collection: 'timeline_machine' })
+@Schema({ collection: 'timeline_machine', timestamps: true, versionKey: false })
 export class TimelineMachine extends Document {
   @Prop({ default: null })
   machine_number: string; // changed from MC_No

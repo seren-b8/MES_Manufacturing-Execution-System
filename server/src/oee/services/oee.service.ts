@@ -201,60 +201,65 @@ export class OEEService {
       const savedData = [];
 
       for (const frame of hourlyFrames) {
-        // คำนวณ OEE สำหรับชั่วโมงนี้
-        const [quality, availability, performance] = await Promise.all([
-          this.qualityService.calculate(frame),
-          this.availabilityService.getAvailabilityArray(frame),
-          this.performanceService.getMultiMachinePerformanceArray(frame),
-        ]);
+        // คำนวณ OEE สำหรับชั่วโมงนี้ (ยังใช้ Promise.all เหมือนเดิมเพื่อให้ทำงานพร้อมกัน)
+        const [qualityArray, availabilityArray, performanceArray] =
+          await Promise.all([
+            this.qualityService.calculate(frame),
+            this.availabilityService.getAvailabilityArray(frame),
+            this.performanceService.getMultiMachinePerformanceArray(frame),
+          ]);
 
         const machineList = this.getAllUniqueMachines(
-          quality,
-          availability,
-          performance,
+          qualityArray,
+          availabilityArray,
+          performanceArray,
         );
 
-        for (const machineNumber of machineList) {
-          const qualityData = quality.find(
+        // รวมข้อมูลและคำนวณ OEE สำหรับแต่ละเครื่องจักรใน hourly frame นี้
+        const hourlyOEEData = machineList.map((machineNumber) => {
+          const qualityData = qualityArray.find(
             (q) => q.machineNumber === machineNumber,
           );
-          const availabilityData = availability.find(
+          const availabilityData = availabilityArray.find(
             (a) => a.machineNumber === machineNumber,
           );
-          const performanceData = performance.find(
+          const performanceData = performanceArray.find(
             (p) => p.machineNumber === machineNumber,
           );
 
-          const oeeRecord = {
+          const quality = qualityData?.quality || 0;
+          const availability = availabilityData?.availability || 0;
+          const performance = performanceData?.performance || 0;
+
+          // คำนวณ OEE (เหมือนใน newRealTimeOEE)
+          const oeeValue =
+            Math.round(((quality * availability * performance) / 10000) * 100) /
+            100;
+
+          return {
             machine_number: machineNumber,
             hour: frame.hour,
             shift_type: frame.shift,
-            quality: qualityData?.quality || 0,
-            availability: availabilityData?.availability || 0,
-            performance: performanceData?.performance || 0,
-            oee:
-              Math.round(
-                (((qualityData?.quality || 0) *
-                  (availabilityData?.availability || 0) *
-                  (performanceData?.performance || 0)) /
-                  10000) *
-                  100,
-              ) / 100,
+            quality: quality,
+            availability: availability,
+            performance: performance,
+            oee: oeeValue,
             total_pieces: qualityData?.totalPieces || 0,
             good_pieces: qualityData?.goodPieces || 0,
           };
+        });
 
-          // บันทึกลง database (upsert)
+        // บันทึกข้อมูลทั้งหมดลง database (upsert)
+        for (const oeeRecord of hourlyOEEData) {
           await this.oeeHourlyModel.findOneAndUpdate(
             {
-              machine_number: machineNumber,
-              hour: frame.hour,
-              shift_type: frame.shift,
+              machine_number: oeeRecord.machine_number,
+              hour: oeeRecord.hour,
+              shift_type: oeeRecord.shift_type,
             },
             oeeRecord,
             { upsert: true, new: true },
           );
-
           savedData.push(oeeRecord);
         }
       }

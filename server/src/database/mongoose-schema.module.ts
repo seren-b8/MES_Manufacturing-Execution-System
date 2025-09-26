@@ -60,8 +60,25 @@ import {
 import {
   ProductionPlanning,
   ProductionPlanningSchema,
-} from 'src/schema/production-planning';
+} from 'src/schema/production-planning.schema';
 import { OEEHourly, OEEHourlySchema } from 'src/schema/oee-hourly.schema';
+import { Material, MaterialSchema } from 'src/schema/material.schema';
+import {
+  MaterialLocation,
+  MaterialLocationSchema,
+} from 'src/schema/material-location.schema';
+import {
+  MaterialPosition,
+  MaterialPositionSchema,
+} from 'src/schema/material-position.schema';
+import {
+  MaterialTransaction,
+  MaterialTransactionSchema,
+} from 'src/schema/material-transaction.schema';
+import {
+  PlannedDowntime,
+  PlannedDowntimeSchema,
+} from 'src/schema/planned-downtime.schema';
 
 @Module({
   imports: [
@@ -75,12 +92,19 @@ import { OEEHourly, OEEHourlySchema } from 'src/schema/oee-hourly.schema';
       { name: CoProductRecord.name, schema: CoProductRecordSchema },
       { name: ProductionPlanning.name, schema: ProductionPlanningSchema },
 
+      // Material Management
+      { name: Material.name, schema: MaterialSchema },
+      { name: MaterialLocation.name, schema: MaterialLocationSchema },
+      { name: MaterialPosition.name, schema: MaterialPositionSchema },
+      { name: MaterialTransaction.name, schema: MaterialTransactionSchema },
+
       // Machine Management
       { name: MachineInfo.name, schema: MachineInfoSchema },
       { name: TimelineMachine.name, schema: TimelineMachineSchema },
 
       //OEE
       { name: OEEHourly.name, schema: OEEHourlySchema },
+      { name: PlannedDowntime.name, schema: PlannedDowntimeSchema },
 
       // Printter Management
       { name: PrinterDevice.name, schema: PrinterDeviceSchema },

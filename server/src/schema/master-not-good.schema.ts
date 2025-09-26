@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ collection: 'master_not_good' }) // changed from master_ng
+@Schema({ collection: 'master_not_good', timestamps: true, versionKey: false }) // changed from master_ng
 export class MasterNotGood extends Document {
   // changed from MasterNG
   @Prop({ default: null })
