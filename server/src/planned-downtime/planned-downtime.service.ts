@@ -7,6 +7,7 @@ import { UpdatePlannedDowntimeDto } from './dto/update-planned-downtime.dto';
 import { CreatePlannedDowntimeDto } from './dto/create-planned-downtime.dto';
 import { BulkCreatePlannedDowntimeDto } from './dto/bulk-create-planned-downtime.dto';
 import { BulkCreateByTemplateDto } from './dto/bulk-create-by-template.dto';
+import * as moment from 'moment-timezone';
 
 // planned-downtime.service.ts
 @Injectable()
@@ -54,7 +55,7 @@ export class PlannedDowntimeService {
           for (const shift of dto.shifts) {
             downtimesToCreate.push({
               machine_number: machine,
-              date: new Date(date),
+              date: moment(date).tz('Asia/Bangkok').startOf('day').toDate(),
               shift: shift,
               planned_downtime_minutes: dto.planned_downtime_minutes,
               downtime_type: dto.downtime_type,
@@ -100,7 +101,7 @@ export class PlannedDowntimeService {
       // ตรวจสอบข้อมูลซ้ำ
       const downtimesToCreate = dto.downtimes.map((item) => ({
         ...item,
-        date: new Date(item.date),
+        date: moment(item.date).tz('Asia/Bangkok').startOf('day').toDate(),
       }));
 
       const existingCheck = await this.checkDuplicates(downtimesToCreate);

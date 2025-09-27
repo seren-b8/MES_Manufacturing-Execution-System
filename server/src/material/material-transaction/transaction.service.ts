@@ -75,11 +75,11 @@ export class TransactionService {
       // Create transaction record
       const transactionData = {
         transaction_type: 'receive',
-        material_id: new Types.ObjectId(dto.material_id),
+        material_id: toObjectId(dto.material_id),
         quantity: dto.quantity,
         transaction_date: moment().tz('Asia/Bangkok').toDate(),
-        to_location_id: new Types.ObjectId(dto.to_location_id),
-        user_id: new Types.ObjectId(dto.user_id),
+        to_location_id: toObjectId(dto.to_location_id),
+        user_id: toObjectId(dto.user_id),
         reference_doc: dto.reference_doc || null,
         position_code: dto.to_position_code || null,
         lot_number: dto.lot_number || null,
@@ -243,12 +243,12 @@ export class TransactionService {
       // Create transaction record
       const transactionData = {
         transaction_type: 'transfer',
-        material_id: new Types.ObjectId(dto.material_id),
+        material_id: toObjectId(dto.material_id),
         quantity: dto.quantity,
         transaction_date: moment().tz('Asia/Bangkok').toDate(),
-        from_location_id: new Types.ObjectId(dto.from_location_id),
-        to_location_id: new Types.ObjectId(dto.to_location_id),
-        user_id: new Types.ObjectId(dto.user_id),
+        from_location_id: toObjectId(dto.from_location_id),
+        to_location_id: toObjectId(dto.to_location_id),
+        user_id: toObjectId(dto.user_id),
         reference_doc: dto.reference_doc || null,
         from_position_code: dto.from_position_code || null,
         to_position_code: dto.to_position_code || null,
@@ -390,15 +390,15 @@ export class TransactionService {
       // Create transaction record
       const transactionData = {
         transaction_type: 'consume',
-        material_id: new Types.ObjectId(dto.material_id),
+        material_id: toObjectId(dto.material_id),
         quantity: dto.quantity,
         transaction_date: moment().tz('Asia/Bangkok').toDate(),
-        from_location_id: new Types.ObjectId(dto.from_location_id),
-        user_id: new Types.ObjectId(dto.user_id),
+        from_location_id: toObjectId(dto.from_location_id),
+        user_id: toObjectId(dto.user_id),
         production_order_id: dto.production_order_id
-          ? new Types.ObjectId(dto.production_order_id)
+          ? toObjectId(dto.production_order_id)
           : null,
-        machine_id: dto.machine_id ? new Types.ObjectId(dto.machine_id) : null,
+        machine_id: dto.machine_id ? toObjectId(dto.machine_id) : null,
         reference_doc: dto.reference_doc || null,
         from_position_code: dto.from_position_code || null,
         lot_number: dto.lot_number || null,
@@ -483,14 +483,14 @@ export class TransactionService {
 
     // Find or create position
     let position = await this.positionModel.findOne({
-      location_id: new Types.ObjectId(locationId),
+      location_id: toObjectId(locationId),
       position_code: positionCode,
     });
 
     if (!position && operation === 'receive') {
       // Create new position for receive operations
       position = new this.positionModel({
-        location_id: new Types.ObjectId(locationId),
+        location_id: toObjectId(locationId),
         position_code: positionCode,
         current_materials: [],
       });
@@ -564,7 +564,7 @@ export class TransactionService {
       } else {
         // Add new material
         position.current_materials.push({
-          material_id: new Types.ObjectId(materialId),
+          material_id: toObjectId(materialId),
           quantity: quantity,
           lot_number: lotNumber,
         });
@@ -626,18 +626,18 @@ export class TransactionService {
 
       // Apply existing filters
       if (filters.material_id) {
-        query.material_id = new Types.ObjectId(filters.material_id);
+        query.material_id = toObjectId(filters.material_id);
       }
 
       if (filters.location_id) {
         query.$or = [
-          { from_location_id: new Types.ObjectId(filters.location_id) },
-          { to_location_id: new Types.ObjectId(filters.location_id) },
+          { from_location_id: toObjectId(filters.location_id) },
+          { to_location_id: toObjectId(filters.location_id) },
         ];
       }
 
       if (filters.user_id) {
-        query.user_id = new Types.ObjectId(filters.user_id);
+        query.user_id = toObjectId(filters.user_id);
       }
 
       if (filters.transaction_type) {
@@ -645,13 +645,11 @@ export class TransactionService {
       }
 
       if (filters.production_order_id) {
-        query.production_order_id = new Types.ObjectId(
-          filters.production_order_id,
-        );
+        query.production_order_id = toObjectId(filters.production_order_id);
       }
 
       if (filters.machine_id) {
-        query.machine_id = new Types.ObjectId(filters.machine_id);
+        query.machine_id = toObjectId(filters.machine_id);
       }
 
       // Date range filter
@@ -711,11 +709,11 @@ export class TransactionService {
         .find({
           $or: [
             {
-              from_location_id: new Types.ObjectId(locationId),
+              from_location_id: toObjectId(locationId),
               from_position_code: positionCode,
             },
             {
-              to_location_id: new Types.ObjectId(locationId),
+              to_location_id: toObjectId(locationId),
               to_position_code: positionCode,
             },
           ],
@@ -751,7 +749,7 @@ export class TransactionService {
     try {
       const position = await this.positionModel
         .findOne({
-          location_id: new Types.ObjectId(locationId),
+          location_id: toObjectId(locationId),
           position_code: positionCode,
         })
         .populate(
@@ -790,9 +788,7 @@ export class TransactionService {
     id: string,
   ): Promise<ResponseFormat<MaterialTransaction>> {
     try {
-      const transaction = await this.populateTransaction(
-        new Types.ObjectId(id),
-      );
+      const transaction = await this.populateTransaction(toObjectId(id));
 
       if (!transaction) {
         throw new NotFoundException({
@@ -890,7 +886,7 @@ export class TransactionService {
   ): Promise<ResponseFormat<any>> {
     try {
       const matchStage: any = {
-        material_id: new Types.ObjectId(materialId),
+        material_id: toObjectId(materialId),
         transaction_type: 'consume',
       };
 

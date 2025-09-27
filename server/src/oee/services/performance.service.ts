@@ -7,7 +7,6 @@ import { Model } from 'mongoose';
 import { AssignOrder } from 'src/schema/assign-order.schema';
 import { ProductionOrder } from 'src/schema/production-order.schema';
 import { MachineCounterLog } from 'src/schema/machine-counter-log.schema';
-import { now } from 'moment';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { MinLength } from 'class-validator';
 

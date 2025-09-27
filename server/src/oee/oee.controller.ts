@@ -43,7 +43,7 @@ export class OEEController {
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getRealTimeOEE() {
     // return this.oeeService.calculateRealTimeOEE();
-    return this.oeeService.newRealTimeOEE();
+    return this.oeeService.realTimeOEE();
   }
 
   @Get('hourly')
@@ -67,13 +67,19 @@ export class OEEController {
 
   @Get('avalibility')
   async getAvalibility(@Body() timeFrame: TimeFrame) {
-    const data = await this.availabilityService.getAvailabilityArray(timeFrame);
+    const data =
+      await this.availabilityService.getAvailabilityDetails(timeFrame);
     return data;
   }
 
   @Get('factory')
   async getOEEFactory(@Body() timeFrame: TimeFrame) {
     const data = await this.oeeService.calculateFactoryOEEOnly(timeFrame);
+    return data;
+  }
+
+  @Get('new-hourly-oee') async getNewHourlyOEE() {
+    const data = await this.oeeService.saveHourlyOEE();
     return data;
   }
 

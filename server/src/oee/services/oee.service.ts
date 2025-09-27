@@ -22,74 +22,7 @@ export class OEEService {
     private performanceService: PerformanceService,
   ) {}
 
-  async calculateRealTimeOEE(): Promise<ResponseFormat<any>> {
-    try {
-      const timeFrame = this.calculateProductionShiftTimeFrame();
-
-      const quality = await this.qualityService.calculate(timeFrame);
-      const avalilability =
-        await this.availabilityService.getAvailabilityArray(timeFrame);
-      const performance =
-        await this.performanceService.getMultiMachinePerformanceArray(
-          timeFrame,
-        );
-
-      const machineList =
-        timeFrame.machine_numbers?.length > 0
-          ? timeFrame.machine_numbers
-          : this.getAllUniqueMachines(quality, avalilability, performance);
-
-      // วิธีรวมข้อมูลใน array
-      const combinedData = machineList.map((machineNumber) => {
-        // หา quality data
-        const qualityData = quality.find(
-          (q) => q.machineNumber === machineNumber,
-        );
-
-        // หา availability data
-        const availabilityData = avalilability.find(
-          (a) => a.machineNumber === machineNumber,
-        );
-
-        // หา performance data
-        const performanceData = performance.find(
-          (p) => p.machineNumber === machineNumber,
-        );
-
-        return {
-          machineNumber,
-          quality: qualityData?.quality || 0,
-          availability: availabilityData?.availability || 0,
-          performance: performanceData?.performance || 0,
-
-          // คำนวณ OEE
-          oee:
-            Math.round(
-              (((qualityData?.quality || 0) *
-                (availabilityData?.availability || 0) *
-                (performanceData?.performance || 0)) /
-                10000) *
-                100,
-            ) / 100,
-        };
-      });
-
-      return {
-        status: 'success',
-        message: 'Real-time OEE calculated successfully',
-        data: combinedData,
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        message:
-          (error as Error).message || 'Failed to calculate real-time OEE',
-        data: [],
-      };
-    }
-  }
-
-  async newRealTimeOEE(): Promise<ResponseFormat<any>> {
+  async realTimeOEE(): Promise<ResponseFormat<any>> {
     try {
       const timeFrame = this.calculateProductionShiftTimeFrame();
 
@@ -101,7 +34,7 @@ export class OEEService {
         await this.performanceService.getMultiMachinePerformanceArray(
           timeFrame,
         );
-      // return availability;
+      // return availability as any;
       // return quality;
       // return performance as any;
 
@@ -166,113 +99,117 @@ export class OEEService {
     }
   }
 
-  // async calculateOEE(
-  //   machineNumber: string,
-  //   timeframe: TimeFrame,
-  // ): Promise<ResponseFormat<OEEResponseDto>> {
-  //   try {
-  //     // TODO: Calculate using parallel processing
-  //     const [quality, availability, performance] = await Promise.all([
-  //       this.qualityService.calculate(machineNumber, timeframe),
-  //       this.availabilityService.calculate(machineNumber, timeframe),
-  //       this.performanceService.calculate(machineNumber, timeframe),
-  //     ]);
-
-  //     // TODO: Calculate final OEE
-  //     // TODO: Return formatted response
-
-  //     return {
-  //       status: 'success',
-  //       message: 'OEE calculated successfully',
-  //       data: [],
-  //     };
-  //   } catch (error) {
-  //     return {
-  //       status: 'error',
-  //       message: 'Failed to calculate OEE',
-  //       data: [],
-  //     };
-  //   }
-  // }
-
   async saveHourlyOEE(): Promise<ResponseFormat<any>> {
     try {
-      const hourlyFrames = this.calculateHourlyTimeFrames();
-      const savedData = [];
+      const timeFrame = this.calculateProductionShiftTimeFrame();
 
-      for (const frame of hourlyFrames) {
-        // คำนวณ OEE สำหรับชั่วโมงนี้ (ยังใช้ Promise.all เหมือนเดิมเพื่อให้ทำงานพร้อมกัน)
-        const [qualityArray, availabilityArray, performanceArray] =
-          await Promise.all([
-            this.qualityService.calculate(frame),
-            this.availabilityService.getAvailabilityArray(frame),
-            this.performanceService.getMultiMachinePerformanceArray(frame),
-          ]);
+      const quality = await this.qualityService.calculate(timeFrame);
 
-        const machineList = this.getAllUniqueMachines(
-          qualityArray,
-          availabilityArray,
-          performanceArray,
+      const availability =
+        await this.availabilityService.getAvailabilityDetails(timeFrame);
+      const performance =
+        await this.performanceService.getMultiMachinePerformanceArray(
+          timeFrame,
         );
 
-        // รวมข้อมูลและคำนวณ OEE สำหรับแต่ละเครื่องจักรใน hourly frame นี้
-        const hourlyOEEData = machineList.map((machineNumber) => {
-          const qualityData = qualityArray.find(
-            (q) => q.machineNumber === machineNumber,
-          );
-          const availabilityData = availabilityArray.find(
-            (a) => a.machineNumber === machineNumber,
-          );
-          const performanceData = performanceArray.find(
-            (p) => p.machineNumber === machineNumber,
-          );
+      const machineList =
+        timeFrame.machine_numbers?.length > 0
+          ? timeFrame.machine_numbers
+          : this.getAllUniqueMachines(quality, availability, performance);
 
-          const quality = qualityData?.quality || 0;
-          const availability = availabilityData?.availability || 0;
-          const performance = performanceData?.performance || 0;
+      // วิธีรวมข้อมูลใน array
+      const combinedData = machineList.map((machineNumber) => {
+        // หา quality data
+        const qualityData = quality.find(
+          (q) => q.machineNumber === machineNumber,
+        );
 
-          // คำนวณ OEE (เหมือนใน newRealTimeOEE)
-          const oeeValue =
-            Math.round(((quality * availability * performance) / 10000) * 100) /
-            100;
+        // หา availability data
+        const availabilityData = availability.find(
+          (a) => a.machineNumber === machineNumber,
+        );
 
-          return {
-            machine_number: machineNumber,
-            hour: frame.hour,
-            shift_type: frame.shift,
-            quality: quality,
-            availability: availability,
-            performance: performance,
-            oee: oeeValue,
-            total_pieces: qualityData?.totalPieces || 0,
-            good_pieces: qualityData?.goodPieces || 0,
-          };
-        });
+        // หา performance data
+        const performanceData = performance.find(
+          (p) => p.machineNumber === machineNumber,
+        );
 
-        // บันทึกข้อมูลทั้งหมดลง database (upsert)
-        for (const oeeRecord of hourlyOEEData) {
-          await this.oeeHourlyModel.findOneAndUpdate(
-            {
-              machine_number: oeeRecord.machine_number,
-              hour: oeeRecord.hour,
-              shift_type: oeeRecord.shift_type,
+        // --- Construct the OEE Record for the database ---
+        // Note: The structure now matches the OEEHourly schema (using startTime instead of 'hour')
+        const oeeRecord = {
+          machine_number: machineNumber, // machineNumber
+          start_time: timeFrame.start_time,
+          end_time: timeFrame.end_time,
+          shift: timeFrame.shift_type, // shift
+          quality: qualityData?.quality || 0,
+          availability: availabilityData?.availability || 0,
+          performance: performanceData?.performance || 0,
+          // คำนวณ OEE
+          oee:
+            Math.round(
+              (((qualityData?.quality || 0) *
+                (availabilityData?.availability || 0) *
+                (performanceData?.performance || 0)) /
+                10000) *
+                100,
+            ) / 100,
+          ...(qualityData && {
+            quality_pieces_data: {
+              good_pieces: qualityData.goodPieces,
+              not_good_pieces: qualityData.notGoodPieces,
+              total_pieces: qualityData.totalPieces,
             },
-            oeeRecord,
-            { upsert: true, new: true },
-          );
-          savedData.push(oeeRecord);
-        }
+          }),
+          ...(availabilityData && {
+            availability_data: {
+              total_on_time: availabilityData.totalOnTime,
+              total_off_time: availabilityData.totalOffTime,
+              total_alarm_time: availabilityData.totalAlarmTime,
+              total_time: availabilityData.totalTime,
+              planned_downtime:
+                availabilityData.downtimeBreakdown.plannedDowntime,
+            },
+          }),
+          ...(performanceData && {
+            performance_data: {
+              actual_shots: performanceData.actualShots,
+              theoretical_shots: performanceData.theoreticalShots,
+              target_cycle_time: performanceData.targetCycleTime,
+              timeframe_duration_seconds:
+                performanceData.timeframeDurationSeconds,
+            },
+          }),
+        };
+
+        return oeeRecord;
+      });
+
+      // --- NEW: Save/Upsert Data to Database ---
+      const savedRecords = [];
+      for (const record of combinedData) {
+        // Use machineNumber, startTime, and shift as the unique key for the upsert
+        const savedDoc = await this.oeeHourlyModel.findOneAndUpdate(
+          {
+            machine_number: record.machine_number,
+            start_time: record.start_time,
+            shift: record.shift,
+          },
+          record,
+          { upsert: true, new: true }, // upsert: create if not found, new: return the updated document
+        );
+        savedRecords.push(savedDoc);
       }
 
       return {
         status: 'success',
-        message: `Saved hourly OEE for ${savedData.length} records`,
-        data: savedData,
+        message: `Hourly OEE calculated and saved successfully for ${savedRecords.length} machines.`,
+        data: savedRecords,
       };
     } catch (error) {
       return {
         status: 'error',
-        message: (error as Error).message || 'Failed to save hourly OEE',
+        message:
+          (error as Error).message || 'Failed to calculate and save hourly OEE',
         data: [],
       };
     }
@@ -293,15 +230,15 @@ export class OEEService {
 
       // Date range filter
       if (query.start_date || query.end_date) {
-        filter.hour = {};
+        filter.start_time = {};
         if (query.start_date) {
-          filter.hour.$gte = moment(query.start_date)
+          filter.start_time.$gte = moment(query.start_date)
             .tz('Asia/Bangkok')
             .startOf('day')
             .toDate();
         }
         if (query.end_date) {
-          filter.hour.$lte = moment(query.end_date)
+          filter.start_time.$lte = moment(query.end_date)
             .tz('Asia/Bangkok')
             .endOf('day')
             .toDate();
