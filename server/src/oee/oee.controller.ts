@@ -23,8 +23,9 @@ import { Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { GetHourlyOEEDto } from './dto/get-hourly-oee.dto';
 import {
+  MediumCacheInterceptor,
   MicroCacheInterceptor,
-  ShortCacheInterceprot,
+  ShortCacheInterceptor,
 } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 
@@ -39,7 +40,7 @@ export class OEEController {
   ) {}
 
   @Get('realtime')
-  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
+  @UseInterceptors(MediumCacheInterceptor, new TimeoutInterceptor(20000))
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async getRealTimeOEE() {
     // return this.oeeService.calculateRealTimeOEE();

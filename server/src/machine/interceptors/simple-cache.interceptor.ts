@@ -221,8 +221,12 @@ export class MicroCacheInterceptor extends SimpleCacheInterceptor {
   protected readonly ttl = 3 * 1000; // 3 sec
 }
 
-export class ShortCacheInterceprot extends SimpleCacheInterceptor {
-  protected readonly ttl = 60 * 3 * 1000; //1 minite
+export class ShortCacheInterceptor extends SimpleCacheInterceptor {
+  protected readonly ttl = 60 * 3 * 1000; // 3 minutes
+}
+
+export class MediumCacheInterceptor extends SimpleCacheInterceptor {
+  protected readonly ttl = 5 * 60 * 1000; // 5 minutes
 }
 
 export class LongCacheInterceptor extends SimpleCacheInterceptor {
