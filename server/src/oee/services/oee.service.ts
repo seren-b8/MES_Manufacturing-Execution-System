@@ -421,7 +421,10 @@ export class OEEService {
 
     const validAvailabilityData = availabilityArray.filter(
       (a) =>
-        (a.totalOnTime || 0) + (a.totalOffTime || 0) + (a.totalAlarmTime || 0) >
+        (a.totalOnTime || 0) +
+          (a.totalOffTime || 0) +
+          (a.totalAlarmTime || 0) +
+          (a.plannedDowntime || 0) >
         0,
     );
 
@@ -445,9 +448,15 @@ export class OEEService {
         acc.totalOnTime += a.totalOnTime || 0;
         acc.totalOffTime += a.totalOffTime || 0;
         acc.totalAlarmTime += a.totalAlarmTime || 0;
+        acc.plannedDowntime += a.plannedDowntime || 0;
         return acc;
       },
-      { totalOnTime: 0, totalOffTime: 0, totalAlarmTime: 0 },
+      {
+        totalOnTime: 0,
+        totalOffTime: 0,
+        totalAlarmTime: 0,
+        plannedDowntime: 0,
+      },
     );
 
     // Factory Performance Total
@@ -463,16 +472,19 @@ export class OEEService {
     // Calculate Factory Metrics
     const totalPieces =
       qualityTotals.totalGoodPieces + qualityTotals.totalNotGoodPieces;
-    const totalTime =
+    const plannedProductionTime =
       availabilityTotals.totalOnTime +
       availabilityTotals.totalOffTime +
-      availabilityTotals.totalAlarmTime;
+      availabilityTotals.totalAlarmTime -
+      availabilityTotals.plannedDowntime;
 
     const factoryQuality =
       totalPieces > 0 ? (qualityTotals.totalGoodPieces / totalPieces) * 100 : 0;
 
     const factoryAvailability =
-      totalTime > 0 ? (availabilityTotals.totalOnTime / totalTime) * 100 : 0;
+      plannedProductionTime > 0
+        ? (availabilityTotals.totalOnTime / plannedProductionTime) * 100
+        : 0;
 
     const factoryPerformance =
       performanceTotals.totalTheoreticalShots > 0
@@ -482,7 +494,10 @@ export class OEEService {
         : 0;
 
     const factoryOEE =
-      (factoryQuality * factoryAvailability * factoryPerformance) / 10000;
+      (factoryQuality *
+        (factoryAvailability > 100 ? 100 : factoryAvailability) *
+        factoryPerformance) /
+      10000;
 
     return {
       machineNumber: 'ALL',

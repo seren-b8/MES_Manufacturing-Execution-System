@@ -16,6 +16,7 @@ export interface AvailabilityRecord {
   totalOffTime: number; // หน่วยเป็นเวลา (วินาที/นาที)
   totalAlarmTime: number; // หน่วยเป็นเวลา (วินาที/นาที)
   totalTime: number; // หน่วยเป็นเวลา (วินาที/นาที) - คือเวลาทั้งหมดที่พิจารณา
+  plannedDowntime: number;
   downtimeBreakdown: DowntimeBreakdown; // เพิ่มส่วน downtime breakdown
   intervals: any; // รายละเอียดของช่วงเวลา
 }
@@ -43,87 +44,6 @@ export class AvailabilityService {
     @InjectModel(TimelineMachine.name)
     private readonly timelineMachineModel: Model<TimelineMachine>,
   ) {}
-
-  async getAvailabilityArray(timeframe: TimeFrame): Promise<any[]> {
-    const mapResult = await this.calculate(timeframe);
-    return this.processAvailabilityData(mapResult);
-  }
-
-  async calculate(timeframe: TimeFrame): Promise<Map<string, number>> {
-    try {
-      // รับผลลัพธ์จาก service
-      const statusResponse =
-        await this.machineInfoService.getMachineStatusByPeriod(
-          timeframe.start_time,
-          timeframe.end_time,
-          60,
-          timeframe.machine_numbers,
-        );
-
-      // แก้ไข: เข้าถึง data field ของ ResponseFormat
-      const machineData = Array.isArray(statusResponse)
-        ? statusResponse
-        : statusResponse?.data || [];
-
-      const results = new Map<string, number>();
-
-      // ตรวจสอบว่าเป็น array ก่อน forEach
-      if (Array.isArray(machineData)) {
-        machineData.forEach((machine: any) => {
-          const availability = this.calculateMachineAvailability(machine);
-          results.set(machine.machine_number, availability);
-        });
-      }
-
-      return results;
-    } catch (error) {
-      console.error('Error calculating availability:', error);
-
-      // Fallback: return 0 for all machines
-      const fallbackResults = new Map<string, number>();
-      (timeframe.machine_numbers || []).forEach((machine) => {
-        fallbackResults.set(machine, 0);
-      });
-      return fallbackResults;
-    }
-  }
-
-  private calculateMachineAvailability(machineData: any): number {
-    if (!machineData.intervals || machineData.intervals.length === 0) {
-      console.log('No intervals data');
-      return 0;
-    }
-
-    let totalOnTime = 0;
-    let totalTime = 0;
-
-    machineData.intervals.forEach((interval: any, index: number) => {
-      const onTime = interval.ON || 0;
-      const offTime = interval.OFF || 0;
-      const alarmTime = interval.ALARM || 0;
-
-      totalOnTime += onTime;
-      totalTime += onTime + offTime + alarmTime;
-    });
-
-    const availability = totalTime > 0 ? (totalOnTime / totalTime) * 100 : 0;
-
-    return Math.round(availability * 100) / 100;
-  }
-
-  // Single machine version
-  async calculateSingle(
-    machineNumber: string,
-    timeframe: TimeFrame,
-  ): Promise<number> {
-    const modifiedTimeframe = {
-      ...timeframe,
-      machine_numbers: [machineNumber],
-    };
-
-    const results = await this.calculate(modifiedTimeframe);
-    return results.get(machineNumber) || 0;
-  }
 
   async getAvailabilityDetails(
     timeframe: TimeFrame,
@@ -244,6 +164,7 @@ export class AvailabilityService {
           totalOffTime,
           totalAlarmTime,
           totalTime,
+          plannedDowntime: downtimeBreakdown.plannedDowntime,
           downtimeBreakdown,
           intervals: machine.intervals || [],
         };
@@ -477,14 +398,5 @@ export class AvailabilityService {
 
     // Ensure availability doesn't exceed 100%
     return Math.min(100, Math.round(adjustedAvailability * 100) / 100);
-  }
-
-  private processAvailabilityData(availabilityMap: Map<string, number>): any[] {
-    return Array.from(availabilityMap.entries()).map(
-      ([machineNumber, availability]) => ({
-        machineNumber,
-        availability: Math.round(availability * 100) / 100, // ปรับทศนิยม 2 ตำแหน่ง
-      }),
-    );
   }
 }
