@@ -22,7 +22,7 @@ import {
 import { PrinterDevicesService } from './printer.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
-import { ShortCacheInterceprot } from '../interceptors/simple-cache.interceptor';
+import { ShortCacheInterceptor } from '../interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 
 @Controller('printer/devices')
@@ -70,7 +70,7 @@ export class PrinterDevicesController {
   }
 
   @Get()
-  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
   @Roles(Role.ADMIN)
   findAll() {
     return this.printerDevicesService.findAll();

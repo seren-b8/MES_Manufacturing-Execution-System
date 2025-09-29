@@ -20,7 +20,7 @@ import {
 } from '../dto/master-cavity.dto';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
-import { ShortCacheInterceprot } from '../interceptors/simple-cache.interceptor';
+import { ShortCacheInterceptor } from '../interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 
 @Controller('machine-cavity')
@@ -37,7 +37,7 @@ export class MachineCavityController {
   }
 
   @Get()
-  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
   async findAll(@Query() query: any): Promise<ResponseFormat<MasterCavity>> {
     return this.machineCavityService.findAll(query);
   }

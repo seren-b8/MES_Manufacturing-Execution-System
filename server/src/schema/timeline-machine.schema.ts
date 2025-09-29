@@ -15,3 +15,8 @@ export class TimelineMachine extends Document {
 
 export const TimelineMachineSchema =
   SchemaFactory.createForClass(TimelineMachine);
+
+TimelineMachineSchema.index({
+  machine_number: 1,
+  createdAt: 1,
+});

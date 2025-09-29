@@ -20,7 +20,7 @@ import { ResponseFormat } from 'src/shared/interface';
 import { MasterNotGood } from 'src/schema/master-not-good.schema';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
-import { ShortCacheInterceprot } from '../interceptors/simple-cache.interceptor';
+import { ShortCacheInterceptor } from '../interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 
 @Controller('master-not-good')
@@ -94,7 +94,7 @@ export class MasterNotGoodController {
   }
 
   @Get()
-  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
   async findAll(): Promise<ResponseFormat<MasterNotGood>> {
     const items = await this.masterNotGoodService.findAll();
     return {

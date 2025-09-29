@@ -26,7 +26,7 @@ import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
 import { Cron } from '@nestjs/schedule';
 import {
   MicroCacheInterceptor,
-  ShortCacheInterceprot,
+  ShortCacheInterceptor,
 } from 'src/machine/interceptors/simple-cache.interceptor';
 
 @Controller('production-planning')

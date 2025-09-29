@@ -1374,33 +1374,63 @@ export class MachineInfoService {
     machineNumbers?: string[],
   ): Promise<ResponseFormat<any>> {
     try {
-      // 1. แปลงวันที่เป็นเขตเวลาประเทศไทย
       const start = moment(startDate).tz('Asia/Bangkok').toDate();
       const end = moment(endDate).tz('Asia/Bangkok').toDate();
 
       // 2. สร้างเงื่อนไขสำหรับการค้นหา
-      const findCondition: any = {
-        $or: [
-          // ข้อมูลในช่วงที่ต้องการ
-          { createdAt: { $gte: start, $lte: end } },
-          {
-            // ข้อมูลก่อนหน้า 1 record (latest before start time)
-            createdAt: { $lt: start },
-          },
-        ],
-      };
+      const mainCondition: any = { createdAt: { $gte: start, $lte: end } };
 
       if (machineNumbers?.length) {
-        findCondition.machine_number = { $in: machineNumbers };
+        mainCondition.machine_number = { $in: machineNumbers };
       }
 
       // 3. ดึงข้อมูล timeline โดยตรงจาก MongoDB
-      const timelineData = await this.timelineMachineModel
-        .find(findCondition)
+      const mainTimelineData = await this.timelineMachineModel
+        .find(mainCondition)
         .select('machine_number status createdAt')
         .sort({ machine_number: 1, createdAt: 1 })
         .lean()
         .exec();
+
+      // 2. ดึงข้อมูลล่าสุด 1 record ก่อนหน้า start สำหรับแต่ละเครื่อง
+      const precedingCondition: any = {
+        createdAt: { $lt: start },
+      };
+
+      if (machineNumbers?.length) {
+        precedingCondition.machine_number = { $in: machineNumbers };
+      }
+
+      const precedingTimelineData = await this.timelineMachineModel
+        .aggregate([
+          // กรองตามเงื่อนไข machine_number และ createdAt < start
+          { $match: precedingCondition },
+
+          // จัดเรียงย้อนหลังตามเวลา เพื่อให้ record ล่าสุดอยู่บนสุดของแต่ละเครื่อง
+          { $sort: { machine_number: 1, createdAt: -1 } },
+
+          // จัดกลุ่มตาม machine_number และเลือก record แรก (ซึ่งคือ record ล่าสุด)
+          {
+            $group: {
+              _id: '$machine_number',
+              status: { $first: '$status' },
+              createdAt: { $first: '$createdAt' },
+              machine_number: { $first: '$machine_number' },
+            },
+          },
+        ])
+        .exec();
+
+      // 3. รวมข้อมูลทั้งหมดเข้าด้วยกัน
+      const timelineData = [...mainTimelineData, ...precedingTimelineData];
+
+      // จัดเรียงผลลัพธ์สุดท้ายอีกครั้งเพื่อให้ข้อมูลเรียงตาม machine_number และเวลา
+      timelineData.sort((a, b) => {
+        if (a.machine_number !== b.machine_number) {
+          return a.machine_number.localeCompare(b.machine_number);
+        }
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
 
       // 4. ถ้าไม่มีข้อมูล ส่งกลับ array ว่าง
       if (!timelineData.length) {

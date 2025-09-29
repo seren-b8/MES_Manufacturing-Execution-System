@@ -19,8 +19,8 @@ import { Role } from 'src/auth/enum/roles.enum';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';
 import { CacheTTL } from '@nestjs/cache-manager';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
-import { ShortCacheInterceprot } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
+import { ShortCacheInterceptor } from 'src/machine/interceptors/simple-cache.interceptor';
 
 @Controller('employee')
 @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
@@ -43,7 +43,7 @@ export class EmployeeController {
   }
 
   @Get('find-all-employee')
-  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
   @UseGuards(JwtAuthGuard, RolesGuard)
   @HttpCode(HttpStatus.OK)
   @CacheTTL(3)
@@ -52,7 +52,7 @@ export class EmployeeController {
   }
 
   @Get('find-all-user')
-  @UseInterceptors(ShortCacheInterceprot, new TimeoutInterceptor(20000))
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async findAllEmployee(): Promise<ResponseFormat<UserWithEmployeeData>> {
