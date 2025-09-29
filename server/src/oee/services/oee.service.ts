@@ -187,17 +187,24 @@ export class OEEService {
       // --- NEW: Save/Upsert Data to Database ---
       const savedRecords = [];
       for (const record of combinedData) {
-        // Use machineNumber, startTime, and shift as the unique key for the upsert
-        const savedDoc = await this.oeeHourlyModel.findOneAndUpdate(
-          {
-            machine_number: record.machine_number,
-            start_time: record.start_time,
-            shift: record.shift,
-          },
-          record,
-          { upsert: true, new: true }, // upsert: create if not found, new: return the updated document
-        );
-        savedRecords.push(savedDoc);
+        try {
+          const savedDoc = await this.oeeHourlyModel.create(record);
+          savedRecords.push(savedDoc);
+        } catch (error) {
+          // Type guard สำหรับ MongoDB duplicate key error
+          if (
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            error.code === 11000
+          ) {
+            console.log(
+              `Skipping duplicate for machine ${record.machine_number}`,
+            );
+            continue;
+          }
+          throw error;
+        }
       }
 
       return {

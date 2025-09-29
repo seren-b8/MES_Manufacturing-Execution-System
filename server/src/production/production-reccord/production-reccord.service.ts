@@ -486,11 +486,11 @@ export class ProductionRecordService {
   ): Promise<ResponseFormat<ProductionRecord>> {
     try {
       // Debug query
-      console.log('Original query:', query);
-      console.log(
-        'Query types:',
-        Object.keys(query).map((key) => `${key}: ${typeof query[key]}`),
-      );
+      // console.log('Original query:', query);
+      // console.log(
+      //   'Query types:',
+      //   Object.keys(query).map((key) => `${key}: ${typeof query[key]}`),
+      // );
 
       // แปลง string เป็น number และกำหนดค่า default
       const pageNum = parseInt(page.toString()) || 1;

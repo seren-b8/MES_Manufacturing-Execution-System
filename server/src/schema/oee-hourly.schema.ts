@@ -99,6 +99,18 @@ export class OEEHourly extends Document {
 
 export const OEEHourlySchema = SchemaFactory.createForClass(OEEHourly);
 
+OEEHourlySchema.index(
+  {
+    machine_number: 1,
+    start_time: 1,
+    end_time: 1,
+    shift: 1,
+  },
+  {
+    unique: true,
+    name: 'unique_timeframe_per_machine',
+  },
+);
 // --- Indexes ---
 // Compound index (Machine + Time)
 OEEHourlySchema.index({ machineNumber: 1, startTime: -1 });
