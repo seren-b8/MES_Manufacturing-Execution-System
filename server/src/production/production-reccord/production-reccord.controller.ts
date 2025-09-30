@@ -15,6 +15,7 @@ import {
   ParseIntPipe,
   ParseBoolPipe,
   UseInterceptors,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   CreateProductionRecordDto,
@@ -42,6 +43,7 @@ import { machine } from 'os';
 import { CacheTTL } from '@nestjs/cache-manager';
 import { MicroCacheInterceptor } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
+import { ProductionRecordQueryDto } from '../dto/production-reccord-query.dto';
 
 @Controller('production-records')
 export class ProductionRecordController {
@@ -187,58 +189,20 @@ export class ProductionRecordController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(MicroCacheInterceptor, new TimeoutInterceptor(20000))
   async findAll(
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
-    @Query('start_date') startDate?: string,
-    @Query('end_date') endDate?: string,
-    @Query('is_not_good', new ParseBoolPipe({ optional: true }))
-    isNotGood?: boolean,
-    @Query('confirmation_status') confirmationStatus?: string,
-    @Query('is_synced_to_sap', new ParseBoolPipe({ optional: true }))
-    isSyncedToSap?: boolean,
-    @Query('assign_order_id') assignOrderId?: string,
-    @Query('serial_code') serialCode?: string,
+    @Query(
+      new ValidationPipe({
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+        whitelist: true,
+      }),
+    )
+    query: ProductionRecordQueryDto,
   ) {
-    const query: any = {};
-
-    // Date range
-    if (startDate && endDate) {
-      query.createdAt = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
-      };
-    }
-
-    // ObjectId validation
-    if (assignOrderId) {
-      if (!Types.ObjectId.isValid(assignOrderId)) {
-        throw new BadRequestException('Invalid assign_order_id format');
-      }
-      query.assign_order_id = new Types.ObjectId(assignOrderId);
-    }
-
-    // Boolean fields - จะได้ boolean แล้วจาก ParseBoolPipe
-    if (isNotGood !== undefined) {
-      query.is_not_good = isNotGood;
-    }
-
-    if (isSyncedToSap !== undefined) {
-      query.is_synced_to_sap = isSyncedToSap;
-    }
-
-    // String fields
-    if (confirmationStatus) {
-      query.confirmation_status = confirmationStatus;
-    }
-
-    if (serialCode) {
-      query.serial_code = { $regex: serialCode, $options: 'i' }; // case insensitive search
-    }
-
-    return await this.productionRecordService.findAll(query, page, limit);
+    console.log(query);
+    return this.productionRecordService.findAll(query);
   }
 
   @Cron(CronExpression.EVERY_4_HOURS)

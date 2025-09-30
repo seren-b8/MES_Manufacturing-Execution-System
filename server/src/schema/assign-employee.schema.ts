@@ -36,3 +36,5 @@ export class AssignEmployee extends Document {
 
 export const AssignEmployeeSchema =
   SchemaFactory.createForClass(AssignEmployee);
+
+AssignEmployeeSchema.index({ user_id: 1 });

@@ -93,6 +93,12 @@ export class ProductionRecord extends Document {
 export const ProductionRecordSchema =
   SchemaFactory.createForClass(ProductionRecord);
 
+ProductionRecordSchema.index({ assign_order_id: 1 });
+ProductionRecordSchema.index({ master_not_good_id: 1 });
+ProductionRecordSchema.index({ assign_employee_ids: 1 });
+ProductionRecordSchema.index({ confirmed_by: 1 });
+ProductionRecordSchema.index({ createdAt: -1 });
+
 ProductionRecordSchema.index({ assign_order_id: 1, is_synced_to_sap: 1 });
 ProductionRecordSchema.index({ assign_employee_ids: 1, created_at: -1 });
 ProductionRecordSchema.index({

@@ -45,3 +45,5 @@ export class AssignOrder extends Document {
 
 export const AssignOrderSchema = SchemaFactory.createForClass(AssignOrder);
 // Indexes for better query performance
+
+AssignOrderSchema.index({ production_order_id: 1 });

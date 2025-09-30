@@ -80,13 +80,8 @@ export class EmployeeService {
     `;
 
     try {
-      const startTime = Date.now();
       const result = await this.sqlService.query(query);
-      const duration = Date.now() - startTime;
 
-      this.logger.log(
-        `Fetched ${result.length} employees from SQL in ${duration}ms`,
-      );
       return result;
     } catch (error) {
       this.logger.error(

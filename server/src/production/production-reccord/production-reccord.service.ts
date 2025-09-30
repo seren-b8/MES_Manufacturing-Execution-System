@@ -5,7 +5,7 @@ import {
   ConsoleLogger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { ClientSession, Model, Types } from 'mongoose';
+import mongoose, { ClientSession, Model, PipelineStage, Types } from 'mongoose';
 import { AssignEmployee } from 'src/schema/assign-employee.schema';
 import { MasterNotGood } from 'src/schema/master-not-good.schema';
 import { ProductionRecord } from 'src/schema/production-record.schema';
@@ -51,6 +51,7 @@ import { GenerateLabelDto } from 'src/label/dto/generate-label.dto';
 import * as redisStore from 'cache-manager-redis-store';
 import { LabelService } from 'src/label/label.service';
 import * as _ from 'lodash';
+import { ProductionRecordQueryDto } from '../dto/production-reccord-query.dto';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -480,155 +481,173 @@ export class ProductionRecordService {
   }
 
   async findAll(
-    query: any = {},
-    page: number = 1,
-    limit: number = 10,
+    queryDto: ProductionRecordQueryDto,
   ): Promise<ResponseFormat<ProductionRecord>> {
     try {
-      // Debug query
-      // console.log('Original query:', query);
-      // console.log(
-      //   'Query types:',
-      //   Object.keys(query).map((key) => `${key}: ${typeof query[key]}`),
-      // );
+      const pageNum = parseInt(queryDto.page?.toString()) || 1;
+      const limitNum = Math.min(
+        parseInt(queryDto.limit?.toString()) || 10,
+        100,
+      );
+      const skip = (pageNum - 1) * limitNum;
 
-      // แปลง string เป็น number และกำหนดค่า default
-      const pageNum = parseInt(page.toString()) || 1;
-      const limitNum = parseInt(limit.toString()) || 10;
+      // Build base query
+      const baseQuery = this.buildQuery(queryDto);
 
-      // จำกัดค่า limit สูงสุด
-      const maxLimit = Math.min(limitNum, 1000);
-      const skip = (pageNum - 1) * maxLimit;
+      const pipeline: PipelineStage[] = [
+        { $match: baseQuery },
 
-      const pipeline = [
-        // Match stage - กรองข้อมูลตาม query
-        { $match: query },
-
-        // Lookup master_not_good
-        {
-          $lookup: {
-            from: 'master_not_good',
-            localField: 'master_not_good_id',
-            foreignField: '_id',
-            as: 'master_not_good',
-            pipeline: [{ $project: { case_english: 1, case_thai: 1 } }],
-          },
-        },
-
-        // Lookup assign_order และ production_order
+        // Lookups for nested search
         {
           $lookup: {
             from: 'assign_order',
             localField: 'assign_order_id',
             foreignField: '_id',
-            as: 'assign_order_id',
-            pipeline: [
+            as: 'assign_order',
+          },
+        },
+        {
+          $unwind: { path: '$assign_order', preserveNullAndEmptyArrays: true },
+        },
+
+        {
+          $lookup: {
+            from: 'production_order',
+            localField: 'assign_order.production_order_id',
+            foreignField: '_id',
+            as: 'production_order',
+          },
+        },
+        {
+          $unwind: {
+            path: '$production_order',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        // Nested filters after lookup
+        {
+          $match: {
+            ...(queryDto.machine_number && {
+              'assign_order.machine_number': queryDto.machine_number,
+            }),
+            ...(queryDto.material_number && {
+              'production_order.material_number': queryDto.material_number,
+            }),
+          },
+        },
+
+        // Employee filter
+        ...(queryDto.employee_id
+          ? [
               {
                 $lookup: {
-                  from: 'production_order',
-                  localField: 'production_order_id',
+                  from: 'assign_employee',
+                  localField: 'assign_employee_ids',
                   foreignField: '_id',
-                  as: 'production_order_id',
-                  pipeline: [
+                  as: 'assign_employees',
+                },
+              },
+              {
+                $lookup: {
+                  from: 'users',
+                  localField: 'assign_employees.user_id',
+                  foreignField: '_id',
+                  as: 'employees',
+                },
+              },
+              {
+                $match: {
+                  'employees.employee_id': queryDto.employee_id,
+                },
+              },
+            ]
+          : []),
+
+        // Full-text search
+        ...(queryDto.search
+          ? [
+              {
+                $match: {
+                  $or: [
+                    { serial_code: { $regex: queryDto.search, $options: 'i' } },
                     {
-                      $project: {
-                        order_id: 1,
-                        material_number: 1,
-                        material_description: 1,
-                        target_quantity: 1,
+                      'production_order.material_number': {
+                        $regex: queryDto.search,
+                        $options: 'i',
+                      },
+                    },
+                    {
+                      'production_order.material_description': {
+                        $regex: queryDto.search,
+                        $options: 'i',
                       },
                     },
                   ],
                 },
               },
-              {
-                $addFields: {
-                  production_order_id: {
-                    $arrayElemAt: ['$production_order_id', 0],
-                  },
-                },
-              },
-            ],
-          },
-        },
+            ]
+          : []),
 
-        // Lookup assign_employee และ user
-        {
-          $lookup: {
-            from: 'assign_employee',
-            localField: 'assign_employee_ids',
-            foreignField: '_id',
-            as: 'assign_employee_ids',
-            pipeline: [
-              {
-                $lookup: {
-                  from: 'users',
-                  localField: 'user_id',
-                  foreignField: '_id',
-                  as: 'user_id',
-                  pipeline: [{ $project: { employee_id: 1 } }],
-                },
-              },
-              {
-                $addFields: {
-                  user_id: { $arrayElemAt: ['$user_id', 0] },
-                },
-              },
-            ],
-          },
-        },
-
-        // Lookup confirmed_by user
-        {
-          $lookup: {
-            from: 'users',
-            localField: 'confirmed_by',
-            foreignField: '_id',
-            as: 'confirmed_by_user',
-            pipeline: [{ $project: { employee_id: 1 } }],
-          },
-        },
-
-        // แปลง array fields และรักษาโครงสร้างเดิม
-        {
-          $addFields: {
-            master_not_good_id: { $arrayElemAt: ['$master_not_good', 0] },
-            assign_order_id: { $arrayElemAt: ['$assign_order_id', 0] },
-            confirmed_by: { $arrayElemAt: ['$confirmed_by_user', 0] },
-          },
-        },
-
-        // เอา field ที่ไม่ต้องการออก
-        {
-          $unset: ['confirmed_by_user', 'master_not_good'],
-        },
-
-        // Sort
         { $sort: { createdAt: -1 } },
 
-        // Facet for pagination
+        // Count before pagination
         {
           $facet: {
-            data: [{ $skip: skip }, { $limit: maxLimit }],
-            count: [{ $count: 'total' }],
+            metadata: [{ $count: 'total' }],
+            data: [
+              { $skip: skip },
+              { $limit: limitNum },
+              // Remaining lookups
+              {
+                $lookup: {
+                  from: 'assign_employee',
+                  localField: 'assign_employee_ids',
+                  foreignField: '_id',
+                  as: 'assign_employees',
+                },
+              },
+              {
+                $lookup: {
+                  from: 'master_not_good',
+                  localField: 'master_not_good_id',
+                  foreignField: '_id',
+                  as: 'master_not_good',
+                },
+              },
+              {
+                $project: {
+                  _id: 1,
+                  quantity: 1,
+                  is_not_good: 1,
+                  serial_code: 1,
+                  production_date: 1,
+                  confirmation_status: 1,
+                  createdAt: 1,
+                  assign_order: 1,
+                  production_order: 1,
+                  master_not_good: { $arrayElemAt: ['$master_not_good', 0] },
+                  assign_employees: 1,
+                },
+              },
+            ],
           },
         },
       ];
 
-      const result = await this.productionRecordModel.aggregate(pipeline as []);
-
-      const records = result[0]?.data || [];
-      const total = result[0]?.count[0]?.total || 0;
+      const result = await this.productionRecordModel.aggregate(pipeline);
+      const data = result[0]?.data || [];
+      const total = result[0]?.metadata[0]?.total || 0;
 
       return {
         status: 'success',
         message: 'Production records retrieved successfully',
-        data: records,
+        data,
         pagination: {
           total,
           page: pageNum,
-          limit: maxLimit,
-          totalPages: Math.ceil(total / maxLimit),
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum),
         },
       };
     } catch (error) {
@@ -641,6 +660,49 @@ export class ProductionRecordService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  private buildQuery(queryDto: ProductionRecordQueryDto) {
+    const query: any = {};
+
+    // Boolean filters - ตอนนี้เป็น boolean แล้ว
+    if (queryDto.is_not_good !== undefined) {
+      query.is_not_good = queryDto.is_not_good;
+    }
+
+    if (queryDto.is_synced_to_sap !== undefined) {
+      query.is_synced_to_sap = queryDto.is_synced_to_sap;
+    }
+
+    if (queryDto.confirmation_status) {
+      query.confirmation_status = queryDto.confirmation_status;
+    }
+
+    // Date range
+    if (queryDto.start_date || queryDto.end_date) {
+      query.createdAt = {};
+      if (queryDto.start_date) {
+        query.createdAt.$gte = moment(queryDto.start_date)
+          .tz('Asia/Bangkok')
+          .startOf('day')
+          .toDate();
+      }
+      if (queryDto.end_date) {
+        query.createdAt.$lte = moment(queryDto.end_date)
+          .tz('Asia/Bangkok')
+          .endOf('day')
+          .toDate();
+      }
+    }
+
+    if (queryDto.production_date) {
+      query.production_date = moment(queryDto.production_date)
+        .tz('Asia/Bangkok')
+        .startOf('day')
+        .toDate();
+    }
+
+    return query;
   }
 
   async update(
