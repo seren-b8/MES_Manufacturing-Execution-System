@@ -1,14 +1,7 @@
-import { Transform } from 'class-transformer';
-import {
-  IsOptional,
-  IsBoolean,
-  IsString,
-  IsInt,
-  IsEnum,
-} from 'class-validator';
+// production-record-query.dto.ts
+import { IsOptional, IsString, IsEnum } from 'class-validator';
 
 export class ProductionRecordQueryDto {
-  // Machine & Material
   @IsOptional()
   @IsString()
   machine_number?: string;
@@ -17,31 +10,17 @@ export class ProductionRecordQueryDto {
   @IsString()
   material_number?: string;
 
-  // Boolean fields - Transform string to boolean
+  // รับได้ทั้ง string และ boolean
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value;
-  })
-  @IsBoolean()
-  is_not_good?: boolean;
+  is_not_good?: string | boolean;
 
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    return value;
-  })
-  @IsBoolean()
-  is_synced_to_sap?: boolean;
+  is_synced_to_sap?: string | boolean;
 
-  // Enum
   @IsOptional()
   @IsEnum(['pending', 'confirmed', 'rejected'])
   confirmation_status?: 'pending' | 'confirmed' | 'rejected';
 
-  // Dates
   @IsOptional()
   @IsString()
   start_date?: string;
@@ -54,24 +33,17 @@ export class ProductionRecordQueryDto {
   @IsString()
   production_date?: string;
 
-  // Employee
   @IsOptional()
   @IsString()
   employee_id?: string;
 
-  // Search
   @IsOptional()
   @IsString()
   search?: string;
 
-  // Pagination - Transform string to number
   @IsOptional()
-  @Transform(({ value }) => parseInt(value, 10))
-  @IsInt()
-  page?: number;
+  page?: string | number;
 
   @IsOptional()
-  @Transform(({ value }) => parseInt(value, 10))
-  @IsInt()
-  limit?: number;
+  limit?: string | number;
 }

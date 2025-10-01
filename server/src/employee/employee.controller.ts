@@ -21,6 +21,7 @@ import { CacheTTL } from '@nestjs/cache-manager';
 import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 import { ShortCacheInterceptor } from 'src/machine/interceptors/simple-cache.interceptor';
+import { Cron } from '@nestjs/schedule';
 
 @Controller('employee')
 @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
@@ -67,5 +68,13 @@ export class EmployeeController {
     @Body() createTempEmployeeDto: CreateTempEmployeeDto,
   ): Promise<ResponseFormat<Employee>> {
     return this.employeeSyncService.createTempEmpolyee(createTempEmployeeDto);
+  }
+
+  @Cron('0 * * * *', {
+    name: 'save-hourly-oee',
+    timeZone: 'Asia/Bangkok',
+  })
+  async syncEmployeesAuto() {
+    return await this.employeeSyncService.syncEmployees();
   }
 }

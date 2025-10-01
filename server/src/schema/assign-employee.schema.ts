@@ -13,7 +13,6 @@ export class AssignEmployee extends Document {
   @Prop({
     type: Types.ObjectId,
     required: true,
-    index: true,
     ref: User.name,
   })
   user_id: Types.ObjectId;

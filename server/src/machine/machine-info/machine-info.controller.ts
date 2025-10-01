@@ -75,7 +75,11 @@ export class MachineInfoController {
     try {
       // แปลงวันที่เป็น Date object ในเขตเวลาไทย
       const startDate = moment(start_date).tz('Asia/Bangkok').toDate();
-      const endDate = moment(end_date).tz('Asia/Bangkok').toDate();
+      const endDateRaw = moment(end_date).tz('Asia/Bangkok').toDate();
+
+      // ถ้า endDate เกินเวลาปัจจุบัน ให้ใช้เวลาปัจจุบันแทน
+      const now = moment().tz('Asia/Bangkok').toDate();
+      const endDate = endDateRaw > now ? now : endDateRaw;
 
       // แปลง machine_numbers เป็น array (ถ้ามี)
       const machineArray = machine_numbers

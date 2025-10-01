@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, PipelineStage } from 'mongoose';
 import { QualityService } from './quality.service';
 import { AvailabilityService } from './availability.service';
 import { PerformanceService } from './performance.service';
 import { OEEHourly } from 'src/schema/oee-hourly.schema';
 // import { OEEDaily } from '../schemas/oee-daily.schema';
-import { ShiftConfig, TimeFrame } from 'src/shared/interface/oee';
+import { OEEQuery, ShiftConfig, TimeFrame } from 'src/shared/interface/oee';
 import { OEEResponseDto } from '../dto/timeframe.dto';
 import { ResponseFormat } from 'src/shared/interface';
 import * as moment from 'moment-timezone';
@@ -23,9 +23,41 @@ export class OEEService {
     private performanceService: PerformanceService,
   ) {}
 
-  async realTimeOEE(): Promise<ResponseFormat<any>> {
+  async realTimeOEE(query: OEEQuery): Promise<ResponseFormat<any>> {
     try {
+      const { date, shift, machine_numbers } = query;
+      let combinedData: any[] = [];
+      let machineList: string[] = [];
+
       const timeFrame = this.calculateProductionShiftTimeFrame();
+      let startTime: Date | undefined;
+      let endTime: Date | undefined;
+      if (date && (shift === 'day' || shift === 'night')) {
+        const result = this.calculateShiftTimeframeForDate(date, shift);
+        startTime = result.startTime;
+        endTime = result.endTime;
+      }
+      // --- 🚨 Logic สำหรับดึงข้อมูลย้อนหลังรายวัน/กะ 🚨 ---
+      if (
+        date &&
+        startTime &&
+        timeFrame.start_time.toString() !== startTime.toString() &&
+        (shift === 'day' || shift === 'night')
+      ) {
+        // ดึงข้อมูล OEE ย้อนหลังจาก MongoDB โดยตรง
+        combinedData = await this.getHistoricalOEEByDayAndShift(
+          date,
+          shift,
+          machine_numbers,
+        );
+        machineList = combinedData.map((d) => d.machineNumber);
+
+        return {
+          status: 'success',
+          message: 'Historical OEE data retrieved successfully',
+          data: combinedData,
+        };
+      }
 
       const quality = await this.qualityService.calculate(timeFrame);
 
@@ -35,28 +67,21 @@ export class OEEService {
         await this.performanceService.getMultiMachinePerformanceArray(
           timeFrame,
         );
-      // return availability as any;
-      // return quality;
-      // return performance as any;
 
-      const machineList =
+      machineList =
         timeFrame.machine_numbers?.length > 0
           ? timeFrame.machine_numbers
           : this.getAllUniqueMachines(quality, availability, performance);
 
       // วิธีรวมข้อมูลใน array
-      const combinedData = machineList.map((machineNumber) => {
-        // หา quality data
+      combinedData = machineList.map((machineNumber) => {
+        // ... (Logic การรวมข้อมูล Q, A, P และคำนวณ OEE เดิม)
         const qualityData = quality.find(
           (q) => q.machineNumber === machineNumber,
         );
-
-        // หา availability data
         const availabilityData = availability.find(
           (a) => a.machineNumber === machineNumber,
         );
-
-        // หา performance data
         const performanceData = performance.find(
           (p) => p.machineNumber === machineNumber,
         );
@@ -105,7 +130,7 @@ export class OEEService {
 
   async saveHourlyOEE(): Promise<ResponseFormat<any>> {
     try {
-      const timeFrame = this.calculateProductionShiftTimeFrame();
+      const timeFrame = this.calculateCompletedShiftTimeFrame();
 
       const quality = await this.qualityService.calculate(timeFrame);
 
@@ -208,6 +233,33 @@ export class OEEService {
             continue;
           }
           throw error;
+        }
+      }
+
+      const factoryAverage = this.calculateFactoryAverageOEE(combinedData);
+
+      if (factoryAverage) {
+        const factoryRecord = {
+          ...factoryAverage,
+          start_time: timeFrame.start_time,
+          end_time: timeFrame.end_time,
+          shift: timeFrame.shift_type,
+        };
+
+        try {
+          const savedFactory = await this.oeeHourlyModel.create(factoryRecord);
+          savedRecords.push(savedFactory);
+        } catch (error) {
+          if (
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            error.code === 11000
+          ) {
+            console.log('Skipping duplicate for factory average (ALL)');
+          } else {
+            throw error;
+          }
         }
       }
 
@@ -321,228 +373,266 @@ export class OEEService {
     };
   }
 
+  private calculateCompletedShiftTimeFrame(): TimeFrame {
+    const now = moment().tz('Asia/Bangkok');
+    const shiftConfig: ShiftConfig = {
+      day: { start: 8, end: 20 },
+      night: { start: 20, end: 8 },
+    };
+
+    const currentShiftInfo = this.getCurrentShiftInfo(now, shiftConfig);
+
+    // ✅ คำนวณกะที่เสร็จสมบูรณ์ล่าสุด
+    const completedShift = this.getLastCompletedShift(
+      now,
+      currentShiftInfo,
+      shiftConfig,
+    );
+
+    return {
+      machine_numbers: [],
+      start_time: completedShift.shift_start.toDate(),
+      end_time: completedShift.shift_end.toDate(),
+      shift_type: completedShift.shift_type,
+    };
+  }
+
+  private getLastCompletedShift(
+    currentTime: moment.Moment,
+    currentShift: any,
+    config: ShiftConfig,
+  ) {
+    const hour = currentTime.hour();
+    const minute = currentTime.minute();
+
+    // ✅ ถ้าเพิ่งเริ่มกะใหม่ (ช่วง 5 นาทีแรก) ให้ใช้กะก่อนหน้า
+    const isNewShiftStart =
+      (hour === config.day.start && minute < 5) || // 08:00-08:04
+      (hour === config.night.start && minute < 5); // 20:00-20:04
+
+    if (isNewShiftStart) {
+      // ใช้กะก่อนหน้า
+      if (hour === config.day.start) {
+        // เพิ่งเริ่มกะวัน → ใช้กะกลางคืนที่ผ่านมา
+        return {
+          shift_type: 'night',
+          shift_start: currentTime
+            .clone()
+            .subtract(1, 'day')
+            .startOf('day')
+            .add(config.night.start, 'hours'), // 20:00 เมื่อวาน
+          shift_end: currentTime
+            .clone()
+            .startOf('day')
+            .add(config.day.start, 'hours'), // 08:00 วันนี้
+        };
+      } else {
+        // เพิ่งเริ่มกะกลางคืน → ใช้กะวันที่ผ่านมา
+        return {
+          shift_type: 'day',
+          shift_start: currentTime
+            .clone()
+            .startOf('day')
+            .add(config.day.start, 'hours'),
+          shift_end: currentTime
+            .clone()
+            .startOf('day')
+            .add(config.night.start, 'hours'),
+        };
+      }
+    }
+
+    // ✅ ไม่ใช่ช่วงเริ่มกะใหม่ → ใช้กะปัจจุบัน
+    const adjustedEndTime = this.roundDownToFiveMinutes(currentTime);
+
+    return {
+      shift_type: currentShift.shift_type,
+      shift_start: currentShift.shift_start,
+      shift_end: adjustedEndTime,
+    };
+  }
+
   private roundDownToFiveMinutes(time: moment.Moment): moment.Moment {
     const minutes = time.minutes();
     const roundedMinutes = Math.floor(minutes / 5) * 5;
     return time.clone().minutes(roundedMinutes).seconds(0).milliseconds(0);
   }
 
-  // private getCurrentShiftInfo(currentTime: moment.Moment, config: ShiftConfig) {
-  //   const hour = currentTime.hour();
-  //   let shiftType: 'day' | 'night';
-  //   let shiftStart: moment.Moment;
-  //   let nextShiftStart: moment.Moment;
+  async getHistoricalOEEByDayAndShift(
+    dateStr: string,
+    shift: 'day' | 'night',
+    machineNumbers?: string[],
+  ): Promise<any[]> {
+    // 1. กำหนดช่วงเวลาของกะที่ต้องการ
+    const { startTime, endTime } = this.calculateShiftTimeframeForDate(
+      dateStr,
+      shift,
+    );
 
-  //   // กะกลางวัน: 08:00 - 20:00
-  //   if (hour >= config.day.start && hour < config.day.end) {
-  //     shiftType = 'day';
-  //     shiftStart = currentTime
-  //       .clone()
-  //       .startOf('day')
-  //       .add(config.day.start, 'hours');
-  //     nextShiftStart = currentTime
-  //       .clone()
-  //       .startOf('day')
-  //       .add(config.day.end, 'hours');
-  //   }
-  //   // กะกลางคืน: 20:00 - 08:00
-  //   else {
-  //     shiftType = 'night';
-  //     if (hour >= config.night.start) {
-  //       // เวลา 20:00-23:59 (วันเดียวกัน)
-  //       shiftStart = currentTime
-  //         .clone()
-  //         .startOf('day')
-  //         .add(config.night.start, 'hours');
-  //       nextShiftStart = currentTime
-  //         .clone()
-  //         .add(1, 'day')
-  //         .startOf('day')
-  //         .add(config.day.start, 'hours');
-  //     } else {
-  //       // เวลา 00:00-07:59 (วันถัดไป)
-  //       shiftStart = currentTime
-  //         .clone()
-  //         .subtract(1, 'day')
-  //         .startOf('day')
-  //         .add(config.night.start, 'hours');
-  //       nextShiftStart = currentTime
-  //         .clone()
-  //         .startOf('day')
-  //         .add(config.day.start, 'hours');
-  //     }
-  //   }
+    const match: any = {
+      start_time: { $gte: startTime, $lte: endTime },
+      shift: shift,
+    };
 
-  //   return {
-  //     shift_type: shiftType,
-  //     shift_start: shiftStart,
-  //     next_shift_start: nextShiftStart,
-  //   };
-  // }
+    if (machineNumbers?.length) {
+      match.machine_number = { $in: machineNumbers };
+    }
+
+    // 2. ใช้ Aggregation Pipeline เพื่อดึงข้อมูลล่าสุดของแต่ละเครื่อง
+    const pipeline: PipelineStage[] = [
+      // 1. กรองตามช่วงเวลาและกะที่กำหนด
+      { $match: match },
+
+      // 2. จัดกลุ่มตาม machine_number และดึงเอกสารล่าสุด
+      {
+        $sort: { start_time: -1 }, // เรียงจากเวลาล่าสุดไปก่อน
+      },
+      {
+        $group: {
+          _id: '$machine_number',
+          // ดึงฟิลด์ของเอกสารแรก (ซึ่งคือเอกสารล่าสุดหลังการ sort)
+          latestOEE: { $first: '$oee' },
+          latestQuality: { $first: '$quality' },
+          latestAvailability: { $first: '$availability' },
+          latestPerformance: { $first: '$performance' },
+          latestStartTime: { $first: '$start_time' }, // ใช้สำหรับตรวจสอบ/ debug
+        },
+      },
+
+      // 3. ปรับโครงสร้างผลลัพธ์ให้ตรงกับที่ต้องการ
+      {
+        $project: {
+          _id: 0,
+          machineNumber: '$_id',
+          oee: '$latestOEE',
+          quality: '$latestQuality',
+          availability: '$latestAvailability',
+          performance: '$latestPerformance',
+          // startTime: '$latestStartTime', // เพิ่มเข้ามาเพื่อการตรวจสอบ
+        },
+      },
+    ];
+
+    // สมมติว่า oeeHourlyService.aggregate() ใช้กับ OEEHourly collection
+    // และคืนค่าเป็น Promise<any[]>
+    return this.oeeHourlyModel.aggregate(pipeline);
+  }
+
+  private calculateShiftTimeframeForDate(
+    dateStr: string,
+    shift: 'day' | 'night',
+  ) {
+    // ใช้ moment(dateStr) เพื่อสร้าง object จาก string และ ensure ว่าเป็นเริ่มต้นของวันนั้นๆ (เที่ยงคืน)
+    const baseDay = moment.tz(dateStr, 'Asia/Bangkok').startOf('day');
+    let startTime: moment.Moment;
+    let endTime: moment.Moment;
+
+    if (shift === 'day') {
+      // ⏰ กะ Day: เริ่ม 8:00 AM และ สิ้นสุด 8:00 PM ของวันเดียวกัน
+
+      // ตั้งค่า startTime เป็น 08:00 ของวันที่ baseDay
+      startTime = baseDay
+        .clone()
+        .hours(8)
+        .minutes(0)
+        .seconds(0)
+        .milliseconds(0);
+
+      // ตั้งค่า endTime เป็น 20:00 ของวันที่ baseDay
+      endTime = baseDay.clone().hours(20).minutes(0).seconds(1).milliseconds(0);
+    } else {
+      // 'night'
+      // 🌙 กะ Night: เริ่ม 8:00 PM ของวันเดียวกัน และ สิ้นสุด 8:00 AM ของวันถัดไป
+
+      // ตั้งค่า startTime เป็น 20:00 ของวันที่ baseDay
+      startTime = baseDay
+        .clone()
+        .hours(20)
+        .minutes(0)
+        .seconds(0)
+        .milliseconds(0);
+
+      // ตั้งค่า endTime เป็น 08:00 ของวันถัดไป (baseDay.add(1, 'day') จะเปลี่ยน baseDay โดยตรง, ควรใช้ clone ก่อน)
+      endTime = baseDay
+        .clone()
+        .add(1, 'day')
+        .hours(8)
+        .minutes(0)
+        .seconds(0)
+        .milliseconds(0);
+    }
+
+    // ส่งคืนค่าเป็น Object ที่มี Date object (ใช้ .toDate() ของ moment) เพื่อให้เข้ากันได้กับ TimeFrame type เดิม
+    // const timeFrame: { machine_numbers: string[]; start_time: Date; end_time: Date; shift_type?: "day" | "night";}
+    return {
+      startTime: startTime.toDate(),
+      endTime: endTime.toDate(),
+    };
+  }
 
   private getCurrentShiftInfo(currentTime: moment.Moment, config: ShiftConfig) {
     const hour = currentTime.hour();
+    const minute = currentTime.minute();
+
     let shiftType: 'day' | 'night';
     let shiftStart: moment.Moment;
     let nextShiftStart: moment.Moment;
 
-    if (hour >= config.day.start && hour <= config.day.end) {
+    // Day Shift: 08:00:00 - 20:00:00 (inclusive)
+    const isDayShift =
+      (hour > config.day.start && hour < config.day.end) || // 09:00-19:59
+      (hour === config.day.start && minute >= 0) || // 08:00:00-08:59:59
+      (hour === config.day.end && minute === 0); // 20:00:00 only
+
+    if (isDayShift) {
       shiftType = 'day';
       shiftStart = currentTime
         .clone()
         .startOf('day')
         .add(config.day.start, 'hours');
-
-      // ถ้าเป็นเวลา 20:xx น. ต้องดูว่าช่วงเวลาต่อไปคือวันถัดไปหรือไม่
-      if (hour === config.day.end && currentTime.minute() > 0) {
-        const dayShiftStart = currentTime
-          .clone()
-          .startOf('day')
-          .add(config.day.start, 'hours'); // 08:00
-        const nightShiftStartToday = currentTime
-          .clone()
-          .startOf('day')
-          .add(config.day.end, 'hours'); // 20:00 today
-        const nightShiftStartYesterday = currentTime
-          .clone()
-          .subtract(1, 'day')
-          .startOf('day')
-          .add(config.day.end, 'hours'); // 20:00 yesterday
-        const dayShiftStartTomorrow = currentTime
-          .clone()
-          .add(1, 'day')
-          .startOf('day')
-          .add(config.day.start, 'hours'); // 08:00 tomorrow
-
-        if (
-          currentTime.isSameOrAfter(dayShiftStart) &&
-          currentTime.isSameOrBefore(nightShiftStartToday)
-        ) {
-          shiftType = 'day';
-          shiftStart = dayShiftStart;
-          nextShiftStart = dayShiftStartTomorrow.subtract(12, 'hours'); // 20:00 today
-        }
-        // Check for Night shift 1 (20:00:01 to 23:59:59)
-        else if (
-          currentTime.isAfter(nightShiftStartToday) &&
-          hour >= config.night.start
-        ) {
-          shiftType = 'night';
-          shiftStart = nightShiftStartToday;
-          nextShiftStart = dayShiftStartTomorrow; // 08:00 tomorrow
-        }
-        // Check for Night shift 2 (00:00:00 to 08:00:00 inclusive)
-        else if (
-          currentTime.isSameOrBefore(dayShiftStart) &&
-          hour < config.day.start
-        ) {
-          shiftType = 'night';
-          shiftStart = nightShiftStartYesterday; // 20:00 yesterday
-          nextShiftStart = dayShiftStart; // 08:00 today
-        }
-
-        const isDayShift =
-          (hour > config.day.start && hour < config.day.end) ||
-          (hour === config.day.start && currentTime.minute() >= 0) || // Always true at 8:xx
-          (hour === config.day.end && currentTime.minute() === 0); // 20:00 เป๊ะ
-
-        if (isDayShift) {
-          shiftType = 'day';
-          shiftStart = currentTime
-            .clone()
-            .startOf('day')
-            .add(config.day.start, 'hours');
-          nextShiftStart = currentTime
-            .clone()
-            .startOf('day')
-            .add(config.day.end, 'hours'); // 20:00 today
-        }
-        // กะกลางคืน: 20:01 - 08:00 (รวม 08:00)
-        else {
-          // Logic for 20:01 until 08:00:00
-          shiftType = 'night';
-
-          // If the current time is 20:01 or later today (20:01 - 23:59)
-          if (
-            hour >= config.night.start ||
-            (hour === config.day.end && currentTime.minute() > 0)
-          ) {
-            shiftStart = currentTime
-              .clone()
-              .startOf('day')
-              .add(config.night.start, 'hours'); // 20:00 today
-            nextShiftStart = currentTime
-              .clone()
-              .add(1, 'day')
-              .startOf('day')
-              .add(config.day.start, 'hours'); // 08:00 tomorrow
-          }
-          // If the current time is 00:00 - 08:00:00
-          else {
-            shiftStart = currentTime
-              .clone()
-              .subtract(1, 'day')
-              .startOf('day')
-              .add(config.night.start, 'hours'); // 20:00 yesterday
-            nextShiftStart = currentTime
-              .clone()
-              .startOf('day')
-              .add(config.day.start, 'hours'); // 08:00 today
-          }
-        }
-      }
-
-      const dayShiftStart = currentTime
+      nextShiftStart = currentTime
         .clone()
         .startOf('day')
-        .add(config.day.start, 'hours'); // 08:00 today
-      const nightShiftStartToday = currentTime
-        .clone()
-        .startOf('day')
-        .add(config.day.end, 'hours'); // 20:00 today
+        .add(config.day.end, 'hours');
+    }
+    // Night Shift: 20:00:01 - 08:00:00 (spans two days)
+    else {
+      shiftType = 'night';
 
-      // Case 1: Day Shift (08:00:00 today up to and including 20:00:00 today)
+      // Night part 1: 20:00:01 - 23:59:59 (today)
       if (
-        currentTime.isSameOrAfter(dayShiftStart) &&
-        currentTime.isSameOrBefore(nightShiftStartToday)
+        hour >= config.night.start ||
+        (hour === config.day.end && minute > 0)
       ) {
-        shiftType = 'day';
-        shiftStart = dayShiftStart;
-        nextShiftStart = nightShiftStartToday.clone().add(1, 'second'); // Start of Night shift (20:00:01 today)
-
+        shiftStart = currentTime
+          .clone()
+          .startOf('day')
+          .add(config.night.start, 'hours');
         nextShiftStart = currentTime
           .clone()
           .add(1, 'day')
           .startOf('day')
-          .add(config.day.start, 'hours'); // 08:00 tomorrow
+          .add(config.day.start, 'hours');
       }
-      // Case 2: Night Shift - part 1 (20:00:01 today up to 23:59:59 today)
-      else if (currentTime.isAfter(nightShiftStartToday)) {
-        shiftType = 'night';
-        shiftStart = nightShiftStartToday; // 20:00 today
-        nextShiftStart = currentTime
-          .clone()
-          .add(1, 'day')
-          .startOf('day')
-          .add(config.day.start, 'hours'); // 08:00 tomorrow
-      }
-      // Case 3: Night Shift - part 2 (00:00:00 today up to and including 08:00:00 today)
+      // Night part 2: 00:00:00 - 08:00:00 (today, but shift started yesterday)
       else {
-        shiftType = 'night';
         shiftStart = currentTime
           .clone()
           .subtract(1, 'day')
           .startOf('day')
-          .add(config.night.start, 'hours'); // 20:00 yesterday
-        nextShiftStart = dayShiftStart; // 08:00 today
+          .add(config.night.start, 'hours');
+        nextShiftStart = currentTime
+          .clone()
+          .startOf('day')
+          .add(config.day.start, 'hours');
       }
-
-      return {
-        shift_type: shiftType,
-        shift_start: shiftStart,
-        next_shift_start: nextShiftStart,
-      };
     }
+
+    return {
+      shift_type: shiftType,
+      shift_start: shiftStart,
+      next_shift_start: nextShiftStart,
+    };
   }
 
   private calculateFactoryOEE(
@@ -734,6 +824,41 @@ export class OEEService {
       availability: Math.round(factoryAvailabilityAvg * 100) / 100,
       performance: Math.round(factoryPerformanceAvg * 100) / 100,
       oee: Math.round(factoryOEEAvg * 100) / 100,
+    };
+  }
+
+  // เพิ่ม method ใน oee.service.ts
+
+  private calculateFactoryAverageOEE(machineOEEData: any[]): any {
+    if (machineOEEData.length === 0) {
+      return null;
+    }
+
+    const totalQuality = machineOEEData.reduce((sum, m) => sum + m.quality, 0);
+    const totalAvailability = machineOEEData.reduce(
+      (sum, m) => sum + m.availability,
+      0,
+    );
+    const totalPerformance = machineOEEData.reduce(
+      (sum, m) => sum + m.performance,
+      0,
+    );
+    const count = machineOEEData.length;
+
+    const avgQuality = Math.round((totalQuality / count) * 100) / 100;
+    const avgAvailability = Math.round((totalAvailability / count) * 100) / 100;
+    const avgPerformance = Math.round((totalPerformance / count) * 100) / 100;
+    const avgOEE =
+      Math.round(
+        ((avgQuality * avgAvailability * avgPerformance) / 10000) * 100,
+      ) / 100;
+
+    return {
+      machine_number: 'ALL',
+      quality: avgQuality,
+      availability: avgAvailability,
+      performance: avgPerformance,
+      oee: avgOEE,
     };
   }
 

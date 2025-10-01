@@ -10,7 +10,6 @@ import { ProductionOrder } from './production-order.schema';
 export class AssignOrder extends Document {
   @Prop({
     required: true,
-    index: true,
     ref: ProductionOrder.name,
     type: Types.ObjectId,
   })
@@ -47,3 +46,7 @@ export const AssignOrderSchema = SchemaFactory.createForClass(AssignOrder);
 // Indexes for better query performance
 
 AssignOrderSchema.index({ production_order_id: 1 });
+
+AssignOrderSchema.index({
+  machine_number: 1,
+}); // สำหรับ filter machine_number

@@ -15,7 +15,7 @@ import { Roles } from '../auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
 import { machine } from 'os';
 import { PerformanceService } from './services/performance.service';
-import { TimeFrame } from '../shared/interface/oee';
+import { OEEQuery, TimeFrame } from '../shared/interface/oee';
 import { count } from 'console';
 import { QualityService } from './services/quality.service';
 import { AvailabilityService } from './services/availability.service';
@@ -42,9 +42,9 @@ export class OEEController {
   @Get('realtime')
   @UseInterceptors(MediumCacheInterceptor, new TimeoutInterceptor(20000))
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async getRealTimeOEE() {
+  async getRealTimeOEE(@Query() query: OEEQuery) {
     // return this.oeeService.calculateRealTimeOEE();
-    return this.oeeService.realTimeOEE();
+    return this.oeeService.realTimeOEE(query);
   }
 
   @Get('hourly')

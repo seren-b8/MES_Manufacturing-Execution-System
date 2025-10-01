@@ -127,3 +127,11 @@ ProductionOrderSchema.index({ order_id: 1, work_center: 1 }, { unique: true });
 ProductionOrderSchema.index({ sql_active: 1 });
 ProductionOrderSchema.index({ sql_inactive_date: -1 });
 ProductionOrderSchema.index({ assign_stage: 1, sql_active: 1 });
+
+ProductionOrderSchema.index({
+  material_number: 1,
+}); // สำหรับ filter material_number
+
+ProductionOrderSchema.index({
+  material_description: 'text',
+}); // สำหรับ search

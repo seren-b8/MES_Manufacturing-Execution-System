@@ -15,7 +15,6 @@ import { SerialCounter } from './serial-counter.schema';
 export class ProductionRecord extends Document {
   @Prop({
     required: true,
-    index: true,
     ref: AssignEmployee.name,
     type: [Types.ObjectId],
   })
@@ -140,6 +139,22 @@ ProductionRecordSchema.index({
   assign_order_id: 1,
   is_not_good: 1,
 });
+
+// เพิ่ม compound index สำหรับ filter + sort
+ProductionRecordSchema.index({
+  production_date: 1,
+  createdAt: -1,
+});
+
+ProductionRecordSchema.index({
+  is_not_good: 1,
+  createdAt: -1,
+});
+
+// สำหรับ search serial_code
+ProductionRecordSchema.index({
+  serial_code: 'text',
+}); // Text index สำหรับ search
 
 // Auto-calculate production_date based on createdAt and Thailand timezone
 ProductionRecordSchema.pre('save', function (next) {

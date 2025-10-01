@@ -44,6 +44,7 @@ import { CacheTTL } from '@nestjs/cache-manager';
 import { MicroCacheInterceptor } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 import { ProductionRecordQueryDto } from '../dto/production-reccord-query.dto';
+import { parseBooleanQuery, parseIntQuery } from 'src/shared/utils/query.utils';
 
 @Controller('production-records')
 export class ProductionRecordController {
@@ -169,7 +170,6 @@ export class ProductionRecordController {
     @Body() updateDto: UpdateProductionRecordDto,
   ) {
     const result = await this.productionRecordService.update(id, updateDto);
-
     return result;
   }
 
@@ -188,21 +188,20 @@ export class ProductionRecordController {
     return await this.productionRecordService.create(createDto, userId);
   }
 
+  // production-record.controller.ts
+  // production-record.controller.ts
   @Get()
-  async findAll(
-    @Query(
-      new ValidationPipe({
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-        whitelist: true,
-      }),
-    )
-    query: ProductionRecordQueryDto,
-  ) {
-    console.log(query);
-    return this.productionRecordService.findAll(query);
+  @UseInterceptors(MicroCacheInterceptor, new TimeoutInterceptor(20000))
+  async findAll(@Query() query: ProductionRecordQueryDto) {
+    const transformedQuery: ProductionRecordQueryDto = {
+      ...query,
+      is_not_good: parseBooleanQuery(query.is_not_good),
+      is_synced_to_sap: parseBooleanQuery(query.is_synced_to_sap),
+      page: parseIntQuery(query.page, 1),
+      limit: parseIntQuery(query.limit, 10),
+    };
+
+    return this.productionRecordService.findAll(transformedQuery);
   }
 
   @Cron(CronExpression.EVERY_4_HOURS)
