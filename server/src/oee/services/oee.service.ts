@@ -12,12 +12,14 @@ import { ResponseFormat } from 'src/shared/interface';
 import * as moment from 'moment-timezone';
 import { GetHourlyOEEDto } from '../dto/get-hourly-oee.dto';
 import { machine } from 'os';
+import { OEEDaily } from 'src/schema/oee-daily.schema';
+import { GetDailyOEEDto } from '../dto/get-daily-oee.dto';
 
 @Injectable()
 export class OEEService {
   constructor(
     @InjectModel(OEEHourly.name) private oeeHourlyModel: Model<OEEHourly>,
-    // @InjectModel(OEEDaily.name) private oeeDailyModel: Model<OEEDaily>,
+    @InjectModel(OEEDaily.name) private oeeDailyModel: Model<OEEDaily>,
     private qualityService: QualityService,
     private availabilityService: AvailabilityService,
     private performanceService: PerformanceService,
@@ -332,8 +334,307 @@ export class OEEService {
     }
   }
 
-  async saveDailyOEE(): Promise<void> {
-    // TODO: Scheduled job to save daily OEE
+  async saveDailyOEE(targetDate?: string): Promise<ResponseFormat<OEEDaily>> {
+    try {
+      const date = targetDate
+        ? moment(targetDate).tz('Asia/Bangkok').startOf('day')
+        : moment().tz('Asia/Bangkok').subtract(1, 'day').startOf('day');
+
+      const dayShiftData = await this.getShiftOEEData(date.toDate(), 'day');
+      const nightShiftData = await this.getShiftOEEData(date.toDate(), 'night');
+
+      const machines = this.getUniqueMachines(dayShiftData, nightShiftData);
+      const savedRecords = [];
+
+      for (const machineNumber of machines) {
+        const dayRecord = dayShiftData.find(
+          (d) => d.machine_number === machineNumber,
+        );
+        const nightRecord = nightShiftData.find(
+          (d) => d.machine_number === machineNumber,
+        );
+
+        const dailyOEE = this.calculateDailyOEE(dayRecord, nightRecord);
+
+        const record = {
+          machine_number: machineNumber,
+          date: date.toDate(),
+          ...dailyOEE,
+          shift_breakdown: {
+            day_shift: dayRecord || {
+              oee: 0,
+              quality: 0,
+              availability: 0,
+              performance: 0,
+            },
+            night_shift: nightRecord || {
+              oee: 0,
+              quality: 0,
+              availability: 0,
+              performance: 0,
+            },
+          },
+        };
+
+        const saved = await this.oeeDailyModel.findOneAndUpdate(
+          { machine_number: machineNumber, date: date.toDate() },
+          record,
+          { upsert: true, new: true },
+        );
+        savedRecords.push(saved);
+      }
+
+      // Calculate and save factory average
+      const factoryAvg = this.calculateDailyFactoryAverage(savedRecords);
+      if (factoryAvg) {
+        const factorySaved = await this.oeeDailyModel.findOneAndUpdate(
+          { machine_number: 'ALL', date: date.toDate() },
+          { ...factoryAvg, date: date.toDate() },
+          { upsert: true, new: true },
+        );
+        savedRecords.push(factorySaved);
+      }
+
+      return {
+        status: 'success',
+        message: `Daily OEE saved for ${savedRecords.length} machines`,
+        data: savedRecords,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: (error as Error).message || 'Failed to save daily OEE',
+        data: [],
+      };
+    }
+  }
+
+  async getDailyOEE(query: GetDailyOEEDto): Promise<ResponseFormat<OEEDaily>> {
+    try {
+      const filter: any = {};
+
+      // Machine filter
+      if (query.machine_number) {
+        filter.machine_number = query.machine_number;
+      } else if (query.machine_numbers?.length > 0) {
+        filter.machine_number = { $in: query.machine_numbers };
+      }
+      if (query.has_incomplete_data !== undefined) {
+        filter.has_incomplete_data = query.has_incomplete_data;
+      }
+
+      if (query.exclude_warnings) {
+        filter.data_warnings = { $size: 0 }; // เฉพาะที่ไม่มี warning
+      }
+
+      // Date range filter
+      if (query.start_date || query.end_date) {
+        filter.date = {};
+        if (query.start_date) {
+          filter.date.$gte = moment(query.start_date)
+            .tz('Asia/Bangkok')
+            .startOf('day')
+            .toDate();
+        }
+        if (query.end_date) {
+          filter.date.$lte = moment(query.end_date)
+            .tz('Asia/Bangkok')
+            .endOf('day')
+            .toDate();
+        }
+      }
+
+      const records = await this.oeeDailyModel
+        .find(filter)
+        .sort({ machine_number: 1, date: -1 })
+        .exec();
+
+      return {
+        status: 'success',
+        message: `Found ${records.length} daily OEE records`,
+        data: records,
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        message: (error as Error).message || 'Failed to get daily OEE',
+        data: [],
+      };
+    }
+  }
+
+  private async getShiftOEEData(
+    date: Date,
+    shift: 'day' | 'night',
+  ): Promise<any[]> {
+    const { startTime, endTime } = this.calculateShiftTimeframeForDate(
+      moment(date).format('YYYY-MM-DD'),
+      shift,
+    );
+
+    return this.oeeHourlyModel
+      .find({
+        start_time: { $gte: startTime, $lte: endTime },
+        shift: shift,
+        machine_number: { $ne: 'ALL' },
+      })
+      .exec();
+  }
+
+  private calculateDailyOEE(dayShift?: any, nightShift?: any) {
+    const shifts = [dayShift, nightShift].filter(
+      (s) => s && this.hasAnyMetric(s),
+    );
+
+    if (shifts.length === 0) {
+      return {
+        oee: 0,
+        quality: 0,
+        availability: 0,
+        performance: 0,
+        warnings: [],
+        has_incomplete_data: false,
+        hours_summary: {
+          day_shift_hours: 0,
+          night_shift_hours: 0,
+          total_hours: 0,
+        },
+        raw_totals: null,
+      };
+    }
+
+    const metrics = ['quality', 'availability', 'performance'];
+    const result: any = { warnings: [] };
+
+    metrics.forEach((metric) => {
+      const values = shifts.map((s) => s[metric] || 0).filter((v) => v > 0);
+      result[metric] =
+        values.length > 0
+          ? values.reduce((sum, v) => sum + v, 0) / values.length
+          : 0;
+    });
+
+    result.oee =
+      (result.quality * result.availability * result.performance) / 10000;
+
+    // ตรวจสอบและเพิ่ม warnings
+    if (
+      result.quality === 0 &&
+      (result.availability > 0 || result.performance > 0)
+    ) {
+      result.warnings.push('no_production_records');
+    }
+    if (result.performance > 150) {
+      result.warnings.push('performance_over_150_percent');
+    }
+    if (!dayShift || !this.hasAnyMetric(dayShift)) {
+      result.warnings.push('missing_day_shift_data');
+    }
+    if (!nightShift || !this.hasAnyMetric(nightShift)) {
+      result.warnings.push('missing_night_shift_data');
+    }
+
+    // คำนวณ hours summary
+    result.hours_summary = {
+      day_shift_hours: dayShift && this.hasAnyMetric(dayShift) ? 12 : 0,
+      night_shift_hours: nightShift && this.hasAnyMetric(nightShift) ? 12 : 0,
+      total_hours: shifts.length * 12,
+    };
+
+    // คำนวณ raw totals
+    result.raw_totals = this.calculateRawTotals(dayShift, nightShift);
+
+    // ตั้ง incomplete flag
+    result.has_incomplete_data = result.warnings.length > 0;
+    result.incomplete_reason = result.warnings.join(', ');
+
+    return {
+      oee: Math.round(result.oee * 100) / 100,
+      quality: Math.round(result.quality * 100) / 100,
+      availability: Math.round(result.availability * 100) / 100,
+      performance: Math.round(result.performance * 100) / 100,
+      data_warnings: result.warnings,
+      has_incomplete_data: result.has_incomplete_data,
+      incomplete_reason: result.incomplete_reason,
+      hours_summary: result.hours_summary,
+      raw_totals: result.raw_totals,
+    };
+  }
+
+  private calculateRawTotals(dayShift?: any, nightShift?: any) {
+    const shifts = [dayShift, nightShift].filter((s) => s);
+
+    if (shifts.length === 0) return null;
+
+    return {
+      total_good_pieces: shifts.reduce(
+        (sum, s) => sum + (s.quality_pieces_data?.good_pieces || 0),
+        0,
+      ),
+      total_not_good_pieces: shifts.reduce(
+        (sum, s) => sum + (s.quality_pieces_data?.not_good_pieces || 0),
+        0,
+      ),
+      total_pieces: shifts.reduce(
+        (sum, s) => sum + (s.quality_pieces_data?.total_pieces || 0),
+        0,
+      ),
+      total_on_time: shifts.reduce(
+        (sum, s) => sum + (s.availability_data?.total_on_time || 0),
+        0,
+      ),
+      total_actual_shots: shifts.reduce(
+        (sum, s) => sum + (s.performance_data?.actual_shots || 0),
+        0,
+      ),
+      total_theoretical_shots: shifts.reduce(
+        (sum, s) => sum + (s.performance_data?.theoretical_shots || 0),
+        0,
+      ),
+    };
+  }
+
+  private hasAnyMetric(shift: any): boolean {
+    return shift.quality > 0 || shift.availability > 0 || shift.performance > 0;
+  }
+
+  private getUniqueMachines(...arrays: any[][]): string[] {
+    const machines = new Set<string>();
+    arrays.forEach((arr) => {
+      arr.forEach((item) => {
+        if (item?.machine_number && item.machine_number !== 'ALL') {
+          machines.add(item.machine_number);
+        }
+      });
+    });
+    return Array.from(machines);
+  }
+
+  private calculateDailyFactoryAverage(records: any[]): any {
+    const validRecords = records.filter((r) => r.machine_number !== 'ALL');
+    if (validRecords.length === 0) return null;
+
+    const sum = validRecords.reduce(
+      (acc, r) => ({
+        quality: acc.quality + r.quality,
+        availability: acc.availability + r.availability,
+        performance: acc.performance + r.performance,
+      }),
+      { quality: 0, availability: 0, performance: 0 },
+    );
+
+    const count = validRecords.length;
+    const avgQ = sum.quality / count;
+    const avgA = sum.availability / count;
+    const avgP = sum.performance / count;
+
+    return {
+      machine_number: 'ALL',
+      oee: Math.round(((avgQ * avgA * avgP) / 10000) * 100) / 100,
+      quality: Math.round(avgQ * 100) / 100,
+      availability: Math.round(avgA * 100) / 100,
+      performance: Math.round(avgP * 100) / 100,
+    };
   }
 
   private getAllUniqueMachines(
@@ -826,8 +1127,6 @@ export class OEEService {
       oee: Math.round(factoryOEEAvg * 100) / 100,
     };
   }
-
-  // เพิ่ม method ใน oee.service.ts
 
   private calculateFactoryAverageOEE(machineOEEData: any[]): any {
     if (machineOEEData.length === 0) {

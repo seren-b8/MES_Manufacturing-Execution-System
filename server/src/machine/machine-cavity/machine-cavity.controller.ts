@@ -48,18 +48,4 @@ export class MachineCavityController {
   ): Promise<ResponseFormat<MasterCavity>> {
     return this.machineCavityService.create(createDto);
   }
-
-  // @Delete(':id')
-  // async remove(@Param('id') id: string): Promise<ResponseFormat<MasterCavity>> {
-  //   return this.machineCavityService.remove(id);
-  // }
-
-  // @Post('from-parts')
-  // async createFromParts(@Body() createFromPartsDto: CreateFromPartsDto) {
-  //   const { material_numbers, ...cavityData } = createFromPartsDto;
-  //   return await this.machineCavityService.createFromExistingPart(
-  //     material_numbers,
-  //     cavityData,
-  //   );
-  // }
 }

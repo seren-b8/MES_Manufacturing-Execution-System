@@ -34,8 +34,6 @@ export class MachineAnalysisCacheInterceptor implements NestInterceptor {
         return of(cachedData);
       }
 
-      console.log(`[Cache] Miss for: ${cacheKey}`);
-
       return next.handle().pipe(
         tap(async (data) => {
           try {

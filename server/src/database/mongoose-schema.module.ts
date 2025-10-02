@@ -79,6 +79,7 @@ import {
   PlannedDowntime,
   PlannedDowntimeSchema,
 } from 'src/schema/planned-downtime.schema';
+import { OEEDaily, OEEDailySchema } from 'src/schema/oee-daily.schema';
 
 @Module({
   imports: [
@@ -104,6 +105,7 @@ import {
 
       //OEE
       { name: OEEHourly.name, schema: OEEHourlySchema },
+      { name: OEEDaily.name, schema: OEEDailySchema },
       { name: PlannedDowntime.name, schema: PlannedDowntimeSchema },
 
       // Printter Management

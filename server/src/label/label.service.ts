@@ -20,22 +20,6 @@ import { toObjectId } from 'src/shared/utils/type.utils';
 import * as moment from 'moment-timezone';
 import { machine } from 'os';
 
-// export interface GenerateLabelDto {
-//   production_record_ids: string[];
-//   co_product_record_ids?: string[];
-//   label_type:
-//     | '1_part'
-//     | '2_part'
-//     | 'co_product_combined'
-//     | 'co_product_separate';
-//   printer_id: string;
-//   position_mapping?: {
-//     position_1: { type: 'main' | 'co'; record_id: string };
-//     position_2?: { type: 'main' | 'co'; record_id: string };
-//   };
-//   copies?: number;
-// }
-
 @Injectable()
 export class LabelService {
   constructor(
@@ -70,12 +54,6 @@ export class LabelService {
         );
       }
 
-      // console.log('Label generation request:', {
-      //   production_ids: generateLabelDto.production_record_ids,
-      //   co_product_ids: generateLabelDto.co_product_record_ids,
-      //   label_type: generateLabelDto.label_type,
-      // });
-
       // ตรวจสอบ printer
       const printer = await this.printerDeviceModel.findById(
         generateLabelDto.printer_id,
@@ -83,10 +61,6 @@ export class LabelService {
       if (!printer) {
         throw new Error('Printer not found');
       }
-
-      // if (printer.status !== 'active') {
-      //   throw new Error('Printer is not active');
-      // }
 
       const labelData: LabelDataDto =
         await this.prepareLabelDataFromDto(generateLabelDto);
@@ -184,10 +158,6 @@ export class LabelService {
       if (!job) {
         throw new Error('Label job not found');
       }
-
-      // if (job.status === 'printed') {
-      //   throw new Error('Label already printed');
-      // }
 
       // อัพเดทสถานะเป็น sending
       job.status = 'sent';
@@ -411,18 +381,6 @@ export class LabelService {
 
   private async sendToPrinter(job: LabelJob, printerIp: string): Promise<void> {
     try {
-      // const printer = job.printer_id as any; // populated
-      // console.log(
-      //   `Sending label to printer: ${printer.device_name} (${printer.ip_device})`,
-      // );
-      // console.log(`Label path: ${job.image_path}`);
-      // console.log(`Copies: ${job.copies}`);
-
-      // // Build full image URL
-      // const baseUrl =
-      //   this.configService.get('BASE_URL') || 'http://localhost:3000';
-      // const imageUrl = `${baseUrl}/generated-labels/${job.image_path}`;
-
       // Prepare print request
       const printRequest = {
         image_url: job.image_path,
@@ -434,9 +392,6 @@ export class LabelService {
       // Send to Python print service
       const printServiceUrl = `http://${printerIp}:8000/api/print/image`;
 
-      // console.log(`Calling print service: ${printServiceUrl}`);
-      // console.log(`Print request:`, printRequest);
-
       const response = await axios.post(printServiceUrl, printRequest, {
         timeout: 30000,
         headers: {
@@ -447,8 +402,6 @@ export class LabelService {
       if (response.data.status !== 'success') {
         throw new Error(`Print failed: ${response.data.message}`);
       }
-
-      // console.log('Label sent successfully:', response.data.data[0]);
 
       // อัพเดตสถานะใน database
       await this.labelJobModel.findByIdAndUpdate(job._id, {
