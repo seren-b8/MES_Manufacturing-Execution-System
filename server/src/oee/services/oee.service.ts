@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage } from 'mongoose';
 import { QualityService } from './quality.service';
@@ -116,11 +116,21 @@ export class OEEService {
             data: combinedData,
           };
         } else {
-          return {
-            status: 'error',
-            message: `No daily OEE data found for ${moment(date).format('YYYY-MM-DD')}. Please run saveDailyOEE first.`,
-            data: [],
-          };
+          const requestedDate = moment(date).format('YYYY-MM-DD');
+          const nextGenerationTime = moment(date)
+            .tz('Asia/Bangkok')
+            .add(1, 'day')
+            .set({ hour: 8, minute: 10, second: 0 })
+            .format('YYYY-MM-DD HH:mm');
+
+          throw new HttpException(
+            {
+              status: 'error',
+              message: `Daily OEE data for ${requestedDate} is not yet available. It will be automatically generated at ${nextGenerationTime}.`,
+              data: [],
+            },
+            HttpStatus.NOT_FOUND,
+          );
         }
       }
 
@@ -181,12 +191,35 @@ export class OEEService {
         data: [...combinedData, factoryTotal],
       };
     } catch (error) {
-      return {
-        status: 'error',
-        message:
-          (error as Error).message || 'Failed to calculate real-time OEE',
-        data: [],
-      };
+      // Handle specific HttpException
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      if (
+        (error as Error).name === 'MongoError' ||
+        (error as Error).name === 'MongoServerError'
+      ) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Database error occurred while calculating OEE',
+            data: [],
+          },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+
+      // Handle unexpected errors
+      throw new HttpException(
+        {
+          status: 'error',
+          message:
+            (error as Error).message || 'Failed to calculate real-time OEE',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -386,11 +419,14 @@ export class OEEService {
         data: records,
       };
     } catch (error) {
-      return {
-        status: 'error',
-        message: (error as Error).message || 'Failed to get hourly OEE',
-        data: [],
-      };
+      throw new HttpException(
+        {
+          status: 'error',
+          message: (error as Error).message || 'Failed to get hourly OEE',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -444,7 +480,6 @@ export class OEEService {
         savedRecords.push(saved);
       }
 
-      // Calculate and save factory average
       const factoryAvg = this.calculateDailyFactoryAverage(savedRecords);
       if (factoryAvg) {
         const factorySaved = await this.oeeDailyModel.findOneAndUpdate(

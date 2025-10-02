@@ -106,7 +106,7 @@ export class OEEController {
     return data;
   }
 
-  @Cron('0 30 8 * * *', {
+  @Cron('0 10 8 * * *', {
     name: 'save-daily-oee',
     timeZone: 'Asia/Bangkok',
   })
