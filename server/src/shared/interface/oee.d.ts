@@ -17,7 +17,7 @@ interface ShiftConfig {
 }
 
 export interface OEEQuery {
-  date?: string; // e.g., '2025-09-30'
-  shift?: 'day' | 'night';
-  machine_numbers?: string[]; // หากต้องการระบุเครื่อง
+  date?: string;
+  shift?: 'day' | 'night' | '';
+  machine_numbers?: string[];
 }

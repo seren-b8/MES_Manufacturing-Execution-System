@@ -7,6 +7,8 @@ import {
   Query,
   UseGuards,
   UseInterceptors,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { OEEService } from './services/oee.service';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
@@ -15,7 +17,7 @@ import { Roles } from '../auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
 import { machine } from 'os';
 import { PerformanceService } from './services/performance.service';
-import { OEEQuery, TimeFrame } from '../shared/interface/oee';
+import { TimeFrame } from '../shared/interface/oee';
 import { count } from 'console';
 import { QualityService } from './services/quality.service';
 import { AvailabilityService } from './services/availability.service';
@@ -29,6 +31,7 @@ import {
 } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 import { GetDailyOEEDto } from './dto/get-daily-oee.dto';
+import { OEEQueryDto } from './dto/oee-query.dto';
 
 @Controller('oee')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -43,7 +46,16 @@ export class OEEController {
   @Get('realtime')
   @UseInterceptors(MediumCacheInterceptor, new TimeoutInterceptor(20000))
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async getRealTimeOEE(@Query() query: OEEQuery) {
+  async getRealTimeOEE(
+    @Query(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    )
+    query: OEEQueryDto,
+  ) {
     return this.oeeService.realTimeOEE(query);
   }
 

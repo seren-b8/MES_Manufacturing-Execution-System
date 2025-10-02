@@ -14,6 +14,7 @@ import { GetHourlyOEEDto } from '../dto/get-hourly-oee.dto';
 import { machine } from 'os';
 import { OEEDaily } from 'src/schema/oee-daily.schema';
 import { GetDailyOEEDto } from '../dto/get-daily-oee.dto';
+import { OEEQueryDto } from '../dto/oee-query.dto';
 
 @Injectable()
 export class OEEService {
@@ -34,10 +35,32 @@ export class OEEService {
       const timeFrame = this.calculateProductionShiftTimeFrame();
       let startTime: Date | undefined;
       let endTime: Date | undefined;
-      if (date && (shift === 'day' || shift === 'night')) {
-        const result = this.calculateShiftTimeframeForDate(date, shift);
-        startTime = result.startTime;
-        endTime = result.endTime;
+
+      let isNotCurrentProductionDate = false;
+
+      if (date) {
+        const targetDate = moment(date).tz('Asia/Bangkok').startOf('day');
+        const now = moment().tz('Asia/Bangkok');
+
+        // คำนวณ production date ของปัจจุบัน
+        const currentProductionDate = now.clone();
+        if (now.hour() < 8) {
+          currentProductionDate.subtract(1, 'day');
+        }
+        currentProductionDate.startOf('day');
+
+        // เช็คว่าไม่ใช่ production date ปัจจุบัน
+        isNotCurrentProductionDate = !targetDate.isSame(
+          currentProductionDate,
+          'day',
+        );
+
+        // คำนวณ shift timeframe
+        if (shift === 'day' || shift === 'night') {
+          const result = this.calculateShiftTimeframeForDate(date, shift);
+          startTime = result.startTime;
+          endTime = result.endTime;
+        }
       }
       // --- 🚨 Logic สำหรับดึงข้อมูลย้อนหลังรายวัน/กะ 🚨 ---
       if (
@@ -46,7 +69,6 @@ export class OEEService {
         timeFrame.start_time.toString() !== startTime.toString() &&
         (shift === 'day' || shift === 'night')
       ) {
-        // ดึงข้อมูล OEE ย้อนหลังจาก MongoDB โดยตรง
         combinedData = await this.getHistoricalOEEByDayAndShift(
           date,
           shift,
@@ -56,9 +78,50 @@ export class OEEService {
 
         return {
           status: 'success',
-          message: 'Historical OEE data retrieved successfully',
+          message: `Historical OEE data retrieved at ${date} ${shift} `,
           data: combinedData,
         };
+      }
+
+      if (date && !shift && isNotCurrentProductionDate) {
+        const filter: any = {
+          date: moment(date).tz('Asia/Bangkok').startOf('day').toDate(),
+        };
+
+        if (machine_numbers?.length > 0) {
+          filter.machine_number = { $in: machine_numbers };
+        }
+
+        const dailyRecords = await this.oeeDailyModel
+          .find(filter)
+          .sort({ machine_number: 1 })
+          .exec();
+
+        if (dailyRecords.length > 0) {
+          combinedData = dailyRecords.map((record) => ({
+            machineNumber: record.machine_number,
+            quality: record.quality,
+            availability: record.availability,
+            performance: record.performance,
+            oee: record.oee,
+            // // เพิ่มข้อมูลเสริม
+            // shift_breakdown: record.shift_breakdown,
+            // data_warnings: record.data_warnings,
+            // has_incomplete_data: record.has_incomplete_data,
+          }));
+
+          return {
+            status: 'success',
+            message: `Daily OEE data retrieved for ${moment(date).format('YYYY-MM-DD')}`,
+            data: combinedData,
+          };
+        } else {
+          return {
+            status: 'error',
+            message: `No daily OEE data found for ${moment(date).format('YYYY-MM-DD')}. Please run saveDailyOEE first.`,
+            data: [],
+          };
+        }
       }
 
       const quality = await this.qualityService.calculate(timeFrame);
@@ -75,9 +138,7 @@ export class OEEService {
           ? timeFrame.machine_numbers
           : this.getAllUniqueMachines(quality, availability, performance);
 
-      // วิธีรวมข้อมูลใน array
       combinedData = machineList.map((machineNumber) => {
-        // ... (Logic การรวมข้อมูล Q, A, P และคำนวณ OEE เดิม)
         const qualityData = quality.find(
           (q) => q.machineNumber === machineNumber,
         );
@@ -94,7 +155,6 @@ export class OEEService {
           availability: availabilityData?.availability || 0,
           performance: performanceData?.performance || 0,
 
-          // คำนวณ OEE
           oee:
             Math.round(
               (((qualityData?.quality || 0) *
@@ -472,13 +532,52 @@ export class OEEService {
       shift,
     );
 
-    return this.oeeHourlyModel
-      .find({
-        start_time: { $gte: startTime, $lte: endTime },
-        shift: shift,
-        machine_number: { $ne: 'ALL' },
-      })
-      .exec();
+    // ใช้ aggregation เพื่อดึง record ล่าสุดของแต่ละเครื่อง
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          start_time: { $gte: startTime, $lte: endTime },
+          shift: shift,
+          machine_number: { $ne: 'ALL' },
+        },
+      },
+      {
+        $sort: { machine_number: 1, end_time: -1 }, // เรียงตาม end_time จากมากไปน้อย
+      },
+      {
+        $group: {
+          _id: '$machine_number',
+          // ดึงเอกสารแรก (end_time สูงสุด) ของแต่ละเครื่อง
+          machine_number: { $first: '$machine_number' },
+          oee: { $first: '$oee' },
+          quality: { $first: '$quality' },
+          availability: { $first: '$availability' },
+          performance: { $first: '$performance' },
+          quality_pieces_data: { $first: '$quality_pieces_data' },
+          availability_data: { $first: '$availability_data' },
+          performance_data: { $first: '$performance_data' },
+          start_time: { $first: '$start_time' },
+          end_time: { $first: '$end_time' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          machine_number: 1,
+          oee: 1,
+          quality: 1,
+          availability: 1,
+          performance: 1,
+          quality_pieces_data: 1,
+          availability_data: 1,
+          performance_data: 1,
+          start_time: 1,
+          end_time: 1,
+        },
+      },
+    ];
+
+    return this.oeeHourlyModel.aggregate(pipeline).exec();
   }
 
   private calculateDailyOEE(dayShift?: any, nightShift?: any) {
