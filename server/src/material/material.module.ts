@@ -7,11 +7,23 @@ import { TransactionController } from './material-transaction/transaction.contro
 import { LocationController } from './material-location/location.controller';
 import { TransactionService } from './material-transaction/transaction.service';
 import { LocationService } from './material-location/location.service';
+import { PositionController } from './material-position/position.controller';
+import { PositionService } from './material-position/position.service';
 
 @Module({
   imports: [MongooseSchemaModule],
-  controllers: [MaterialController, TransactionController, LocationController],
-  providers: [MaterialService, TransactionService, LocationService],
+  controllers: [
+    MaterialController,
+    TransactionController,
+    LocationController,
+    PositionController,
+  ],
+  providers: [
+    MaterialService,
+    TransactionService,
+    LocationService,
+    PositionService,
+  ],
   exports: [MaterialService],
 })
 export class MaterialModule {}

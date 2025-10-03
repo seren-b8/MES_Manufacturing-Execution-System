@@ -11,7 +11,7 @@ import { Material } from './material.schema';
   timestamps: true,
   versionKey: false,
 })
-export class MaterialTransaction {
+export class MaterialTransaction extends Document {
   @Prop({ required: true, enum: ['receive', 'transfer', 'consume'] })
   transaction_type: string;
 

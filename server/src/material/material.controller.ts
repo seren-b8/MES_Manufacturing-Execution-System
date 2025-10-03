@@ -9,129 +9,138 @@ import {
   Param,
   Query,
   UseGuards,
+  HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import { MaterialService } from './material.service';
-import { CreateMaterialDto } from './dto/create-material.dto';
-import { UpdateMaterialDto } from './dto/update-material.dto';
-import { StockOperationDto, TransferStockDto } from './dto/stock-operation.dto';
-import { StockQueryDto } from './dto/stock-query.dto';
+
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { RolesGuard } from '../auth/guard/roles.guard';
 import { Roles } from '../auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
+import { QueryMaterialDto } from './dto/query-material.dto';
 
 @Controller('materials')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class MaterialController {
   constructor(private readonly materialService: MaterialService) {}
 
-  @Post()
-  @Roles(Role.ADMIN, Role.MANAGER)
-  async create(@Body() createMaterialDto: CreateMaterialDto) {
-    return this.materialService.create(createMaterialDto);
-  }
-
+  /**
+   * Get all materials with optional filters
+   * @route GET /materials
+   */
   @Get()
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async findAll() {
-    return this.materialService.findAll();
+  @HttpCode(HttpStatus.OK)
+  async findAll(@Query() query: QueryMaterialDto) {
+    return this.materialService.findAll(query);
   }
 
-  @Get('stats')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  async getMaterialStats() {
-    return this.materialService.getMaterialStats();
-  }
-
-  @Get('low-stock')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  async getLowStockMaterials(@Query('threshold') threshold?: string) {
-    const thresholdValue = threshold ? parseInt(threshold) : 10;
-    return this.materialService.getLowStockMaterials(thresholdValue);
-  }
-
-  @Get(':id')
+  /**
+   * Search materials by keyword
+   * @route GET /materials/search
+   */
+  @Get('search')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async findById(@Param('id') id: string) {
-    return this.materialService.findById(id);
+  @HttpCode(HttpStatus.OK)
+  async searchMaterials(@Query('q') searchQuery: string) {
+    if (!searchQuery) {
+      return {
+        status: 'error',
+        message: 'Search query parameter "q" is required',
+        data: [],
+      };
+    }
+    return this.materialService.searchMaterials(searchQuery);
   }
 
-  @Get('number/:materialNumber')
+  /**
+   * Get material by material number
+   * @route GET /materials/by-number/:materialNumber
+   */
+  @Get('by-number/:materialNumber')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  @HttpCode(HttpStatus.OK)
   async findByMaterialNumber(@Param('materialNumber') materialNumber: string) {
     return this.materialService.findByMaterialNumber(materialNumber);
   }
 
-  @Get(':id/stock')
+  /**
+   * Get stock breakdown by location for a material
+   * @route GET /materials/:materialNumber/stock
+   */
+  @Get(':materialNumber/stock')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async getStock(@Param('id') id: string, @Query() query: StockQueryDto) {
-    return this.materialService.getStock(id, query);
+  @HttpCode(HttpStatus.OK)
+  async getStockByLocation(@Param('materialNumber') materialNumber: string) {
+    return this.materialService.getStockByLocation(materialNumber);
   }
 
-  @Get(':id/stock/position/:locationId/:positionCode')
+  /**
+   * Get total stock for a material
+   * @route GET /materials/:materialNumber/total-stock
+   */
+  @Get(':materialNumber/total-stock')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async getStockByPosition(
-    @Param('id') materialId: string,
-    @Param('locationId') locationId: string,
-    @Param('positionCode') positionCode: string,
-    @Query('lotNumber') lotNumber?: string,
+  @HttpCode(HttpStatus.OK)
+  async getTotalStock(@Param('materialNumber') materialNumber: string) {
+    const totalStock = await this.materialService.getTotalStock(materialNumber);
+    return {
+      status: 'success',
+      message: 'Total stock retrieved successfully',
+      data: [{ material_number: materialNumber, total_stock: totalStock }],
+    };
+  }
+
+  /**
+   * Check stock availability at specific location
+   * @route GET /materials/:materialNumber/check-stock
+   */
+  @Get(':materialNumber/check-stock')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  @HttpCode(HttpStatus.OK)
+  async checkStock(
+    @Param('materialNumber') materialNumber: string,
+    @Query('location_code') locationCode: string,
+    @Query('required_quantity') requiredQuantity: string,
   ) {
-    return this.materialService.getStockByPosition(
-      materialId,
-      locationId,
-      positionCode,
-      lotNumber,
+    if (!locationCode || !requiredQuantity) {
+      return {
+        status: 'error',
+        message: 'location_code and required_quantity are required',
+        data: [],
+      };
+    }
+
+    const quantity = parseFloat(requiredQuantity);
+    const hasStock = await this.materialService.checkStockAvailability(
+      materialNumber,
+      locationCode,
+      quantity,
     );
+
+    return {
+      status: 'success',
+      message: hasStock ? 'Stock is available' : 'Insufficient stock',
+      data: [
+        {
+          material_number: materialNumber,
+          location_code: locationCode,
+          required_quantity: quantity,
+          is_available: hasStock,
+        },
+      ],
+    };
   }
 
-  @Get('location/:locationId')
+  /**
+   * Get material detail by ID
+   * @route GET /materials/:id
+   */
+  @Get(':id')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async findMaterialsByLocation(
-    @Param('locationId') locationId: string,
-    @Query('includePositions') includePositions?: string,
-  ) {
-    const includePos = includePositions === 'true';
-    return this.materialService.findMaterialsByLocation(locationId, includePos);
-  }
-
-  @Get(':id/movement-summary')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  async getMaterialMovementSummary(
-    @Param('id') materialId: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
-    return this.materialService.getMaterialMovementSummary(
-      materialId,
-      startDate,
-      endDate,
-    );
-  }
-
-  @Post('stock/initialize')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  async initializeStock(@Body() stockOperationDto: StockOperationDto) {
-    return this.materialService.initializeStock(stockOperationDto);
-  }
-
-  @Post('stock/transfer')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  async transferStock(@Body() transferStockDto: TransferStockDto) {
-    return this.materialService.transferStock(transferStockDto);
-  }
-
-  @Put(':id')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  async update(
-    @Param('id') id: string,
-    @Body() updateMaterialDto: UpdateMaterialDto,
-  ) {
-    return this.materialService.update(id, updateMaterialDto);
-  }
-
-  @Delete(':id')
-  @Roles(Role.ADMIN)
-  async delete(@Param('id') id: string) {
-    return this.materialService.delete(id);
+  @HttpCode(HttpStatus.OK)
+  async findOne(@Param('id') id: string) {
+    return this.materialService.findOne(id);
   }
 }

@@ -6,18 +6,16 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { CreateMaterialDto } from './dto/create-material.dto';
-import { UpdateMaterialDto } from './dto/update-material.dto';
-import { StockOperationDto, TransferStockDto } from './dto/stock-operation.dto';
+
 import { LocationService } from './material-location/location.service';
 import { ResponseFormat } from 'src/shared/interface';
-import { StockQueryDto } from './dto/stock-query.dto';
 import {
   MaterialPosition,
   MaterialPositionDocument,
 } from 'src/schema/material-position.schema';
-import { PositionStockDto } from './dto/position-stock.dto';
 import { Material, MaterialDocument } from 'src/schema/material.schema';
+import { MaterialStockDto } from './dto/material-stock-response.dto';
+import { QueryMaterialDto } from './dto/query-material.dto';
 
 @Injectable()
 export class MaterialService {
@@ -29,207 +27,96 @@ export class MaterialService {
     private readonly locationService: LocationService,
   ) {}
 
-  async create(dto: CreateMaterialDto): Promise<ResponseFormat<Material>> {
+  async findAll(query: QueryMaterialDto): Promise<ResponseFormat<Material>> {
     try {
-      // Check if material_number already exists
-      const existingMaterial = await this.materialModel.findOne({
-        material_number: dto.material_number,
-      });
+      const {
+        material_number,
+        material_description,
+        location_code,
+        has_stock,
+        page = 1,
+        limit = 50,
+        sort_by = 'material_number',
+        sort_order = 'asc',
+      } = query;
 
-      if (existingMaterial) {
-        throw new ConflictException({
-          status: 'error',
-          message: 'Material number already exists',
-          data: [],
-        });
+      // Build filter
+      const filter: any = {};
+
+      if (material_number) {
+        filter.material_number = { $regex: material_number, $options: 'i' };
       }
 
-      // Validate locations and positions if initial_stock is provided
-      if (dto.initial_stock && dto.initial_stock.length > 0) {
-        for (const stock of dto.initial_stock) {
-          const locationExists =
-            await this.locationService.validateLocationExists(
-              stock.location_id,
-            );
-          if (!locationExists) {
-            throw new BadRequestException({
-              status: 'error',
-              message: `Location ${stock.location_id} does not exist`,
-              data: [],
-            });
-          }
+      if (material_description) {
+        filter.material_description = {
+          $regex: material_description,
+          $options: 'i',
+        };
+      }
 
-          // If position_code is provided, validate position support
-          if (stock.position_code) {
-            const locationSupportsPositions =
-              await this.locationService.validateLocationSupportsPositions(
-                stock.location_id,
-              );
-            if (!locationSupportsPositions) {
-              throw new BadRequestException({
-                status: 'error',
-                message: `Location ${stock.location_id} does not support positions`,
-                data: [],
-              });
-            }
-          }
+      if (location_code) {
+        filter['current_stock.location_id'] = location_code;
+      }
+
+      if (has_stock !== undefined) {
+        if (has_stock) {
+          filter['current_stock'] = { $exists: true, $ne: [] };
+        } else {
+          filter.$or = [
+            { current_stock: { $exists: false } },
+            { current_stock: { $eq: [] } },
+          ];
         }
       }
 
-      // Prepare current_stock array
-      const currentStock =
-        dto.initial_stock?.map((stock) => ({
-          location_id: new Types.ObjectId(stock.location_id),
-          position_id: null, // Will be set when position is created
-          stock_quantity: stock.stock_quantity,
-          lot_number: stock.lot_number || null,
-        })) || [];
+      // Sort
+      const sortOrder = sort_order === 'asc' ? 1 : -1;
+      const sortObj: any = { [sort_by]: sortOrder };
 
-      const materialData = {
-        material_number: dto.material_number,
-        material_description: dto.material_description,
-        unit_of_measurement: dto.unit_of_measurement,
-        standard_cost: dto.standard_cost,
-        material_type: dto.material_type,
-        current_stock: currentStock,
-      };
+      // Execute query with pagination
+      const skip = (page - 1) * limit;
+      const materials = await this.materialModel
+        .find(filter)
+        .sort(sortObj)
+        .skip(skip)
+        .limit(limit)
+        .populate('current_stock.location_id', 'location_name location_code')
+        .populate('current_stock.position_id', 'position_code')
+        .exec();
 
-      const newMaterial = new this.materialModel(materialData);
-      const savedMaterial = await newMaterial.save();
-
-      // Handle position creation for initial stock
-      if (dto.initial_stock) {
-        for (const stock of dto.initial_stock) {
-          if (stock.position_code) {
-            await this.createOrUpdatePositionStock({
-              material_id: savedMaterial._id.toString(),
-              location_id: stock.location_id,
-              position_code: stock.position_code,
-              quantity: stock.stock_quantity,
-              lot_number: stock.lot_number,
-            });
-          }
-        }
-      }
+      const total = await this.materialModel.countDocuments(filter);
 
       return {
         status: 'success',
-        message: 'Material created successfully',
-        data: [savedMaterial],
+        message: `Found ${materials.length} materials (Total: ${total})`,
+        data: materials,
       };
     } catch (error) {
-      if (
-        error instanceof ConflictException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-      throw new ConflictException({
+      throw new BadRequestException({
         status: 'error',
-        message: (error as Error).message || 'Failed to create material',
+        message: `Failed to fetch materials: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async getMaterialMovementSummary(
-    materialId: string,
-    startDate?: string,
-    endDate?: string,
-  ): Promise<ResponseFormat<any>> {
+  async findOne(materialId: string): Promise<ResponseFormat<Material>> {
     try {
-      // This will be implemented when transaction data is available
-      // For now, return current stock summary
+      if (!Types.ObjectId.isValid(materialId)) {
+        throw new BadRequestException('Invalid material ID format');
+      }
+
       const material = await this.materialModel
         .findById(materialId)
         .populate(
           'current_stock.location_id',
           'location_name location_code location_type',
         )
+        .populate('current_stock.position_id', 'position_code shelf_code')
         .exec();
 
       if (!material) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
-      }
-
-      const summary = {
-        material_id: material._id,
-        material_number: material.material_number,
-        material_description: material.material_description,
-        current_total_stock: material.current_stock.reduce(
-          (sum, stock) => sum + stock.stock_quantity,
-          0,
-        ),
-        stock_locations: material.current_stock.length,
-        stock_by_location: material.current_stock.map((stock) => ({
-          location: stock.location_id,
-          stock_quantity: stock.stock_quantity,
-          lot_number: stock.lot_number,
-        })),
-      };
-
-      return {
-        status: 'success',
-        message: 'Material movement summary retrieved successfully',
-        data: [summary],
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve material movement summary',
-        data: [],
-      });
-    }
-  }
-
-  async findAll(): Promise<ResponseFormat<Material>> {
-    try {
-      const materials = await this.materialModel
-        .find()
-        .populate(
-          'current_stock.location_id',
-          'location_name location_code location_type',
-        )
-        .sort({ material_number: 1 })
-        .exec();
-
-      return {
-        status: 'success',
-        message: `Found ${materials.length} materials`,
-        data: materials,
-      };
-    } catch (error) {
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve materials',
-        data: [],
-      });
-    }
-  }
-
-  async findById(id: string): Promise<ResponseFormat<Material>> {
-    try {
-      const material = await this.materialModel
-        .findById(id)
-        .populate(
-          'current_stock.location_id',
-          'location_name location_code location_type',
-        )
-        .exec();
-
-      if (!material) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
+        throw new NotFoundException(`Material with ID ${materialId} not found`);
       }
 
       return {
@@ -238,12 +125,10 @@ export class MaterialService {
         data: [material],
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new NotFoundException({
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve material',
+        message: `Failed to fetch material: ${(error as Error).message}`,
         data: [],
       });
     }
@@ -259,14 +144,11 @@ export class MaterialService {
           'current_stock.location_id',
           'location_name location_code location_type',
         )
+        .populate('current_stock.position_id', 'position_code')
         .exec();
 
       if (!material) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
+        throw new NotFoundException(`Material ${materialNumber} not found`);
       }
 
       return {
@@ -275,562 +157,316 @@ export class MaterialService {
         data: [material],
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new NotFoundException({
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve material',
+        message: `Failed to fetch material: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async update(
-    id: string,
-    dto: UpdateMaterialDto,
+  async searchMaterials(
+    searchQuery: string,
   ): Promise<ResponseFormat<Material>> {
     try {
-      const updatedMaterial = await this.materialModel
-        .findByIdAndUpdate(id, dto, { new: true })
-        .populate(
-          'current_stock.location_id',
-          'location_name location_code location_type',
-        )
+      const materials = await this.materialModel
+        .find({
+          $or: [
+            { material_number: { $regex: searchQuery, $options: 'i' } },
+            { material_description: { $regex: searchQuery, $options: 'i' } },
+          ],
+        })
+        .limit(20)
+        .populate('current_stock.location_id', 'location_name location_code')
         .exec();
-
-      if (!updatedMaterial) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
-      }
 
       return {
         status: 'success',
-        message: 'Material updated successfully',
-        data: [updatedMaterial],
+        message: `Found ${materials.length} materials matching "${searchQuery}"`,
+        data: materials,
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new ConflictException({
+      throw new BadRequestException({
         status: 'error',
-        message: (error as Error).message || 'Failed to update material',
+        message: `Search failed: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async delete(id: string): Promise<ResponseFormat<Material>> {
-    try {
-      // Check if material has stock before deleting
-      const material = await this.materialModel.findById(id);
-      if (
-        material &&
-        material.current_stock.some((stock) => stock.stock_quantity > 0)
-      ) {
-        throw new ConflictException({
-          status: 'error',
-          message: 'Cannot delete material with existing stock',
-          data: [],
-        });
-      }
+  // ===== Stock Methods =====
 
-      // Check if material exists in any positions
-      const positionsWithMaterial = await this.positionModel.find({
-        'current_materials.material_id': new Types.ObjectId(id),
-      });
-
-      if (positionsWithMaterial.length > 0) {
-        throw new ConflictException({
-          status: 'error',
-          message: 'Cannot delete material that exists in positions',
-          data: [],
-        });
-      }
-
-      const deletedMaterial = await this.materialModel
-        .findByIdAndDelete(id)
-        .exec();
-
-      if (!deletedMaterial) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
-      }
-
-      return {
-        status: 'success',
-        message: 'Material deleted successfully',
-        data: [deletedMaterial],
-      };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof ConflictException
-      ) {
-        throw error;
-      }
-      throw new ConflictException({
-        status: 'error',
-        message: 'Failed to delete material',
-        data: [],
-      });
-    }
-  }
-
-  // Enhanced stock methods with position support
-  async getStock(
-    materialId: string,
-    query: StockQueryDto = {},
-  ): Promise<ResponseFormat<any>> {
+  async getStockByLocation(
+    materialNumber: string,
+  ): Promise<ResponseFormat<MaterialStockDto>> {
     try {
       const material = await this.materialModel
-        .findById(materialId)
-        .populate(
-          'current_stock.location_id',
-          'location_name location_code location_type has_positions',
-        )
+        .findOne({ material_number: materialNumber })
+        .populate('current_stock.location_id', 'location_name location_code')
+        .populate('current_stock.position_id', 'position_code')
         .exec();
 
       if (!material) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
+        throw new NotFoundException(`Material ${materialNumber} not found`);
       }
 
-      let stockData = material.current_stock;
-
-      // Filter by location if specified
-      if (query.location_id) {
-        stockData = stockData.filter(
-          (stock) => stock.location_id._id.toString() === query.location_id,
-        );
-      }
-
-      // Filter by lot if specified
-      if (query.lot_number) {
-        stockData = stockData.filter(
-          (stock) => stock.lot_number === query.lot_number,
-        );
-      }
-
-      // Include position details if requested
-      if (query.include_positions) {
-        const enrichedStockData = [];
-
-        for (const stock of stockData) {
-          const locationId = stock.location_id._id
-            ? stock.location_id._id.toString()
-            : stock.location_id.toString();
-          const location = stock.location_id;
-
-          if (
-            typeof location === 'object' &&
-            'has_positions' in location &&
-            location.has_positions
-          ) {
-            // Get positions for this location and material
-            const positions = await this.positionModel
-              .find({
-                location_id: new Types.ObjectId(locationId),
-                'current_materials.material_id': new Types.ObjectId(materialId),
-              })
-              .exec();
-
-            const positionDetails = positions
-              .map((pos) => {
-                const materialInPosition = pos.current_materials.find(
-                  (mat) =>
-                    mat.material_id.toString() === materialId &&
-                    (!query.lot_number || mat.lot_number === query.lot_number),
-                );
-
-                return {
-                  position_code: pos.position_code,
-                  shelf_code: pos.shelf_code,
-                  row: pos.row,
-                  column: pos.column,
-                  quantity: materialInPosition?.quantity || 0,
-                  lot_number: materialInPosition?.lot_number,
-                  max_capacity: pos.max_capacity,
-                  is_occupied: pos.is_occupied,
-                };
-              })
-              .filter((pos) => pos.quantity > 0);
-
-            enrichedStockData.push({
-              ...stock,
-              positions: positionDetails,
-              total_in_positions: positionDetails.reduce(
-                (sum, pos) => sum + pos.quantity,
-                0,
-              ),
-            });
-          } else {
-            enrichedStockData.push({
-              ...stock,
-              positions: [],
-              total_in_positions: 0,
-            });
-          }
-        }
-
-        stockData = enrichedStockData;
-      }
-
-      // Group by lot if requested
-      if (query.group_by_lot) {
-        const groupedData = {};
-        stockData.forEach((stock) => {
-          const lot = stock.lot_number || 'NO_LOT';
-          if (!groupedData[lot]) {
-            groupedData[lot] = {
-              lot_number: stock.lot_number,
-              total_quantity: 0,
-              locations: [],
-            };
-          }
-          groupedData[lot].total_quantity += stock.stock_quantity;
-          groupedData[lot].locations.push(stock);
-        });
-
-        stockData = Object.values(groupedData);
-      }
-
-      return {
-        status: 'success',
-        message: 'Stock retrieved successfully',
-        data: Array.isArray(stockData) ? stockData : [stockData],
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve stock',
-        data: [],
-      });
-    }
-  }
-
-  async getStockByPosition(
-    materialId: string,
-    locationId: string,
-    positionCode: string,
-    lotNumber?: string,
-  ): Promise<ResponseFormat<any>> {
-    try {
-      const position = await this.positionModel
-        .findOne({
-          location_id: new Types.ObjectId(locationId),
-          position_code: positionCode,
-        })
-        .populate('location_id', 'location_name location_code location_type')
-        .exec();
-
-      if (!position) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Position not found',
-          data: [],
-        });
-      }
-
-      const materialInPosition = position.current_materials.find((mat) => {
-        const materialMatch = mat.material_id.toString() === materialId;
-        const lotMatch = !lotNumber || mat.lot_number === lotNumber;
-        return materialMatch && lotMatch;
-      });
-
-      const stockData = {
-        position_code: position.position_code,
-        location_id: position.location_id,
-        material_id: materialId,
-        quantity: materialInPosition?.quantity || 0,
-        lot_number: materialInPosition?.lot_number,
-        max_capacity: position.max_capacity,
-        available_capacity: position.max_capacity
-          ? position.max_capacity -
-            position.current_materials.reduce(
-              (sum, mat) => sum + mat.quantity,
-              0,
-            )
-          : null,
-      };
-
-      return {
-        status: 'success',
-        message: 'Position stock retrieved successfully',
-        data: [stockData],
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve position stock',
-        data: [],
-      });
-    }
-  }
-
-  async findMaterialsByLocation(
-    locationId: string,
-    includePositions: boolean = false,
-  ): Promise<ResponseFormat<any>> {
-    try {
-      // Get materials that have stock in this location
-      const materials = await this.materialModel
-        .find({
-          'current_stock.location_id': new Types.ObjectId(locationId),
-          'current_stock.stock_quantity': { $gt: 0 },
-        })
-        .populate(
-          'current_stock.location_id',
-          'location_name location_code location_type',
-        )
-        .exec();
-
-      const result = [];
-
-      for (const material of materials) {
-        const locationStock = material.current_stock.find(
-          (stock) => stock.location_id._id.toString() === locationId,
-        );
-
-        let materialData = {
-          material_id: material._id,
-          material_number: material.material_number,
-          material_description: material.material_description,
-          stock_quantity: locationStock?.stock_quantity || 0,
-          lot_number: locationStock?.lot_number,
-          positions: [],
-        };
-
-        // Include position details if requested
-        if (includePositions) {
-          const positions = await this.positionModel
-            .find({
-              location_id: new Types.ObjectId(locationId),
-              'current_materials.material_id': material._id,
-            })
-            .exec();
-
-          materialData.positions = positions
-            .map((pos) => {
-              const materialInPosition = pos.current_materials.find(
-                (mat) => mat.material_id.toString() === material._id.toString(),
-              );
-
-              return {
-                position_code: pos.position_code,
-                quantity: materialInPosition?.quantity || 0,
-                lot_number: materialInPosition?.lot_number,
-              };
-            })
-            .filter((pos) => pos.quantity > 0);
-        }
-
-        result.push(materialData);
-      }
-
-      return {
-        status: 'success',
-        message: `Found ${result.length} materials in location`,
-        data: result,
-      };
-    } catch (error) {
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve materials by location',
-        data: [],
-      });
-    }
-  }
-
-  // Position-specific methods
-  async createOrUpdatePositionStock(dto: PositionStockDto): Promise<void> {
-    const position = await this.positionModel.findOne({
-      location_id: new Types.ObjectId(dto.location_id),
-      position_code: dto.position_code,
-    });
-
-    if (!position) {
-      // Create new position
-      const newPosition = new this.positionModel({
-        location_id: new Types.ObjectId(dto.location_id),
-        position_code: dto.position_code,
-        current_materials: [
-          {
-            material_id: new Types.ObjectId(dto.material_id),
-            quantity: dto.quantity,
-            lot_number: dto.lot_number,
-          },
-        ],
-      });
-      await newPosition.save();
-    } else {
-      // Update existing position
-      const materialIndex = position.current_materials.findIndex((mat) => {
-        const materialMatch = mat.material_id.toString() === dto.material_id;
-        const lotMatch = !dto.lot_number || mat.lot_number === dto.lot_number;
-        return materialMatch && lotMatch;
-      });
-
-      if (materialIndex >= 0) {
-        position.current_materials[materialIndex].quantity = dto.quantity;
-      } else {
-        position.current_materials.push({
-          material_id: new Types.ObjectId(dto.material_id),
-          quantity: dto.quantity,
-          lot_number: dto.lot_number,
-        });
-      }
-
-      await position.save();
-    }
-  }
-
-  // Keep existing methods with minimal changes
-  async initializeStock(
-    dto: StockOperationDto,
-  ): Promise<ResponseFormat<Material>> {
-    try {
-      // Validate location exists
-      const locationExists = await this.locationService.validateLocationExists(
-        dto.location_id,
+      const stockDetails: MaterialStockDto[] = material.current_stock.map(
+        (stock: any) => ({
+          location_code: stock.location_id?.location_code || 'Unknown',
+          location_name: stock.location_id?.location_name || 'Unknown',
+          position_code: stock.position_id?.position_code,
+          stock_quantity: stock.stock_quantity,
+          lot_number: stock.lot_number,
+        }),
       );
-      if (!locationExists) {
-        throw new BadRequestException({
-          status: 'error',
-          message: 'Location does not exist',
-          data: [],
-        });
-      }
 
-      const material = await this.materialModel.findById(dto.material_id);
+      return {
+        status: 'success',
+        message: 'Stock breakdown retrieved successfully',
+        data: stockDetails,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
+        status: 'error',
+        message: `Failed to get stock: ${(error as Error).message}`,
+        data: [],
+      });
+    }
+  }
+
+  async getTotalStock(materialNumber: string): Promise<number> {
+    try {
+      const material = await this.materialModel
+        .findOne({ material_number: materialNumber })
+        .exec();
+
       if (!material) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
+        throw new NotFoundException(`Material ${materialNumber} not found`);
       }
 
-      // Check if stock already exists for this location
-      const existingStockIndex = material.current_stock.findIndex(
-        (stock) => stock.location_id.toString() === dto.location_id,
-      );
-
-      if (existingStockIndex >= 0) {
-        throw new ConflictException({
-          status: 'error',
-          message:
-            'Stock already exists for this location. Use updateStock instead.',
-          data: [],
-        });
-      }
-
-      // Add new stock entry
-      material.current_stock.push({
-        location_id: new Types.ObjectId(dto.location_id),
-        position_id: null,
-        stock_quantity: dto.quantity,
-        lot_number: null,
-      });
-
-      const savedMaterial = await material.save();
-
-      return {
-        status: 'success',
-        message: 'Stock initialized successfully',
-        data: [savedMaterial],
-      };
+      return this.calculateTotalStock(material);
     } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof ConflictException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-      throw new ConflictException({
-        status: 'error',
-        message: 'Failed to initialize stock',
-        data: [],
-      });
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException(
+        `Failed to calculate total stock: ${(error as Error).message}`,
+      );
     }
   }
+
+  async checkStockAvailability(
+    materialNumber: string,
+    locationCode: string,
+    requiredQuantity: number,
+  ): Promise<boolean> {
+    try {
+      const material = await this.materialModel
+        .findOne({ material_number: materialNumber })
+        .populate('current_stock.location_id', 'location_code')
+        .exec();
+
+      if (!material) {
+        throw new NotFoundException(`Material ${materialNumber} not found`);
+      }
+
+      const stockAtLocation = material.current_stock.find(
+        (stock: any) => stock.location_id?.location_code === locationCode,
+      );
+
+      if (!stockAtLocation) {
+        return false;
+      }
+
+      return stockAtLocation.stock_quantity >= requiredQuantity;
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException(
+        `Failed to check stock: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  // ===== Stock Update Methods (Internal) =====
 
   async updateStock(
-    materialId: string,
-    locationId: string,
-    quantity: number,
-    operation: 'add' | 'subtract' | 'set' = 'set',
-  ): Promise<ResponseFormat<Material>> {
+    materialNumber: string,
+    locationCode: string,
+    quantityChange: number,
+    positionCode?: string,
+    lotNumber?: string,
+  ): Promise<void> {
     try {
-      const material = await this.materialModel.findById(materialId);
-      if (!material) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
+      if (quantityChange > 0) {
+        await this.addStockToLocation(
+          materialNumber,
+          locationCode,
+          quantityChange,
+          positionCode,
+          lotNumber,
+        );
+      } else if (quantityChange < 0) {
+        await this.removeStockFromLocation(
+          materialNumber,
+          locationCode,
+          Math.abs(quantityChange),
+          positionCode,
+          lotNumber,
+        );
+      }
+    } catch (error) {
+      throw new BadRequestException(
+        `Stock update failed: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  async addStockToLocation(
+    materialNumber: string,
+    locationCode: string,
+    quantity: number,
+    positionCode?: string,
+    lotNumber?: string,
+  ): Promise<void> {
+    try {
+      // Validate material exists
+      const material = await this.validateMaterialExists(materialNumber);
+
+      // Find location by code
+      const {
+        MaterialLocation,
+      } = require('../schema/material-location.schema');
+      const location = await this.materialModel.db
+        .collection('material_location')
+        .findOne({ location_code: locationCode });
+
+      if (!location) {
+        throw new NotFoundException(`Location ${locationCode} not found`);
       }
 
-      const stockIndex = material.current_stock.findIndex(
-        (stock) => stock.location_id.toString() === locationId,
+      const locationId = location._id;
+
+      // Find position if provided
+      let positionId = null;
+      if (positionCode) {
+        const position = await this.materialModel.db
+          .collection('material_position')
+          .findOne({ position_code: positionCode, location_id: locationId });
+
+        if (position) {
+          positionId = position._id;
+        }
+      }
+
+      // Check if stock already exists for this location/position/lot
+      const existingStockIndex = material.current_stock.findIndex(
+        (stock: any) => {
+          const locationMatch =
+            stock.location_id.toString() === locationId.toString();
+          const positionMatch = positionId
+            ? stock.position_id?.toString() === positionId.toString()
+            : !stock.position_id;
+          const lotMatch = lotNumber
+            ? stock.lot_number === lotNumber
+            : !stock.lot_number;
+
+          return locationMatch && positionMatch && lotMatch;
+        },
       );
+
+      if (existingStockIndex !== -1) {
+        // Update existing stock
+        material.current_stock[existingStockIndex].stock_quantity += quantity;
+      } else {
+        // Add new stock entry
+        material.current_stock.push({
+          location_id: locationId,
+          position_id: positionId,
+          stock_quantity: quantity,
+          lot_number: lotNumber,
+        } as any);
+      }
+
+      await material.save();
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException(
+        `Failed to add stock: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  async removeStockFromLocation(
+    materialNumber: string,
+    locationCode: string,
+    quantity: number,
+    positionCode?: string,
+    lotNumber?: string,
+  ): Promise<void> {
+    try {
+      // Validate material exists
+      const material = await this.validateMaterialExists(materialNumber);
+
+      // Find location
+      const location = await this.materialModel.db
+        .collection('material_location')
+        .findOne({ location_code: locationCode });
+
+      if (!location) {
+        throw new NotFoundException(`Location ${locationCode} not found`);
+      }
+
+      const locationId = location._id;
+
+      // Find position if provided
+      let positionId = null;
+      if (positionCode) {
+        const position = await this.materialModel.db
+          .collection('material_position')
+          .findOne({ position_code: positionCode, location_id: locationId });
+
+        if (position) {
+          positionId = position._id;
+        }
+      }
+
+      // Find matching stock entry
+      const stockIndex = material.current_stock.findIndex((stock: any) => {
+        const locationMatch =
+          stock.location_id.toString() === locationId.toString();
+        const positionMatch = positionId
+          ? stock.position_id?.toString() === positionId.toString()
+          : !stock.position_id;
+        const lotMatch = lotNumber
+          ? stock.lot_number === lotNumber
+          : !stock.lot_number;
+
+        return locationMatch && positionMatch && lotMatch;
+      });
 
       if (stockIndex === -1) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Stock not found for this location',
-          data: [],
-        });
+        throw new NotFoundException(
+          `No stock found for material ${materialNumber} at location ${locationCode}`,
+        );
       }
 
-      let newQuantity: number;
-      switch (operation) {
-        case 'add':
-          newQuantity =
-            material.current_stock[stockIndex].stock_quantity + quantity;
-          break;
-        case 'subtract':
-          newQuantity =
-            material.current_stock[stockIndex].stock_quantity - quantity;
-          if (newQuantity < 0) {
-            throw new BadRequestException({
-              status: 'error',
-              message: 'Insufficient stock quantity',
-              data: [],
-            });
-          }
-          break;
-        case 'set':
-        default:
-          newQuantity = quantity;
-          break;
+      const currentStock = material.current_stock[stockIndex].stock_quantity;
+
+      if (currentStock < quantity) {
+        throw new BadRequestException(
+          `Insufficient stock. Available: ${currentStock}, Required: ${quantity}`,
+        );
       }
 
-      material.current_stock[stockIndex].stock_quantity = newQuantity;
-      const savedMaterial = await material.save();
+      // Update stock
+      material.current_stock[stockIndex].stock_quantity -= quantity;
 
-      return {
-        status: 'success',
-        message: 'Stock updated successfully',
-        data: [savedMaterial],
-      };
+      // Remove entry if stock becomes 0
+      if (material.current_stock[stockIndex].stock_quantity === 0) {
+        material.current_stock.splice(stockIndex, 1);
+      }
+
+      await material.save();
     } catch (error) {
       if (
         error instanceof NotFoundException ||
@@ -838,221 +474,36 @@ export class MaterialService {
       ) {
         throw error;
       }
-      throw new ConflictException({
-        status: 'error',
-        message: 'Failed to update stock',
-        data: [],
-      });
+      throw new BadRequestException(
+        `Failed to remove stock: ${(error as Error).message}`,
+      );
     }
   }
 
-  async transferStock(
-    dto: TransferStockDto,
-  ): Promise<ResponseFormat<Material>> {
-    try {
-      // Validate locations exist
-      const fromLocationExists =
-        await this.locationService.validateLocationExists(dto.from_location_id);
-      const toLocationExists =
-        await this.locationService.validateLocationExists(dto.to_location_id);
+  // ===== Helper Methods =====
 
-      if (!fromLocationExists || !toLocationExists) {
-        throw new BadRequestException({
-          status: 'error',
-          message: 'One or both locations do not exist',
-          data: [],
-        });
-      }
+  async validateMaterialExists(
+    materialNumber: string,
+  ): Promise<MaterialDocument> {
+    const material = await this.materialModel
+      .findOne({ material_number: materialNumber })
+      .exec();
 
-      const material = await this.materialModel.findById(dto.material_id);
-      if (!material) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Material not found',
-          data: [],
-        });
-      }
-
-      // Find source and destination stock entries
-      const fromStockIndex = material.current_stock.findIndex(
-        (stock) => stock.location_id.toString() === dto.from_location_id,
-      );
-
-      if (fromStockIndex === -1) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Source stock not found',
-          data: [],
-        });
-      }
-
-      // Check sufficient stock
-      if (
-        material.current_stock[fromStockIndex].stock_quantity < dto.quantity
-      ) {
-        throw new BadRequestException({
-          status: 'error',
-          message: 'Insufficient stock quantity',
-          data: [],
-        });
-      }
-
-      // Subtract from source
-      material.current_stock[fromStockIndex].stock_quantity -= dto.quantity;
-
-      // Add to destination (create if doesn't exist)
-      const toStockIndex = material.current_stock.findIndex(
-        (stock) => stock.location_id.toString() === dto.to_location_id,
-      );
-
-      if (toStockIndex === -1) {
-        // Create new stock entry for destination
-        material.current_stock.push({
-          location_id: new Types.ObjectId(dto.to_location_id),
-          position_id: null,
-          stock_quantity: dto.quantity,
-          lot_number: null,
-        });
-      } else {
-        // Add to existing stock
-        material.current_stock[toStockIndex].stock_quantity += dto.quantity;
-      }
-
-      const savedMaterial = await material.save();
-
-      return {
-        status: 'success',
-        message: 'Stock transferred successfully',
-        data: [savedMaterial],
-      };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-      throw new ConflictException({
-        status: 'error',
-        message: 'Failed to transfer stock',
-        data: [],
-      });
+    if (!material) {
+      throw new NotFoundException(`Material ${materialNumber} not found`);
     }
+
+    return material;
   }
 
-  // Helper methods
-  async validateMaterialExists(materialId: string): Promise<boolean> {
-    const material = await this.materialModel.findById(materialId);
-    return !!material;
-  }
+  private calculateTotalStock(material: Material): number {
+    if (!material.current_stock || material.current_stock.length === 0) {
+      return 0;
+    }
 
-  async getAvailableStock(
-    materialId: string,
-    locationId: string,
-  ): Promise<number> {
-    const material = await this.materialModel.findById(materialId);
-    if (!material) return 0;
-
-    const stock = material.current_stock.find(
-      (s) => s.location_id.toString() === locationId,
+    return material.current_stock.reduce(
+      (total, stock: any) => total + (stock.stock_quantity || 0),
+      0,
     );
-
-    return stock?.stock_quantity || 0;
-  }
-
-  // Statistics and reporting methods
-  async getMaterialStats(): Promise<ResponseFormat<any>> {
-    try {
-      const totalMaterials = await this.materialModel.countDocuments();
-      const materialsWithStock = await this.materialModel.countDocuments({
-        'current_stock.stock_quantity': { $gt: 0 },
-      });
-
-      // Aggregate statistics
-      const stats = await this.materialModel.aggregate([
-        { $unwind: '$current_stock' },
-        { $match: { 'current_stock.stock_quantity': { $gt: 0 } } },
-        {
-          $group: {
-            _id: null,
-            total_stock_value: { $sum: '$current_stock.stock_quantity' },
-            total_locations: { $addToSet: '$current_stock.location_id' },
-            materials_by_type: { $addToSet: '$material_type' },
-          },
-        },
-      ]);
-
-      const result = {
-        total_materials: totalMaterials,
-        materials_with_stock: materialsWithStock,
-        materials_without_stock: totalMaterials - materialsWithStock,
-        total_stock_value: stats[0]?.total_stock_value || 0,
-        unique_locations: stats[0]?.total_locations?.length || 0,
-        material_types:
-          stats[0]?.materials_by_type?.filter((type) => type) || [],
-      };
-
-      return {
-        status: 'success',
-        message: 'Material statistics retrieved successfully',
-        data: [result],
-      };
-    } catch (error) {
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve material statistics',
-        data: [],
-      });
-    }
-  }
-
-  async getLowStockMaterials(
-    threshold: number = 10,
-  ): Promise<ResponseFormat<any>> {
-    try {
-      const materials = await this.materialModel
-        .find({
-          current_stock: {
-            $elemMatch: {
-              stock_quantity: { $lte: threshold, $gt: 0 },
-            },
-          },
-        })
-        .populate(
-          'current_stock.location_id',
-          'location_name location_code location_type',
-        )
-        .exec();
-
-      const lowStockData = materials
-        .map((material) => ({
-          material_id: material._id,
-          material_number: material.material_number,
-          material_description: material.material_description,
-          low_stock_locations: material.current_stock
-            .filter(
-              (stock) =>
-                stock.stock_quantity <= threshold && stock.stock_quantity > 0,
-            )
-            .map((stock) => ({
-              location: stock.location_id,
-              stock_quantity: stock.stock_quantity,
-              lot_number: stock.lot_number,
-            })),
-        }))
-        .filter((material) => material.low_stock_locations.length > 0);
-
-      return {
-        status: 'success',
-        message: `Found ${lowStockData.length} materials with low stock`,
-        data: lowStockData,
-      };
-    } catch (error) {
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve low stock materials',
-        data: [],
-      });
-    }
   }
 }

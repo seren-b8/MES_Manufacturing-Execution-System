@@ -8,115 +8,56 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { MaterialLocation } from '../../schema/material-location.schema';
-import { CreateLocationDto } from '../dto/create-location.dto';
-import { UpdateLocationDto } from '../dto/update-location.dto';
-import { GeneratePositionCodeDto } from '../dto/position-code.dto';
+
 import { ResponseFormat } from 'src/shared/interface';
+import { Material } from 'src/schema/material.schema';
+import { QueryLocationDto } from './dto/query-location.dto';
+import { LocationMaterialDto } from './dto/location-materials-response.dto';
 
 @Injectable()
 export class LocationService {
   constructor(
     @InjectModel(MaterialLocation.name)
     private readonly locationModel: Model<MaterialLocation>,
+    @InjectModel(Material.name)
+    private materialModel: Model<Material>,
   ) {}
 
-  async create(
-    dto: CreateLocationDto,
+  async findAll(
+    query: QueryLocationDto,
   ): Promise<ResponseFormat<MaterialLocation>> {
     try {
-      // Check if location_code already exists
-      const existingLocation = await this.locationModel.findOne({
-        location_code: dto.location_code.toUpperCase(),
-      });
+      const {
+        location_type,
+        location_code,
+        is_active = true,
+        has_positions,
+      } = query;
 
-      if (existingLocation) {
-        throw new ConflictException({
-          status: 'error',
-          message: 'Location code already exists',
-          data: [],
-        });
+      // Build filter
+      const filter: any = {};
+
+      if (location_type) {
+        filter.location_type = location_type;
       }
 
-      // Validate parent location if provided
-      if (dto.parent_location_id) {
-        const parentLocation = await this.locationModel.findById(
-          dto.parent_location_id,
-        );
-        if (!parentLocation) {
-          throw new BadRequestException({
-            status: 'error',
-            message: 'Parent location does not exist',
-            data: [],
-          });
-        }
-
-        // Check for circular reference
-        if (
-          await this.wouldCreateCircularReference(dto.parent_location_id, null)
-        ) {
-          throw new BadRequestException({
-            status: 'error',
-            message: 'Cannot create circular reference in location hierarchy',
-            data: [],
-          });
-        }
+      if (location_code) {
+        filter.location_code = { $regex: location_code, $options: 'i' };
       }
 
-      // Validate position format if has_positions is true
-      if (dto.has_positions && !dto.position_format) {
-        throw new BadRequestException({
-          status: 'error',
-          message: 'Position format is required when has_positions is true',
-          data: [],
-        });
+      if (is_active !== undefined) {
+        filter.is_active = is_active;
       }
 
-      // If no position format provided, set has_positions to false
-      if (!dto.position_format) {
-        dto.has_positions = false;
+      if (has_positions !== undefined) {
+        filter.has_positions = has_positions;
       }
 
-      const locationData = {
-        ...dto,
-        location_code: dto.location_code.toUpperCase(),
-        parent_location_id: dto.parent_location_id
-          ? new Types.ObjectId(dto.parent_location_id)
-          : null,
-        is_active: true,
-      };
-
-      const newLocation = new this.locationModel(locationData);
-      const savedLocation = await newLocation.save();
-
-      return {
-        status: 'success',
-        message: 'Location created successfully',
-        data: [savedLocation],
-      };
-    } catch (error) {
-      if (
-        error instanceof ConflictException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-      throw new ConflictException({
-        status: 'error',
-        message: (error as Error).message || 'Failed to create location',
-        data: [],
-      });
-    }
-  }
-
-  async findAll(): Promise<ResponseFormat<MaterialLocation>> {
-    try {
+      // Execute query
       const locations = await this.locationModel
-        .find({ is_active: true })
-        .populate(
-          'parent_location_id',
-          'location_name location_code location_type',
-        )
+        .find(filter)
         .sort({ location_code: 1 })
+        .populate('parent_location_id', 'location_name location_code')
         .exec();
 
       return {
@@ -125,34 +66,30 @@ export class LocationService {
         data: locations,
       };
     } catch (error) {
-      throw new NotFoundException({
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve locations',
+        message: `Failed to fetch locations: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async findById(id: string): Promise<ResponseFormat<MaterialLocation>> {
+  async findOne(locationId: string): Promise<ResponseFormat<MaterialLocation>> {
     try {
+      if (!Types.ObjectId.isValid(locationId)) {
+        throw new BadRequestException('Invalid location ID format');
+      }
+
       const location = await this.locationModel
-        .findById(id)
+        .findById(locationId)
         .populate(
           'parent_location_id',
-          'location_name location_code location_type',
-        )
-        .populate(
-          'child_locations',
           'location_name location_code location_type',
         )
         .exec();
 
       if (!location) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Location not found',
-          data: [],
-        });
+        throw new NotFoundException(`Location with ID ${locationId} not found`);
       }
 
       return {
@@ -161,36 +98,26 @@ export class LocationService {
         data: [location],
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new NotFoundException({
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve location',
+        message: `Failed to fetch location: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async findByCode(code: string): Promise<ResponseFormat<MaterialLocation>> {
+  async findByCode(
+    locationCode: string,
+  ): Promise<ResponseFormat<MaterialLocation>> {
     try {
       const location = await this.locationModel
-        .findOne({
-          location_code: code.toUpperCase(),
-          is_active: true,
-        })
-        .populate(
-          'parent_location_id',
-          'location_name location_code location_type',
-        )
+        .findOne({ location_code: locationCode })
+        .populate('parent_location_id', 'location_name location_code')
         .exec();
 
       if (!location) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Location not found',
-          data: [],
-        });
+        throw new NotFoundException(`Location ${locationCode} not found`);
       }
 
       return {
@@ -199,84 +126,302 @@ export class LocationService {
         data: [location],
       };
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new NotFoundException({
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve location',
+        message: `Failed to fetch location: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async findByType(type: string): Promise<ResponseFormat<MaterialLocation>> {
+  async findByType(
+    locationType: string,
+  ): Promise<ResponseFormat<MaterialLocation>> {
     try {
+      const validTypes = [
+        'warehouse',
+        'production',
+        'machine',
+        'scrap',
+        'quarantine',
+        'staging',
+      ];
+
+      if (!validTypes.includes(locationType)) {
+        throw new BadRequestException(
+          `Invalid location type. Must be one of: ${validTypes.join(', ')}`,
+        );
+      }
+
       const locations = await this.locationModel
         .find({
-          location_type: type,
+          location_type: locationType,
           is_active: true,
         })
-        .populate(
-          'parent_location_id',
-          'location_name location_code location_type',
-        )
         .sort({ location_code: 1 })
         .exec();
 
       return {
         status: 'success',
-        message: `Found ${locations.length} locations of type ${type}`,
+        message: `Found ${locations.length} ${locationType} locations`,
         data: locations,
       };
     } catch (error) {
-      throw new NotFoundException({
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve locations by type',
+        message: `Failed to fetch locations: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async findWarehouses(): Promise<ResponseFormat<MaterialLocation>> {
+  // ===== Materials in Location =====
+
+  async getMaterialsInLocation(
+    locationCode: string,
+  ): Promise<ResponseFormat<LocationMaterialDto>> {
+    try {
+      // Validate location exists
+      const location = await this.validateLocationExists(locationCode);
+
+      // Find all materials that have stock in this location
+      const materials = await this.materialModel
+        .find({
+          'current_stock.location_id': location._id,
+        })
+        .populate('current_stock.location_id', 'location_code')
+        .populate('current_stock.position_id', 'position_code')
+        .exec();
+
+      // Extract stock info for this specific location
+      const locationMaterials: LocationMaterialDto[] = [];
+
+      materials.forEach((material: any) => {
+        const stocksInLocation = material.current_stock.filter(
+          (stock: any) =>
+            stock.location_id?._id.toString() === location._id.toString(),
+        );
+
+        stocksInLocation.forEach((stock: any) => {
+          locationMaterials.push({
+            material_number: material.material_number,
+            material_description: material.material_description,
+            quantity: stock.stock_quantity,
+            position_code: stock.position_id?.position_code,
+            lot_number: stock.lot_number,
+          });
+        });
+      });
+
+      return {
+        status: 'success',
+        message: `Found ${locationMaterials.length} materials in location ${locationCode}`,
+        data: locationMaterials,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
+        status: 'error',
+        message: `Failed to fetch materials: ${(error as Error).message}`,
+        data: [],
+      });
+    }
+  }
+
+  async getLocationUtilization(
+    locationCode: string,
+  ): Promise<ResponseFormat<any>> {
+    try {
+      const location = await this.validateLocationExists(locationCode);
+
+      // Get materials in location
+      const materials = await this.materialModel
+        .find({
+          'current_stock.location_id': location._id,
+        })
+        .exec();
+
+      let totalMaterials = 0;
+      let totalQuantity = 0;
+
+      materials.forEach((material: any) => {
+        const stocksInLocation = material.current_stock.filter(
+          (stock: any) =>
+            stock.location_id.toString() === location._id.toString(),
+        );
+
+        if (stocksInLocation.length > 0) {
+          totalMaterials++;
+          stocksInLocation.forEach((stock: any) => {
+            totalQuantity += stock.stock_quantity;
+          });
+        }
+      });
+
+      const utilization: any = {
+        location_code: locationCode,
+        location_name: location.location_name,
+        location_type: location.location_type,
+        total_materials: totalMaterials,
+        total_quantity: totalQuantity,
+      };
+
+      // If location has positions, get position utilization
+      if (location.has_positions) {
+        const positions = await this.locationModel.db
+          .collection('material_position')
+          .find({ location_id: location._id })
+          .toArray();
+
+        const occupiedPositions = positions.filter(
+          (pos: any) =>
+            pos.is_occupied === true || pos.current_materials?.length > 0,
+        ).length;
+
+        utilization.total_positions = positions.length;
+        utilization.occupied_positions = occupiedPositions;
+        utilization.available_positions = positions.length - occupiedPositions;
+        utilization.utilization_percentage =
+          positions.length > 0
+            ? ((occupiedPositions / positions.length) * 100).toFixed(2)
+            : 0;
+      }
+
+      return {
+        status: 'success',
+        message: 'Location utilization retrieved successfully',
+        data: [utilization],
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
+        status: 'error',
+        message: `Failed to get utilization: ${(error as Error).message}`,
+        data: [],
+      });
+    }
+  }
+
+  // ===== Helper Methods =====
+
+  async validateLocationExists(
+    locationCode: string,
+  ): Promise<MaterialLocation> {
+    const location = await this.locationModel
+      .findOne({
+        location_code: locationCode,
+        is_active: true,
+      })
+      .exec();
+
+    if (!location) {
+      throw new NotFoundException(
+        `Location ${locationCode} not found or inactive`,
+      );
+    }
+
+    return location;
+  }
+
+  async isMachineLocation(locationCode: string): Promise<boolean> {
+    try {
+      const location = await this.locationModel
+        .findOne({ location_code: locationCode })
+        .exec();
+
+      if (!location) {
+        return false;
+      }
+
+      return location.location_type === 'machine';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // ===== Quick Lookups =====
+
+  async getWarehouses(): Promise<ResponseFormat<MaterialLocation>> {
     try {
       const warehouses = await this.locationModel
         .find({
           location_type: 'warehouse',
           is_active: true,
         })
-        .populate(
-          'parent_location_id',
-          'location_name location_code location_type',
-        )
         .sort({ location_code: 1 })
         .exec();
 
       return {
         status: 'success',
-        message: `Found ${warehouses.length} warehouse locations`,
+        message: `Found ${warehouses.length} warehouses`,
         data: warehouses,
       };
     } catch (error) {
-      throw new NotFoundException({
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve warehouse locations',
+        message: `Failed to fetch warehouses: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async findWithPositions(): Promise<ResponseFormat<MaterialLocation>> {
+  async getProductionAreas(): Promise<ResponseFormat<MaterialLocation>> {
+    try {
+      const productionAreas = await this.locationModel
+        .find({
+          location_type: 'production',
+          is_active: true,
+        })
+        .sort({ location_code: 1 })
+        .exec();
+
+      return {
+        status: 'success',
+        message: `Found ${productionAreas.length} production areas`,
+        data: productionAreas,
+      };
+    } catch (error) {
+      throw new BadRequestException({
+        status: 'error',
+        message: `Failed to fetch production areas: ${(error as Error).message}`,
+        data: [],
+      });
+    }
+  }
+
+  async getMachineLocations(): Promise<ResponseFormat<MaterialLocation>> {
+    try {
+      const machines = await this.locationModel
+        .find({
+          location_type: 'machine',
+          is_active: true,
+        })
+        .sort({ location_code: 1 })
+        .exec();
+
+      return {
+        status: 'success',
+        message: `Found ${machines.length} machine locations`,
+        data: machines,
+      };
+    } catch (error) {
+      throw new BadRequestException({
+        status: 'error',
+        message: `Failed to fetch machine locations: ${(error as Error).message}`,
+        data: [],
+      });
+    }
+  }
+
+  async getLocationsWithPositions(): Promise<ResponseFormat<MaterialLocation>> {
     try {
       const locations = await this.locationModel
         .find({
           has_positions: true,
           is_active: true,
         })
-        .populate(
-          'parent_location_id',
-          'location_name location_code location_type',
-        )
         .sort({ location_code: 1 })
         .exec();
 
@@ -286,355 +431,139 @@ export class LocationService {
         data: locations,
       };
     } catch (error) {
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve locations with positions',
-        data: [],
-      });
-    }
-  }
-
-  async findByParent(
-    parentId: string,
-  ): Promise<ResponseFormat<MaterialLocation>> {
-    try {
-      const childLocations = await this.locationModel
-        .find({
-          parent_location_id: new Types.ObjectId(parentId),
-          is_active: true,
-        })
-        .populate(
-          'parent_location_id',
-          'location_name location_code location_type',
-        )
-        .sort({ location_code: 1 })
-        .exec();
-
-      return {
-        status: 'success',
-        message: `Found ${childLocations.length} child locations`,
-        data: childLocations,
-      };
-    } catch (error) {
-      throw new NotFoundException({
-        status: 'error',
-        message: 'Failed to retrieve child locations',
-        data: [],
-      });
-    }
-  }
-
-  async generatePositionCode(
-    dto: GeneratePositionCodeDto,
-  ): Promise<ResponseFormat<any>> {
-    try {
-      const location = await this.locationModel.findById(dto.location_id);
-
-      if (!location) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Location not found',
-          data: [],
-        });
-      }
-
-      if (!location.has_positions || !location.position_format) {
-        throw new BadRequestException({
-          status: 'error',
-          message: 'Location does not support positions',
-          data: [],
-        });
-      }
-
-      const positionCode = location.position_format
-        .replace('{row}', dto.row)
-        .replace('{column}', dto.column);
-
-      return {
-        status: 'success',
-        message: 'Position code generated successfully',
-        data: [
-          {
-            location_id: dto.location_id,
-            position_code: positionCode,
-            row: dto.row,
-            column: dto.column,
-          },
-        ],
-      };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
       throw new BadRequestException({
         status: 'error',
-        message: 'Failed to generate position code',
+        message: `Failed to fetch locations: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async update(
-    id: string,
-    dto: UpdateLocationDto,
-  ): Promise<ResponseFormat<MaterialLocation>> {
+  // ===== Statistics =====
+
+  async getLocationSummary(): Promise<ResponseFormat<any>> {
     try {
-      const existingLocation = await this.locationModel.findById(id);
-      if (!existingLocation) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Location not found',
-          data: [],
-        });
-      }
+      const locations = await this.locationModel
+        .find({ is_active: true })
+        .exec();
 
-      // Validate parent location if being updated
-      if (dto.parent_location_id !== undefined) {
-        if (dto.parent_location_id) {
-          const parentLocation = await this.locationModel.findById(
-            dto.parent_location_id,
-          );
-          if (!parentLocation) {
-            throw new BadRequestException({
-              status: 'error',
-              message: 'Parent location does not exist',
-              data: [],
-            });
-          }
+      const summary = {
+        total_locations: locations.length,
+        by_type: {
+          warehouse: 0,
+          production: 0,
+          machine: 0,
+          scrap: 0,
+          quarantine: 0,
+          staging: 0,
+        },
+        with_positions: 0,
+        total_materials_stored: 0,
+      };
 
-          // Check for circular reference
-          if (
-            await this.wouldCreateCircularReference(dto.parent_location_id, id)
-          ) {
-            throw new BadRequestException({
-              status: 'error',
-              message: 'Cannot create circular reference in location hierarchy',
-              data: [],
-            });
-          }
+      // Count by type
+      locations.forEach((loc) => {
+        if (summary.by_type[loc.location_type] !== undefined) {
+          summary.by_type[loc.location_type]++;
         }
-      }
+        if (loc.has_positions) {
+          summary.with_positions++;
+        }
+      });
 
-      // Validate position settings
-      if (
-        dto.has_positions === true &&
-        !dto.position_format &&
-        !existingLocation.position_format
-      ) {
-        throw new BadRequestException({
-          status: 'error',
-          message: 'Position format is required when has_positions is true',
-          data: [],
-        });
-      }
-
-      // If removing position format, set has_positions to false
-      if (dto.position_format === null || dto.position_format === '') {
-        dto.has_positions = false;
-      }
-
-      const updateData = {
-        ...dto,
-        parent_location_id: dto.parent_location_id
-          ? new Types.ObjectId(dto.parent_location_id)
-          : dto.parent_location_id === null
-            ? null
-            : existingLocation.parent_location_id,
-      };
-
-      const updatedLocation = await this.locationModel
-        .findByIdAndUpdate(id, updateData, { new: true })
-        .populate(
-          'parent_location_id',
-          'location_name location_code location_type',
-        )
+      // Count total materials with stock
+      const materialsWithStock = await this.materialModel
+        .countDocuments({
+          current_stock: { $exists: true, $ne: [] },
+        })
         .exec();
+
+      summary.total_materials_stored = materialsWithStock;
 
       return {
         status: 'success',
-        message: 'Location updated successfully',
-        data: [updatedLocation],
+        message: 'Location summary retrieved successfully',
+        data: [summary],
       };
     } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-      throw new ConflictException({
+      throw new BadRequestException({
         status: 'error',
-        message: (error as Error).message || 'Failed to update location',
+        message: `Failed to get summary: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  async delete(id: string): Promise<ResponseFormat<MaterialLocation>> {
-    try {
-      const location = await this.locationModel.findById(id);
-      if (!location) {
-        throw new NotFoundException({
-          status: 'error',
-          message: 'Location not found',
-          data: [],
-        });
-      }
+  // ===== Position Methods (Basic) =====
 
-      // Check if location has child locations
-      const childCount = await this.locationModel.countDocuments({
-        parent_location_id: new Types.ObjectId(id),
-        is_active: true,
-      });
-
-      if (childCount > 0) {
-        throw new ConflictException({
-          status: 'error',
-          message: 'Cannot delete location with child locations',
-          data: [],
-        });
-      }
-
-      // Soft delete - set is_active to false
-      const deletedLocation = await this.locationModel
-        .findByIdAndUpdate(id, { is_active: false }, { new: true })
-        .exec();
-
-      return {
-        status: 'success',
-        message: 'Location deleted successfully',
-        data: [deletedLocation],
-      };
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof ConflictException
-      ) {
-        throw error;
-      }
-      throw new ConflictException({
-        status: 'error',
-        message: 'Failed to delete location',
-        data: [],
-      });
-    }
-  }
-
-  async getMaterialsInLocation(
-    locationId: string,
+  async getPositionsInLocation(
+    locationCode: string,
   ): Promise<ResponseFormat<any>> {
     try {
-      // TODO: Implement when Material service is ready
-      // This will query materials that have stock in this location
+      const location = await this.validateLocationExists(locationCode);
+
+      if (!location.has_positions) {
+        return {
+          status: 'success',
+          message: `Location ${locationCode} does not have positions`,
+          data: [],
+        };
+      }
+
+      const positions = await this.locationModel.db
+        .collection('material_position')
+        .find({ location_id: location._id })
+        .sort({ position_code: 1 })
+        .toArray();
 
       return {
         status: 'success',
-        message: 'Materials in location retrieved successfully',
-        data: [], // Placeholder - will implement after Material service update
+        message: `Found ${positions.length} positions in location ${locationCode}`,
+        data: positions,
       };
     } catch (error) {
-      throw new NotFoundException({
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve materials in location',
+        message: `Failed to fetch positions: ${(error as Error).message}`,
         data: [],
       });
     }
   }
 
-  // Helper methods
-  async validateLocationExists(locationId: string): Promise<boolean> {
-    const location = await this.locationModel.findOne({
-      _id: new Types.ObjectId(locationId),
-      is_active: true,
-    });
-    return !!location;
-  }
-
-  async validateLocationSupportsPositions(
-    locationId: string,
-  ): Promise<boolean> {
-    const location = await this.locationModel.findOne({
-      _id: new Types.ObjectId(locationId),
-      has_positions: true,
-      is_active: true,
-    });
-    return !!location;
-  }
-
-  async getLocationInfo(locationId: string): Promise<MaterialLocation | null> {
-    return await this.locationModel.findOne({
-      _id: new Types.ObjectId(locationId),
-      is_active: true,
-    });
-  }
-
-  private async wouldCreateCircularReference(
-    parentId: string,
-    childId: string | null,
-  ): Promise<boolean> {
-    if (!parentId || !childId) return false;
-
-    // Check if parentId is already a descendant of childId
-    let currentParent = await this.locationModel.findById(parentId);
-
-    while (currentParent && currentParent.parent_location_id) {
-      if (currentParent.parent_location_id.toString() === childId) {
-        return true; // Circular reference detected
-      }
-      currentParent = await this.locationModel.findById(
-        currentParent.parent_location_id,
-      );
-    }
-
-    return false;
-  }
-
-  async validatePositionFormat(format: string): Promise<boolean> {
-    const pattern = /^[A-Z]-\{[a-z_]+\}-\{[a-z_]+\}$/;
-    return pattern.test(format);
-  }
-
-  // Statistics methods
-  async getLocationStats(): Promise<ResponseFormat<any>> {
+  async getAvailablePositions(
+    locationCode: string,
+  ): Promise<ResponseFormat<any>> {
     try {
-      const stats = await this.locationModel.aggregate([
-        { $match: { is_active: true } },
-        {
-          $group: {
-            _id: '$location_type',
-            count: { $sum: 1 },
-            with_positions: { $sum: { $cond: ['$has_positions', 1, 0] } },
-          },
-        },
-        { $sort: { _id: 1 } },
-      ]);
+      const location = await this.validateLocationExists(locationCode);
 
-      const totalLocations = await this.locationModel.countDocuments({
-        is_active: true,
-      });
-      const locationsWithPositions = await this.locationModel.countDocuments({
-        has_positions: true,
-        is_active: true,
-      });
+      if (!location.has_positions) {
+        return {
+          status: 'success',
+          message: `Location ${locationCode} does not have positions`,
+          data: [],
+        };
+      }
+
+      const availablePositions = await this.locationModel.db
+        .collection('material_position')
+        .find({
+          location_id: location._id,
+          is_occupied: false,
+        })
+        .sort({ position_code: 1 })
+        .toArray();
 
       return {
         status: 'success',
-        message: 'Location statistics retrieved successfully',
-        data: [
-          {
-            total_locations: totalLocations,
-            locations_with_positions: locationsWithPositions,
-            by_type: stats,
-          },
-        ],
+        message: `Found ${availablePositions.length} available positions`,
+        data: availablePositions,
       };
     } catch (error) {
-      throw new NotFoundException({
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException({
         status: 'error',
-        message: 'Failed to retrieve location statistics',
+        message: `Failed to fetch available positions: ${(error as Error).message}`,
         data: [],
       });
     }
