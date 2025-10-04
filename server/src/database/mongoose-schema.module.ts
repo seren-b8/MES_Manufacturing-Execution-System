@@ -1,44 +1,35 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 
-// Production Management
 import {
   ProductionOrder,
   ProductionOrderSchema,
-} from 'src/schema/production-order.schema';
+} from '../schema/production-order.schema';
 import {
   ProductionRecord,
   ProductionRecordSchema,
-} from 'src/schema/production-record.schema';
-import { AssignOrder, AssignOrderSchema } from 'src/schema/assign-order.schema';
+} from '../schema/production-record.schema';
+import { AssignOrder, AssignOrderSchema } from '../schema/assign-order.schema';
 import {
   AssignEmployee,
   AssignEmployeeSchema,
-} from 'src/schema/assign-employee.schema';
-
-// Machine Management
-import { MachineInfo, MachineInfoSchema } from 'src/schema/machine-info.schema';
+} from '../schema/assign-employee.schema';
+import { MachineInfo, MachineInfoSchema } from '../schema/machine-info.schema';
 import {
   TimelineMachine,
   TimelineMachineSchema,
-} from 'src/schema/timeline-machine.schema';
-
-// Master Data
+} from '../schema/timeline-machine.schema';
 import {
   MasterCavity,
   MasterCavitySchema,
-} from 'src/schema/master-cavity.schema';
+} from '../schema/master-cavity.schema';
 import {
   MasterNotGood,
   MasterNotGoodSchema,
-} from 'src/schema/master-not-good.schema';
+} from '../schema/master-not-good.schema';
 import { MasterPart, MasterPartSchema } from '../schema/master_parts.schema';
-
-// User Management
-import { Employee, EmployeeSchema } from 'src/schema/employee.schema';
-import { User, UserSchema } from 'src/schema/user.schema';
-
-// SAP Integration
+import { Employee, EmployeeSchema } from '../schema/employee.schema';
+import { User, UserSchema } from '../schema/user.schema';
 import { SAPSyncLog, SAPSyncLogSchema } from '../schema/sap_sync_log.schema';
 import {
   MachineCounterLog,
@@ -52,34 +43,34 @@ import {
   SerialCounter,
   SerialCounterSchema,
 } from '../schema/serial-counter.schema';
-import { LabelJob, LabelJobSchema } from 'src/schema/label-job.shema';
+import { LabelJob, LabelJobSchema } from '../schema/label-job.shema';
 import {
   CoProductRecord,
   CoProductRecordSchema,
-} from 'src/schema/co-product-reccord.shema';
+} from '../schema/co-product-reccord.shema';
 import {
   ProductionPlanning,
   ProductionPlanningSchema,
-} from 'src/schema/production-planning.schema';
-import { OEEHourly, OEEHourlySchema } from 'src/schema/oee-hourly.schema';
-import { Material, MaterialSchema } from 'src/schema/material.schema';
+} from '../schema/production-planning.schema';
+import { OEEHourly, OEEHourlySchema } from '../schema/oee-hourly.schema';
+import { Material, MaterialSchema } from '../schema/material.schema';
 import {
   MaterialLocation,
   MaterialLocationSchema,
-} from 'src/schema/material-location.schema';
+} from '../schema/material-location.schema';
 import {
   MaterialPosition,
   MaterialPositionSchema,
-} from 'src/schema/material-position.schema';
+} from '../schema/material-position.schema';
 import {
   MaterialTransaction,
   MaterialTransactionSchema,
-} from 'src/schema/material-transaction.schema';
+} from '../schema/material-transaction.schema';
 import {
   PlannedDowntime,
   PlannedDowntimeSchema,
-} from 'src/schema/planned-downtime.schema';
-import { OEEDaily, OEEDailySchema } from 'src/schema/oee-daily.schema';
+} from '../schema/planned-downtime.schema';
+import { OEEDaily, OEEDailySchema } from '../schema/oee-daily.schema';
 
 @Module({
   imports: [

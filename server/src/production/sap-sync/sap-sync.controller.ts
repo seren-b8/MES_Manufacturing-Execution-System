@@ -23,6 +23,7 @@ import {
   ShortCacheInterceptor,
 } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
+import { toObjectId } from 'src/shared/utils/type.utils';
 
 @Controller('sap-sync')
 @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
@@ -62,7 +63,7 @@ export class SapSyncController {
       };
     }
 
-    return this.sapSyncService.retrySyncLog(new Types.ObjectId(id));
+    return this.sapSyncService.retrySyncLog(toObjectId(id));
   }
 
   @Get('logs')

@@ -212,32 +212,39 @@ export class PositionService {
   async getMaterialsInPosition(
     positionCode: string,
   ): Promise<ResponseFormat<any>> {
+    // ← เพิ่ม ResponseFormat
     try {
-      const position: any = await this.positionModel
+      const position = await this.positionModel
         .findOne({ position_code: positionCode })
-        .populate('location_id', 'location_name location_code')
-        .populate(
-          'current_materials.material_id',
-          'material_number material_description unit_of_measurement',
-        )
         .exec();
 
       if (!position) {
         throw new NotFoundException(`Position ${positionCode} not found`);
       }
 
-      const materials = position.current_materials.map((mat: any) => ({
-        material_number: mat.material_id?.material_number,
-        material_description: mat.material_id?.material_description,
-        unit: mat.material_id?.unit_of_measurement,
-        quantity: mat.quantity,
-        lot_number: mat.lot_number,
-      }));
+      const materials = await this.materialModel
+        .find({
+          'current_stock.position_id': position._id,
+        })
+        .exec();
+
+      const materialsData = materials.map((mat) => {
+        const stock = mat.current_stock.find(
+          (s) => s.position_id?.toString() === position._id.toString(),
+        );
+
+        return {
+          material_number: mat.material_number,
+          material_description: mat.material_description,
+          quantity: stock?.stock_quantity || 0,
+          lot_number: stock?.lot_number,
+        };
+      });
 
       return {
         status: 'success',
-        message: `Found ${materials.length} materials in position ${positionCode}`,
-        data: materials,
+        message: `Found ${materialsData.length} materials in position ${positionCode}`,
+        data: materialsData, // ← return ใน ResponseFormat
       };
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
@@ -249,35 +256,41 @@ export class PositionService {
     }
   }
 
-  // ===== Utilization & Statistics =====
-
   async getPositionUtilization(
     positionCode: string,
   ): Promise<ResponseFormat<any>> {
     try {
       const position: any = await this.positionModel
         .findOne({ position_code: positionCode })
-        .populate('location_id', 'location_name location_code')
+        .populate('location_id', 'location_name location_code') // ← populate
         .exec();
 
       if (!position) {
         throw new NotFoundException(`Position ${positionCode} not found`);
       }
 
-      const totalQuantity = position.current_materials.reduce(
-        (sum: number, mat: any) => sum + mat.quantity,
-        0,
-      );
+      const materials = await this.materialModel
+        .find({
+          'current_stock.position_id': position._id,
+        })
+        .exec();
+
+      const totalQuantity = materials.reduce((sum, mat) => {
+        const stock = mat.current_stock.find(
+          (s) => s.position_id?.toString() === position._id.toString(),
+        );
+        return sum + (stock?.stock_quantity || 0);
+      }, 0);
 
       const utilization: any = {
         position_code: position.position_code,
-        location_code: position.location_id?.location_code,
-        location_name: position.location_id?.location_name,
+        location_code: position.location_id?.location_code, // ✅ ใช้ได้แล้ว
+        location_name: position.location_id?.location_name, // ✅ ใช้ได้แล้ว
         shelf_code: position.shelf_code,
         row: position.row,
         column: position.column,
-        is_occupied: position.is_occupied,
-        total_materials: position.current_materials.length,
+        is_occupied: totalQuantity > 0,
+        total_materials: materials.length, // ✅ นับจาก materials array
         total_quantity: totalQuantity,
       };
 

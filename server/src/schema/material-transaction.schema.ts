@@ -5,6 +5,7 @@ import { User } from './user.schema';
 import { MachineInfo } from './machine-info.schema';
 import { ProductionOrder } from './production-order.schema';
 import { Material } from './material.schema';
+import { MaterialPosition } from './material-position.schema';
 
 @Schema({
   collection: 'material_transaction',
@@ -30,11 +31,22 @@ export class MaterialTransaction extends Document {
   @Prop({ type: Types.ObjectId, ref: MaterialLocation.name })
   to_location_id: Types.ObjectId;
 
+  // Position References (เพิ่มใหม่)
+  @Prop({ type: Types.ObjectId, ref: MaterialPosition.name })
+  from_position_id: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: MaterialPosition.name })
+  to_position_id: Types.ObjectId;
+
   @Prop({ type: Types.ObjectId, ref: User.name })
   user_id: Types.ObjectId;
 
   @Prop()
   reference_doc: string;
+
+  // Lot Number (เพิ่มบรรทัดนี้)
+  @Prop()
+  lot_number?: string;
 
   // Fields ที่อาจเพิ่มเข้ามาเพื่อรองรับการเชื่อมโยงกับ Production Order และ Machine
   @Prop({ type: Types.ObjectId, ref: ProductionOrder.name })
@@ -47,3 +59,14 @@ export class MaterialTransaction extends Document {
 export type MaterialTransactionDocument = MaterialTransaction & Document;
 export const MaterialTransactionSchema =
   SchemaFactory.createForClass(MaterialTransaction);
+
+// เพิ่ม Indexes
+MaterialTransactionSchema.index({ material_id: 1, transaction_date: -1 });
+MaterialTransactionSchema.index({ from_location_id: 1, transaction_date: -1 });
+MaterialTransactionSchema.index({ to_location_id: 1, transaction_date: -1 });
+MaterialTransactionSchema.index({ from_position_id: 1 }); // ← เพิ่ม
+MaterialTransactionSchema.index({ to_position_id: 1 }); // ← เพิ่ม
+MaterialTransactionSchema.index({ production_order_id: 1 });
+MaterialTransactionSchema.index({ user_id: 1, transaction_date: -1 });
+MaterialTransactionSchema.index({ lot_number: 1 }); // ← เพิ่ม index สำหรับ lot_number
+MaterialTransactionSchema.index({ transaction_type: 1, transaction_date: -1 });

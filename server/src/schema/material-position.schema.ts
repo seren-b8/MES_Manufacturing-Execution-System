@@ -3,26 +3,6 @@ import { Document, Types } from 'mongoose';
 import { MaterialLocation } from './material-location.schema';
 import { Material } from './material.schema';
 
-// Embedded Document สำหรับ materials ใน position
-@Schema()
-class PositionMaterial {
-  @Prop({
-    type: Types.ObjectId,
-    ref: 'material',
-    required: true,
-    versionKey: false,
-  })
-  material_id: Types.ObjectId;
-
-  @Prop({ required: true, min: 0 })
-  quantity: number;
-
-  @Prop()
-  lot_number?: string;
-}
-
-const PositionMaterialSchema = SchemaFactory.createForClass(PositionMaterial);
-
 // Material Position Schema หลัก
 @Schema({
   collection: 'material_position',
@@ -59,12 +39,6 @@ export class MaterialPosition extends Document {
 
   @Prop({ min: 0 })
   max_capacity?: number;
-
-  @Prop({
-    type: [PositionMaterialSchema],
-    default: [],
-  })
-  current_materials: PositionMaterial[];
 
   createdAt?: Date;
   updatedAt?: Date;
@@ -106,27 +80,3 @@ MaterialPositionSchema.index(
     name: 'position_layout_index',
   },
 );
-
-// Virtual สำหรับ total quantity
-MaterialPositionSchema.virtual('total_quantity').get(function () {
-  return this.current_materials.reduce(
-    (total, material) => total + material.quantity,
-    0,
-  );
-});
-
-// Virtual สำหรับ available capacity
-MaterialPositionSchema.virtual('available_capacity').get(function () {
-  if (!this.max_capacity) return null;
-  const totalQuantity = this.current_materials.reduce(
-    (total, material) => total + material.quantity,
-    0,
-  );
-  return this.max_capacity - totalQuantity;
-});
-
-// Pre-save middleware เพื่อ update is_occupied
-MaterialPositionSchema.pre('save', function (next) {
-  this.is_occupied = this.current_materials.length > 0;
-  next();
-});

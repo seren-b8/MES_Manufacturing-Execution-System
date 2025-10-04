@@ -31,6 +31,8 @@ export class TransactionService {
     private productionOrderModel: Model<ProductionOrder>,
     @InjectModel(MachineInfo.name)
     private machineModel: Model<MachineInfo>,
+    @InjectModel(MaterialPosition.name) // ← เพิ่มบรรทัดนี้
+    private positionModel: Model<MaterialPosition>,
 
     private readonly materialService: MaterialService,
     private readonly locationService: LocationService,
@@ -59,15 +61,21 @@ export class TransactionService {
       }
 
       // 4. Create transaction record
-      const transaction = await this.createTransactionRecord({
-        transaction_type: 'receive',
-        material_id: toObjectId(material._id as string),
-        quantity: dto.quantity,
-        to_location_id: toObjectId(toLocation._id as string),
-        reference_doc: dto.reference_doc,
-        user_id: toObjectId(dto.user_id),
-        transaction_date: dto.transaction_date || new Date(),
-      });
+      const transaction = await this.createTransactionRecord(
+        {
+          transaction_type: 'receive',
+          material_id: toObjectId(material._id as string),
+          quantity: dto.quantity,
+          to_location_id: toObjectId(toLocation._id as string),
+          reference_doc: dto.reference_doc,
+          user_id: toObjectId(dto.user_id),
+          transaction_date:
+            dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
+          lot_number: dto.lot_number, // ← เพิ่ม lot_number
+        },
+        undefined, // from_position_code
+        dto.to_position_code, // to_position_code
+      );
 
       // 5. Update material stock
       await this.materialService.addStockToLocation(
@@ -86,6 +94,7 @@ export class TransactionService {
           'material_number material_description unit_of_measurement',
         )
         .populate('to_location_id', 'location_name location_code')
+        .populate('to_position_id', 'position_code shelf_code') // ← เพิ่ม
         .populate('user_id', 'employee_id')
         .exec();
 
@@ -154,16 +163,21 @@ export class TransactionService {
       }
 
       // 5. Create transaction record
-      const transaction = await this.createTransactionRecord({
-        transaction_type: 'transfer',
-        material_id: toObjectId(material._id as string),
-        quantity: dto.quantity,
-        from_location_id: toObjectId(fromLocation._id as string),
-        to_location_id: toObjectId(toLocation._id as string),
-        reference_doc: dto.reference_doc,
-        user_id: toObjectId(dto.user_id),
-        transaction_date: dto.transaction_date || new Date(),
-      });
+      const transaction = await this.createTransactionRecord(
+        {
+          transaction_type: 'transfer',
+          material_id: toObjectId(material._id as string),
+          quantity: dto.quantity,
+          from_location_id: toObjectId(fromLocation._id as string),
+          to_location_id: toObjectId(toLocation._id as string),
+          reference_doc: dto.reference_doc,
+          user_id: toObjectId(dto.user_id),
+          transaction_date:
+            dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
+        },
+        dto.from_position_code, // from_position_code
+        dto.to_position_code, // to_position_code
+      );
 
       // 6. Update material stock (remove from source, add to destination)
       await this.executeStockUpdate(
@@ -184,7 +198,9 @@ export class TransactionService {
           'material_number material_description unit_of_measurement',
         )
         .populate('from_location_id', 'location_name location_code')
+        .populate('from_position_id', 'position_code shelf_code') // ← เพิ่ม
         .populate('to_location_id', 'location_name location_code')
+        .populate('to_position_id', 'position_code shelf_code') // ← เพิ่ม
         .populate('user_id', 'employee_id')
         .exec();
 
@@ -273,17 +289,22 @@ export class TransactionService {
       }
 
       // 7. Create transaction record
-      const transaction = await this.createTransactionRecord({
-        transaction_type: 'consume',
-        material_id: toObjectId(material._id as string),
-        quantity: dto.quantity,
-        from_location_id: toObjectId(fromLocation._id as string),
-        production_order_id: toObjectId(productionOrder._id as string),
-        machine_id: machine?._id,
-        reference_doc: dto.reference_doc,
-        user_id: toObjectId(dto.user_id),
-        transaction_date: dto.transaction_date || new Date(),
-      });
+      const transaction = await this.createTransactionRecord(
+        {
+          transaction_type: 'consume',
+          material_id: toObjectId(material._id as string),
+          quantity: dto.quantity,
+          from_location_id: toObjectId(fromLocation._id as string),
+          production_order_id: toObjectId(productionOrder._id as string),
+          machine_id: machine?._id,
+          reference_doc: dto.reference_doc,
+          user_id: toObjectId(dto.user_id),
+          transaction_date:
+            dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
+        },
+        dto.from_position_code, // from_position_code
+        undefined,
+      );
 
       // 8. Update material stock (remove from location)
       await this.materialService.removeStockFromLocation(
@@ -302,6 +323,7 @@ export class TransactionService {
           'material_number material_description unit_of_measurement',
         )
         .populate('from_location_id', 'location_name location_code')
+        .populate('from_position_id', 'position_code shelf_code') // ← เพิ่ม
         .populate('production_order_id', 'order_id material_number')
         .populate('machine_id', 'machine_number machine_name')
         .populate('user_id', 'employee_id')
@@ -703,9 +725,41 @@ export class TransactionService {
 
   private async createTransactionRecord(
     transactionData: Partial<MaterialTransaction>,
+    fromPositionCode?: string, // ← เพิ่ม parameter
+    toPositionCode?: string, // ← เพิ่ม parameter
   ): Promise<MaterialTransaction> {
     try {
-      const transaction = new this.transactionModel(transactionData);
+      // Resolve position IDs if position_codes are provided
+      let fromPositionId = null;
+      let toPositionId = null;
+
+      if (fromPositionCode) {
+        const fromPosition = await this.positionModel
+          .findOne({ position_code: fromPositionCode })
+          .exec();
+
+        if (fromPosition) {
+          fromPositionId = fromPosition._id;
+        }
+      }
+
+      if (toPositionCode) {
+        const toPosition = await this.positionModel
+          .findOne({ position_code: toPositionCode })
+          .exec();
+
+        if (toPosition) {
+          toPositionId = toPosition._id;
+        }
+      }
+
+      // Create transaction with position IDs
+      const transaction = new this.transactionModel({
+        ...transactionData,
+        from_position_id: fromPositionId,
+        to_position_id: toPositionId,
+      });
+
       return await transaction.save();
     } catch (error) {
       throw new BadRequestException(
