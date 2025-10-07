@@ -78,49 +78,49 @@ export class TimelineMachineCleanupController {
     };
   }
 
-  @Cron('0 0 0 * * *', {
-    name: 'timeline-auto-cleanup',
-    timeZone: 'Asia/Bangkok',
-  })
-  async autoCleanupCronJob() {
-    if (!this.cronEnabled) {
-      this.logger.log('⏸️ Auto cleanup cron job is disabled, skipping...');
-      return;
-    }
+  // @Cron('0 0 0 * * *', {
+  //   name: 'timeline-auto-cleanup',
+  //   timeZone: 'Asia/Bangkok',
+  // })
+  // async autoCleanupCronJob() {
+  //   if (!this.cronEnabled) {
+  //     this.logger.log('⏸️ Auto cleanup cron job is disabled, skipping...');
+  //     return;
+  //   }
 
-    try {
-      this.logger.log('🧹 Starting auto cleanup cron job...');
-      // คำนวณวันที่ (เมื่อวาน ถึง เมื่อวาน-1)
-      const now = moment().tz('Asia/Bangkok');
-      const yesterday = now.clone().subtract(1, 'day').startOf('day');
+  //   try {
+  //     this.logger.log('🧹 Starting auto cleanup cron job...');
+  //     // คำนวณวันที่ (เมื่อวาน ถึง เมื่อวาน-1)
+  //     const now = moment().tz('Asia/Bangkok');
+  //     const yesterday = now.clone().subtract(1, 'day').startOf('day');
 
-      const dayBeforeYesterday = new Date();
-      dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+  //     const dayBeforeYesterday = new Date();
+  //     dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
 
-      const cleanupDto: CleanupTimelineDto = {
-        date_range: {
-          start: yesterday.format('YYYY-MM-DD'),
-          end: now.format('YYYY-MM-DD'), // ถึงวันปัจจุบัน
-        },
-        dry_run: this.cronDryRun,
-        batch_size: this.cronBatchSize,
-      };
+  //     const cleanupDto: CleanupTimelineDto = {
+  //       date_range: {
+  //         start: yesterday.format('YYYY-MM-DD'),
+  //         end: now.format('YYYY-MM-DD'), // ถึงวันปัจจุบัน
+  //       },
+  //       dry_run: this.cronDryRun,
+  //       batch_size: this.cronBatchSize,
+  //     };
 
-      const result =
-        await this.timelineMachineService.executeCleanup(cleanupDto);
+  //     const result =
+  //       await this.timelineMachineService.executeCleanup(cleanupDto);
 
-      this.logger.log('✅ Auto cleanup cron job completed successfully', {
-        deletedCount: result.total_removed_records,
-        dateRange: cleanupDto.date_range,
-        dryRun: this.cronDryRun,
-      });
-    } catch (error) {
-      this.logger.error(
-        '❌ Auto cleanup cron job failed:',
-        (error as Error).message,
-        (error as Error).stack,
-      );
-      // อาจเพิ่ม notification service ที่นี่
-    }
-  }
+  //     this.logger.log('✅ Auto cleanup cron job completed successfully', {
+  //       deletedCount: result.total_removed_records,
+  //       dateRange: cleanupDto.date_range,
+  //       dryRun: this.cronDryRun,
+  //     });
+  //   } catch (error) {
+  //     this.logger.error(
+  //       '❌ Auto cleanup cron job failed:',
+  //       (error as Error).message,
+  //       (error as Error).stack,
+  //     );
+  //     // อาจเพิ่ม notification service ที่นี่
+  //   }
+  // }
 }

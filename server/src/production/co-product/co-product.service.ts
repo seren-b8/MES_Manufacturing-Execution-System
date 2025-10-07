@@ -16,6 +16,7 @@ import { ProductionRecord } from 'src/schema/production-record.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { PrinterDevice } from 'src/schema/printer-device.schema';
 import { GenerateLabelDto } from 'src/label/dto/generate-label.dto';
+import { machine } from 'os';
 
 @Injectable()
 export class CoProductService {
@@ -141,9 +142,12 @@ export class CoProductService {
         remark: createCoProductDto.remark,
       });
 
-      const label = await this.generateLabel([coProductRecord]);
+      const machine = await this.machineInfoModel.findOne({
+        machine_number: createCoProductDto.machine_number,
+      });
+      if (createCoProductDto.machine_number && machine.printer_id) {
+        const label = await this.generateLabel([coProductRecord]);
 
-      if (createCoProductDto.machine_number) {
         await this.labelService.printLabel(
           String(label.data[0]._id),
           createCoProductDto.machine_number,

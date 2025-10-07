@@ -352,6 +352,85 @@ export class AuthService {
     }
   }
 
+  // auth.service.ts
+
+  async createAllMissingUsers(defaultRole: string = 'operator'): Promise<
+    ResponseFormat<{
+      total_employees: number;
+      existing_users: number;
+      created_users: number;
+      failed_users: number;
+      created_user_ids: string[];
+      failed_details?: Array<{ employee_id: string; reason: string }>;
+    }>
+  > {
+    try {
+      // 1. Get all employees
+      const allEmployees = await this.employeeModel
+        .find({
+          resign_status: { $ne: 'resigned' }, // ไม่เอาคนที่ลาออก
+        })
+        .exec();
+
+      // 2. Get all existing users
+      const existingUsers = await this.userModel.find().exec();
+      const existingEmployeeIds = new Set(
+        existingUsers.map((user) => user.employee_id),
+      );
+
+      // 3. Filter employees without users
+      const employeesWithoutUsers = allEmployees.filter(
+        (employee) => !existingEmployeeIds.has(employee.employee_id),
+      );
+
+      // 4. Create users in batch
+      const createdUserIds: string[] = [];
+      const failedDetails: Array<{ employee_id: string; reason: string }> = [];
+
+      for (const employee of employeesWithoutUsers) {
+        try {
+          const newUser = await this.userModel.create({
+            employee_id: employee.employee_id,
+            password: await this.hashPassword('0000'),
+            role: defaultRole,
+            external_auth: false,
+          });
+          createdUserIds.push(newUser.employee_id);
+        } catch (error) {
+          failedDetails.push({
+            employee_id: employee.employee_id,
+            reason: (error as Error).message || 'Unknown error',
+          });
+        }
+      }
+
+      // 5. Return summary
+      return {
+        status: 'success',
+        message: `Created ${createdUserIds.length} users successfully`,
+        data: [
+          {
+            total_employees: allEmployees.length,
+            existing_users: existingUsers.length,
+            created_users: createdUserIds.length,
+            failed_users: failedDetails.length,
+            created_user_ids: createdUserIds,
+            ...(failedDetails.length > 0 && { failed_details: failedDetails }),
+          },
+        ],
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to create missing users',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   private async hashPassword(password: string): Promise<string> {
     const saltRounds = 10;
     return bcrypt.hash(password, saltRounds);

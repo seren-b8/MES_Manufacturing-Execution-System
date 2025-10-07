@@ -21,7 +21,7 @@ export class SqlOrderController {
     return response;
   }
 
-  @Cron(CronExpression.EVERY_2_HOURS)
+  @Cron('15 * * * *')
   async syncProductionOrdersCron() {
     const response = await this.sqlOrderService.syncProductionOrders();
     if (response.status == 'success') {

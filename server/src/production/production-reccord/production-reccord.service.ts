@@ -52,6 +52,7 @@ import * as redisStore from 'cache-manager-redis-store';
 import { LabelService } from 'src/label/label.service';
 import * as _ from 'lodash';
 import { ProductionRecordQueryDto } from '../dto/production-reccord-query.dto';
+import { machine } from 'os';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -2926,15 +2927,17 @@ export class ProductionRecordService {
     }
   }
 
-  async createReccordBatch(
+  async createRecordBatch(
     createDtos: CreateProductionRecordDto[],
     userId: string,
     machineNumber?: string,
   ): Promise<ResponseFormat<any>> {
     try {
       const createdRecords = [];
+      let labelResult = null;
+      let labelCreated = false;
 
-      // สร้าง records โดยใช้ service เดิม
+      // 1. สร้าง records
       for (const dto of createDtos) {
         const result = await this.create(dto, userId);
         if (result.status === 'success') {
@@ -2944,41 +2947,62 @@ export class ProductionRecordService {
         }
       }
 
-      // ตรวจสอบว่ามีข้อมูลที่สร้างได้
+      // 2. ตรวจสอบว่ามีข้อมูลที่สร้างได้
       if (createdRecords.length === 0) {
         throw new Error('No records were created');
       }
 
-      const populatedRecords = await this.productionRecordModel.populate(
-        createdRecords,
-        [
-          {
-            path: 'assign_order_id',
-            populate: {
-              path: 'production_order_id',
-              select: 'material_number',
-            },
-          },
-        ],
-      );
-
-      // เรียงตาม material_number
-      const sortedRecords = this.sortByMaterialNumber(populatedRecords);
-
-      // สร้าง label
-      const label = await this.generateLabel(sortedRecords);
-
+      // 3. สร้างและพิมพ์ label (ถ้ามี machine และ printer)
       if (machineNumber) {
-        await this.labelService.printLabel(
-          String(label.data[0]._id),
-          machineNumber,
-        );
+        const machine = await this.machineInfoModel.findOne({
+          machine_number: machineNumber,
+        });
+
+        if (machine?.printer_id) {
+          try {
+            // Populate records
+            const populatedRecords = await this.productionRecordModel.populate(
+              createdRecords,
+              [
+                {
+                  path: 'assign_order_id',
+                  populate: {
+                    path: 'production_order_id',
+                    select: 'material_number',
+                  },
+                },
+              ],
+            );
+
+            // เรียงตาม material_number
+            const sortedRecords = this.sortByMaterialNumber(populatedRecords);
+
+            // สร้าง label
+            labelResult = await this.generateLabel(sortedRecords);
+
+            if (labelResult.status === 'success') {
+              // พิมพ์ label
+              await this.labelService.printLabel(
+                String(labelResult.data[0]._id),
+                machineNumber,
+              );
+              labelCreated = true;
+            }
+          } catch (error) {
+            // ไม่ throw เพราะ record สร้างสำเร็จแล้ว
+          }
+        }
       }
+
+      // 4. Return ตามสถานะ
+      const message = labelCreated
+        ? `${createdRecords.length} records created with label`
+        : `${createdRecords.length} records created without label`;
 
       return {
         status: 'success',
-        message: `${createdRecords.length} records created with label`,
-        data: label.data,
+        message,
+        data: labelCreated ? labelResult.data : createdRecords,
       };
     } catch (error) {
       return this.handleServiceError(error);

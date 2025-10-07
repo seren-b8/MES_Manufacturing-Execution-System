@@ -50,6 +50,7 @@ export class ProductionOrderController {
   @Get()
   @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
   async findAll(@Query() query: any) {
+    console.log(query);
     return this.productionOrderService.findAll(query);
   }
 }

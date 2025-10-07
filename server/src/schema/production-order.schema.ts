@@ -97,6 +97,15 @@ export class ProductionOrder extends Document {
   log_date: Date;
 
   @Prop({ default: null })
+  gross_weight: number;
+
+  @Prop({ default: null })
+  net_weight: number;
+
+  @Prop({ default: null })
+  weight_unit: string;
+
+  @Prop({ default: null })
   condition_amount: number;
 
   @Prop({ default: false, type: Boolean })

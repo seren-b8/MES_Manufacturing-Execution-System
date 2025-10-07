@@ -19,8 +19,13 @@ export class ProductionOrderService {
 
   async findAll(query: any = {}): Promise<ResponseFormat<ProductionOrder>> {
     try {
+      const { sql_active = 'true', ...otherFilters } = query;
+
       const orders = await this.productionOrderModel
-        .find(query)
+        .find({
+          sql_active: sql_active === 'true',
+          ...otherFilters,
+        })
         .sort({ basic_start_date: -1 })
         .lean();
 

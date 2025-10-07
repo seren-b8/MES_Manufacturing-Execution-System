@@ -106,7 +106,7 @@ export class ProductionRecordController {
       );
     }
 
-    return this.productionRecordService.createReccordBatch(
+    return this.productionRecordService.createRecordBatch(
       createData.create_production_record,
       userId,
       createData.machine_number,

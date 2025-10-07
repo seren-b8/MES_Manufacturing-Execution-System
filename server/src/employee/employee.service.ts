@@ -16,6 +16,7 @@ import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
 import { User } from 'src/schema/user.schema';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';
 import * as moment from 'moment-timezone';
+import { AuthService } from 'src/auth/auth.service';
 
 @Injectable()
 export class EmployeeService {
@@ -26,6 +27,7 @@ export class EmployeeService {
     @InjectModel(Employee.name) private readonly employeeModel: Model<Employee>,
     @InjectModel('User') private readonly userModel: Model<User>,
     @Inject(SqlService) private readonly sqlService: SqlService,
+    private readonly authService: AuthService,
   ) {}
 
   private transformEmployeeData(sqlEmployee: any): Partial<Employee> {
@@ -103,6 +105,7 @@ export class EmployeeService {
     const syncStartTime = Date.now();
     const errors: Array<{ employee_id: string; error: string }> = [];
     let syncedCount = 0;
+    let userCreationResult = null; // เพิ่มตัวแปรเก็บผลการสร้าง user
 
     try {
       // 1. Fetch SQL data
@@ -151,6 +154,21 @@ export class EmployeeService {
         }),
       ]);
 
+      if (syncedCount > 0) {
+        try {
+          userCreationResult = await this.authService.createAllMissingUsers();
+          this.logger.log(
+            `Created ${userCreationResult.data[0].created_users} missing users`,
+          );
+        } catch (error) {
+          this.logger.error(
+            'Failed to create missing users:',
+            (error as Error).message,
+          );
+          // ไม่ throw error เพื่อไม่ให้ sync fail
+        }
+      }
+
       const duration = Date.now() - syncStartTime;
       this.logger.log(
         `Sync completed in ${duration}ms. Synced ${syncedCount} employees`,
@@ -164,6 +182,7 @@ export class EmployeeService {
             syncedCount,
             duration,
             errors: errors.length > 0 ? errors : undefined,
+            userCreation: userCreationResult?.data[0], // เพิ่มข้อมูลการสร้าง user
           },
         ],
       };

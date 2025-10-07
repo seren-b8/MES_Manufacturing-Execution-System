@@ -74,6 +74,15 @@ export class AuthController {
     return this.authService.changePassword(ChangePasswordDto, userId);
   }
 
+  @Post('create-all-missing')
+  @Roles(Role.ADMIN) // เฉพาะ admin เท่านั้น
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  async createAllMissingUsers(
+    @Body() body?: { defaultRole?: string },
+  ): Promise<ResponseFormat<any>> {
+    return this.authService.createAllMissingUsers(body?.defaultRole);
+  }
+
   // @Delete('delete-users/:id')
   // @HttpCode(HttpStatus.OK)
   // @UseGuards(JwtAuthGuard, RolesGuard)

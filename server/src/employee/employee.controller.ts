@@ -70,7 +70,7 @@ export class EmployeeController {
     return this.employeeSyncService.createTempEmpolyee(createTempEmployeeDto);
   }
 
-  @Cron('0 * * * *', {
+  @Cron('0 */6 * * *', {
     name: 'save-hourly-oee',
     timeZone: 'Asia/Bangkok',
   })

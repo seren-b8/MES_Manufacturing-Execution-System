@@ -81,6 +81,9 @@ export class SapOrderService {
               ,[PlanTargetDay]
               ,[Show_Job]
               ,[LogDate]
+              ,[GrossWeight]
+              ,[NetWeight]
+              ,[WeightUnit]
         FROM [SNC-SAP].[dbo].[IIOT_B8_OperationSlip]`;
       const sqlData = await this.sqlService.query(query);
 
@@ -123,6 +126,9 @@ export class SapOrderService {
           plan_target_day: this.convertToNumber(item.PlanTargetDay),
           show_job: this.convertToNumber(item.Show_Job),
           log_date: logDate,
+          gross_weight: this.convertToNumber(item.GrossWeight),
+          net_weight: this.convertToNumber(item.NetWeight),
+          weight_unit: item.WeightUnit,
           condition_amount: null,
           assign_stage: false,
           sql_active: true,
