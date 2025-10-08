@@ -145,7 +145,7 @@ export class CoProductService {
       const machine = await this.machineInfoModel.findOne({
         machine_number: createCoProductDto.machine_number,
       });
-      if (createCoProductDto.machine_number && machine.printer_id) {
+      if (createCoProductDto.machine_number && machine?.printer_id) {
         const label = await this.generateLabel([coProductRecord]);
 
         await this.labelService.printLabel(

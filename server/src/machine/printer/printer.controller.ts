@@ -76,9 +76,9 @@ export class PrinterDevicesController {
     return this.printerDevicesService.findAll();
   }
 
-  // @Cron(CronExpression.EVERY_10_SECONDS)
-  // checkPrinterStatusCron() {
-  //   // console.log('Checking printer status...');
-  //   return this.printerDevicesService.updateAllPrintersStatus();
-  // }
+  @Cron('*/2 * * * *')
+  checkPrinterStatusCron() {
+    // console.log('Checking printer status...');
+    return this.printerDevicesService.updateAllPrintersStatus();
+  }
 }

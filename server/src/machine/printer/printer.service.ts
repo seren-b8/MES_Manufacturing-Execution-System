@@ -18,34 +18,62 @@ export class PrinterDevicesService {
     private readonly printerDeviceModel: Model<PrinterDevice>,
   ) {}
 
-  private async pingPrinter(ip: string): Promise<boolean> {
+  // private async pingPrinter(ip: string): Promise<boolean> {
+  //   return new Promise((resolve) => {
+  //     // console.log(`Checking printer at ${ip}...`);
+
+  //     const { exec } = require('child_process');
+  //     const isWindows = process.platform === 'win32';
+
+  //     // Command is different between Windows and Unix-based systems
+  //     const command = isWindows
+  //       ? `ping -n 1 -w 3000 ${ip}` // Windows: 1 packet, 3 second timeout
+  //       : `ping -c 1 -W 3 ${ip}`; // Unix/Linux: 1 packet, 3 second timeout
+
+  //     exec(command, (error, stdout, stderr) => {
+  //       if (error) {
+  //         console.log(`Could not ping ${ip}: ${error.message}`);
+  //         resolve(false);
+  //         return;
+  //       }
+
+  //       if (stderr) {
+  //         console.log(`Error output for ${ip}: ${stderr}`);
+  //         resolve(false);
+  //         return;
+  //       }
+
+  //       console.log(`Ping successful for ${ip}`);
+  //       resolve(true);
+  //     });
+  //   });
+  // }
+
+  private async checkPrinterConnection(
+    ip: string,
+    port: number = 8000,
+  ): Promise<boolean> {
     return new Promise((resolve) => {
-      // console.log(`Checking printer at ${ip}...`);
+      const net = require('net');
+      const socket = new net.Socket();
+      const timeout = 3000;
 
-      const { exec } = require('child_process');
-      const isWindows = process.platform === 'win32';
-
-      // Command is different between Windows and Unix-based systems
-      const command = isWindows
-        ? `ping -n 1 -w 3000 ${ip}` // Windows: 1 packet, 3 second timeout
-        : `ping -c 1 -W 3 ${ip}`; // Unix/Linux: 1 packet, 3 second timeout
-
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.log(`Could not ping ${ip}: ${error.message}`);
-          resolve(false);
-          return;
-        }
-
-        if (stderr) {
-          console.log(`Error output for ${ip}: ${stderr}`);
-          resolve(false);
-          return;
-        }
-
-        console.log(`Ping successful for ${ip}`);
+      socket.setTimeout(timeout);
+      socket.on('connect', () => {
+        socket.destroy();
         resolve(true);
       });
+
+      socket.on('timeout', () => {
+        socket.destroy();
+        resolve(false);
+      });
+
+      socket.on('error', () => {
+        resolve(false);
+      });
+
+      socket.connect(port, ip);
     });
   }
 
@@ -274,11 +302,11 @@ export class PrinterDevicesService {
 
       try {
         // ส่ง ping request ไปที่เครื่องปริ้น
-        const isOnline = await this.pingPrinter(printer.ip_device);
+        const isOnline = await this.checkPrinterConnection(printer.ip_device);
 
         // อัพเดทสถานะเครื่องปริ้น
         const oldStatus = printer.status;
-        printer.status = isOnline ? 'active' : 'inactive';
+        printer.status = isOnline ? 'active' : 'active';
 
         // บันทึกเฉพาะเมื่อมีการเปลี่ยนแปลงสถานะ
         if (oldStatus !== printer.status) {
@@ -371,12 +399,16 @@ export class PrinterDevicesService {
         printers.map(async (printer) => {
           try {
             // ส่ง ping request ไปที่เครื่องปริ้น
-            const isOnline = await this.pingPrinter(printer.ip_device);
+            const isOnline = await this.checkPrinterConnection(
+              printer.ip_device,
+            );
+
+            // console.log(printer.ip_device + ' isOnline : ' + isOnline);
 
             // ตรวจสอบการเปลี่ยนแปลงสถานะ
             const oldStatus = printer.status;
 
-            const newStatus = isOnline ? 'active' : 'active'; //inactive
+            const newStatus = isOnline ? 'active' : 'inactive'; //inactive
 
             // บันทึกเฉพาะเมื่อมีการเปลี่ยนแปลงสถานะ
             if (oldStatus !== newStatus) {
