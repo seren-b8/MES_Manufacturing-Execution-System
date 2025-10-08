@@ -55,17 +55,6 @@ export class MaterialController {
   }
 
   /**
-   * Get material by material number
-   * @route GET /materials/by-number/:materialNumber
-   */
-  @Get('by-number/:materialNumber')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  @HttpCode(HttpStatus.OK)
-  async findByMaterialNumber(@Param('materialNumber') materialNumber: string) {
-    return this.materialService.findByMaterialNumber(materialNumber);
-  }
-
-  /**
    * Get stock breakdown by location for a material
    * @route GET /materials/:materialNumber/stock
    */
@@ -133,14 +122,9 @@ export class MaterialController {
     };
   }
 
-  /**
-   * Get material detail by ID
-   * @route GET /materials/:id
-   */
-  @Get(':id')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  @HttpCode(HttpStatus.OK)
-  async findOne(@Param('id') id: string) {
-    return this.materialService.findOne(id);
+  @Delete('dev/clear-stock')
+  @Roles(Role.ADMIN) // เฉพาะ Admin เท่านั้น
+  async clearAllStock() {
+    return this.materialService.clearAllStock();
   }
 }

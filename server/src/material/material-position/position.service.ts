@@ -27,29 +27,107 @@ export class PositionService {
     locationCode?: string,
   ): Promise<ResponseFormat<MaterialPosition>> {
     try {
-      const filter: any = {};
+      const pipeline: any[] = [];
 
+      // 1. Early filtering - ทำให้เร็วที่สุดโดยกรองข้อมูลก่อน
       if (locationCode) {
         const location = await this.locationModel
           .findOne({ location_code: locationCode })
+          .select('_id')
+          .lean()
           .exec();
 
         if (!location) {
           throw new NotFoundException(`Location ${locationCode} not found`);
         }
-        filter.location_id = location._id;
+
+        pipeline.push({
+          $match: { location_id: location._id },
+        });
       }
 
+      // 2. Lookup location (เฉพาะ field ที่ต้องการ)
+      pipeline.push({
+        $lookup: {
+          from: 'material_location',
+          localField: 'location_id',
+          foreignField: '_id',
+          as: 'location',
+          pipeline: [
+            {
+              $project: {
+                location_name: 1,
+                location_code: 1,
+                location_type: 1,
+              },
+            },
+          ],
+        },
+      });
+
+      // 3. Lookup materials (optimized subpipeline)
+      pipeline.push({
+        $lookup: {
+          from: 'material',
+          let: { posId: '$_id' },
+          pipeline: [
+            // Match เฉพาะ material ที่มี stock ใน position นี้
+            {
+              $match: {
+                $expr: {
+                  $in: ['$$posId', '$current_stock.position_id'],
+                },
+              },
+            },
+            // Unwind และ filter ใน 1 step
+            { $unwind: '$current_stock' },
+            {
+              $match: {
+                $expr: { $eq: ['$$posId', '$current_stock.position_id'] },
+              },
+            },
+            // Project เฉพาะข้อมูลที่ต้องการ
+            {
+              $project: {
+                material_number: 1,
+                material_description: 1,
+                stock_quantity: '$current_stock.stock_quantity',
+                lot_number: '$current_stock.lot_number',
+              },
+            },
+          ],
+          as: 'materials',
+        },
+      });
+
+      // 4. Reshape output
+      pipeline.push({
+        $project: {
+          location_id: { $arrayElemAt: ['$location', 0] },
+          position_code: 1,
+          shelf_code: 1,
+          row: 1,
+          column: 1,
+          is_occupied: 1,
+          max_capacity: 1,
+          materials: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      });
+
+      // 5. Sort
+      pipeline.push({ $sort: { position_code: 1 } });
+
       const positions = await this.positionModel
-        .find(filter)
-        .sort({ position_code: 1 })
-        .populate('location_id', 'location_name location_code location_type')
+        .aggregate(pipeline)
+        .allowDiskUse(true) // For large datasets
         .exec();
 
       return {
         status: 'success',
         message: `Found ${positions.length} positions`,
-        data: positions,
+        data: positions as any,
       };
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
@@ -101,11 +179,7 @@ export class PositionService {
     try {
       const position = await this.positionModel
         .findOne({ position_code: positionCode })
-        .populate('location_id', 'location_name location_code location_type')
-        .populate(
-          'current_materials.material_id',
-          'material_number material_description',
-        )
+        .populate('location_id', 'location_name location_code location_type') // ลบ .populate('current_materials.material_id', 'material_number material_description') ออกไป
         .exec();
 
       if (!position) {

@@ -16,6 +16,11 @@ import {
 import { Material, MaterialDocument } from 'src/schema/material.schema';
 import { MaterialStockDto } from './dto/material-stock-response.dto';
 import { QueryMaterialDto } from './dto/query-material.dto';
+import {
+  MaterialTransaction,
+  MaterialTransactionDocument,
+} from 'src/schema/material-transaction.schema';
+import { MaterialLocation } from 'src/schema/material-location.schema';
 
 @Injectable()
 export class MaterialService {
@@ -24,6 +29,10 @@ export class MaterialService {
     private readonly materialModel: Model<MaterialDocument>,
     @InjectModel(MaterialPosition.name)
     private readonly positionModel: Model<MaterialPositionDocument>,
+    @InjectModel(MaterialTransaction.name)
+    private transactionModel: Model<MaterialTransactionDocument>,
+    @InjectModel(MaterialLocation.name)
+    private readonly locationModel: Model<MaterialLocation>,
     private readonly locationService: LocationService,
   ) {}
 
@@ -32,13 +41,17 @@ export class MaterialService {
       const {
         material_number,
         material_description,
+        unit_of_measurement,
         location_code,
+        lot_number,
         has_stock,
-        page = 1,
-        limit = 50,
+        min_stock,
+        max_stock,
         sort_by = 'material_number',
         sort_order = 'asc',
       } = query;
+      const page = Number(query.page) || 1;
+      const limit = Number(query.limit) || 50;
 
       // Build filter
       const filter: any = {};
@@ -54,8 +67,27 @@ export class MaterialService {
         };
       }
 
+      if (unit_of_measurement) {
+        filter.unit_of_measurement = {
+          $regex: unit_of_measurement,
+          $options: 'i',
+        };
+      }
+
       if (location_code) {
-        filter['current_stock.location_id'] = location_code;
+        const location = await this.locationModel.findOne({
+          location_code,
+        });
+        if (location) {
+          filter['current_stock.location_id'] = location._id;
+        }
+      }
+
+      if (lot_number) {
+        filter['current_stock.lot_number'] = {
+          $regex: lot_number,
+          $options: 'i',
+        };
       }
 
       if (has_stock !== undefined) {
@@ -69,99 +101,66 @@ export class MaterialService {
         }
       }
 
-      // Sort
-      const sortOrder = sort_order === 'asc' ? 1 : -1;
-      const sortObj: any = { [sort_by]: sortOrder };
+      // Stock range filter (aggregation needed)
+      if (min_stock !== undefined || max_stock !== undefined) {
+        const stockFilter: any = {};
+        if (min_stock !== undefined) stockFilter.$gte = min_stock;
+        if (max_stock !== undefined) stockFilter.$lte = max_stock;
 
-      // Execute query with pagination
+        // Use aggregation for total stock calculation
+        const materialsWithStock = await this.materialModel.aggregate([
+          { $match: filter },
+          {
+            $addFields: {
+              total_stock: {
+                $sum: '$current_stock.stock_quantity',
+              },
+            },
+          },
+          { $match: { total_stock: stockFilter } },
+        ]);
+
+        filter._id = { $in: materialsWithStock.map((m) => m._id) };
+      }
+
+      // Sort & Pagination
+      const sortOrderNum = sort_order === 'asc' ? 1 : -1;
+      const sortObj: any = { [sort_by]: sortOrderNum };
       const skip = (page - 1) * limit;
-      const materials = await this.materialModel
-        .find(filter)
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limit)
-        .populate('current_stock.location_id', 'location_name location_code')
-        .populate('current_stock.position_id', 'position_code')
-        .exec();
 
-      const total = await this.materialModel.countDocuments(filter);
+      // Execute query
+      const [materials, total] = await Promise.all([
+        this.materialModel
+          .find(filter)
+          .sort(sortObj)
+          .skip(skip)
+          .limit(limit)
+          .populate('current_stock.location_id', 'location_name location_code')
+          .populate('current_stock.position_id', 'position_code')
+          .exec(),
+        this.materialModel.countDocuments(filter),
+      ]);
+
+      // Calculate pagination metadata
+      const total_pages = Math.ceil(total / limit);
 
       return {
         status: 'success',
-        message: `Found ${materials.length} materials (Total: ${total})`,
+        message: `Found ${materials.length} materials`,
         data: materials,
+        pagination: {
+          total: total,
+          page: page,
+          limit: limit,
+          totalPages: total_pages,
+        },
       };
     } catch (error) {
       throw new BadRequestException({
         status: 'error',
         message: `Failed to fetch materials: ${(error as Error).message}`,
         data: [],
-      });
-    }
-  }
-
-  async findOne(materialId: string): Promise<ResponseFormat<Material>> {
-    try {
-      if (!Types.ObjectId.isValid(materialId)) {
-        throw new BadRequestException('Invalid material ID format');
-      }
-
-      const material = await this.materialModel
-        .findById(materialId)
-        .populate(
-          'current_stock.location_id',
-          'location_name location_code location_type',
-        )
-        .populate('current_stock.position_id', 'position_code shelf_code')
-        .exec();
-
-      if (!material) {
-        throw new NotFoundException(`Material with ID ${materialId} not found`);
-      }
-
-      return {
-        status: 'success',
-        message: 'Material retrieved successfully',
-        data: [material],
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      throw new BadRequestException({
-        status: 'error',
-        message: `Failed to fetch material: ${(error as Error).message}`,
-        data: [],
-      });
-    }
-  }
-
-  async findByMaterialNumber(
-    materialNumber: string,
-  ): Promise<ResponseFormat<Material>> {
-    try {
-      const material = await this.materialModel
-        .findOne({ material_number: materialNumber })
-        .populate(
-          'current_stock.location_id',
-          'location_name location_code location_type',
-        )
-        .populate('current_stock.position_id', 'position_code')
-        .exec();
-
-      if (!material) {
-        throw new NotFoundException(`Material ${materialNumber} not found`);
-      }
-
-      return {
-        status: 'success',
-        message: 'Material retrieved successfully',
-        data: [material],
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      throw new BadRequestException({
-        status: 'error',
-        message: `Failed to fetch material: ${(error as Error).message}`,
-        data: [],
+        pagination: null,
       });
     }
   }
@@ -494,6 +493,43 @@ export class MaterialService {
     }
 
     return material;
+  }
+
+  async clearAllStock(): Promise<ResponseFormat<any>> {
+    try {
+      // 1. Clear all current_stock
+      const materialResult = await this.materialModel
+        .updateMany({}, { $set: { current_stock: [] } })
+        .exec();
+
+      // 2. Delete all transactions
+      const transactionResult = await this.transactionModel
+        .deleteMany({})
+        .exec();
+
+      // 3. Reset all positions to not occupied
+      const positionResult = await this.positionModel
+        .updateMany({}, { $set: { is_occupied: false } })
+        .exec();
+
+      return {
+        status: 'success',
+        message: 'All stock cleared successfully',
+        data: [
+          {
+            materials_updated: materialResult.modifiedCount,
+            transactions_deleted: transactionResult.deletedCount,
+            positions_reset: positionResult.modifiedCount,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new BadRequestException({
+        status: 'error',
+        message: `Failed to clear stock: ${(error as Error).message}`,
+        data: [],
+      });
+    }
   }
 
   private calculateTotalStock(material: Material): number {
