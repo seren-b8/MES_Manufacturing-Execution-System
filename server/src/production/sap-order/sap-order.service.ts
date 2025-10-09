@@ -132,7 +132,7 @@ export class SapOrderService {
           condition_amount: null,
           assign_stage: false,
           sql_active: true,
-          sql_last_sync: new Date(), // วันที่ที่ทำการซิงค์ล่าสุด
+          sql_last_sync: moment().tz('Asia/Bangkok').toDate(), // วันที่ที่ทำการซิงค์ล่าสุด
         };
       });
 
@@ -161,7 +161,7 @@ export class SapOrderService {
           {
             $set: {
               sql_active: false,
-              sql_inactive_date: new Date(),
+              sql_inactive_date: moment().tz('Asia/Bangkok').toDate(),
             },
           },
         );
@@ -375,6 +375,17 @@ export class SapOrderService {
         message: 'Failed to create product :' + (error as Error).message,
         data: [],
       };
+    }
+  }
+  // หรือถ้าต้องการ "activate" order
+  async activateOrder(): Promise<void> {
+    try {
+      await this.productionOrderModel.updateMany(
+        { operation_short_text: 'OEE_RUN_TEST' },
+        { $set: { sql_active: true } },
+      );
+    } catch (error) {
+      console.error('Error activating order:', error);
     }
   }
 }

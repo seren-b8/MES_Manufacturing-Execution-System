@@ -23,12 +23,20 @@ export class SqlOrderController {
 
   @Cron('15 * * * *')
   async syncProductionOrdersCron() {
-    const response = await this.sqlOrderService.syncProductionOrders();
-    if (response.status == 'success') {
-      const autoCreatePartRes = this.sqlOrderService.autoCreateNewPart();
-      console.log(autoCreatePartRes);
-      return response;
+    try {
+      console.log('Starting production order sync...');
+
+      const response = await this.sqlOrderService.syncProductionOrders();
+
+      if (response.status === 'success') {
+        await this.sqlOrderService.activateOrder();
+        await this.sqlOrderService.autoCreateNewPart();
+        console.log('Sync completed successfully');
+      } else {
+        console.log('Sync failed:', response.message);
+      }
+    } catch (error) {
+      console.error('Cron sync error:', error);
     }
-    return response;
   }
 }
