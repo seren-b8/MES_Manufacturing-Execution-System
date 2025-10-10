@@ -196,54 +196,136 @@ export class LabelService {
     }
   }
 
-  async reprintLabel(originalJobId: string): Promise<ResponseFormat<LabelJob>> {
+  async reprintLabel(
+    jobId: string,
+    machineNumber: string,
+  ): Promise<ResponseFormat<LabelJob>> {
     try {
-      const originalJob = await this.labelJobModel.findById(originalJobId);
+      const originalJob = await this.labelJobModel
+        .findById(jobId)
+        .populate('printer_id')
+        .populate('production_record_ids')
+        .populate('co_product_record_ids')
+        .exec();
+
       if (!originalJob) {
         throw new Error('Original label job not found');
       }
 
-      // ตรวจสอบว่า original job พิมพ์แล้วหรือยัง
-      if (originalJob.status !== 'printed') {
-        throw new Error('Original job must be printed before reprint');
+      const machine = await this.machineInfoModel
+        .findOne({ machine_number: machineNumber })
+        .populate('printer_id')
+        .exec();
+
+      const printerIp =
+        (machine &&
+        typeof machine.printer_id === 'object' &&
+        'ip_device' in machine.printer_id
+          ? (machine.printer_id as any).ip_device
+          : undefined) ||
+        (originalJob &&
+        typeof originalJob.printer_id === 'object' &&
+        'ip_device' in originalJob.printer_id
+          ? (originalJob.printer_id as any).ip_device
+          : undefined);
+
+      if (!printerIp) {
+        throw new Error('Printer IP not found');
       }
 
-      // สร้าง reprint job (ใช้ไฟล์เดิม)
-      const reprintJob = await this.labelJobModel.create({
-        production_record_ids: (originalJob.production_record_ids || []).map(
-          (id) => toObjectId(id),
-        ),
-        co_product_record_ids: (originalJob.co_product_record_ids || []).map(
-          (id) => toObjectId(id),
-        ),
+      // สร้าง reprint job ใหม่
+      const reprintJob = new this.labelJobModel({
+        production_record_ids: originalJob.production_record_ids,
+        co_product_record_ids: originalJob.co_product_record_ids,
         label_type: originalJob.label_type,
-        printer_id: toObjectId(originalJob.printer_id),
+        printer_id: machine?.printer_id || originalJob.printer_id,
         position_mapping: originalJob.position_mapping,
-        image_path: originalJob.image_path, // ใช้ไฟล์เดิม
-        image_size: originalJob.image_size,
-        copies: originalJob.copies,
-        status: 'generated',
-        is_reprint: true,
+        image_path: originalJob.image_path,
+        status: 'sent',
         original_job_id: originalJob._id,
-        reprint_count: 1,
+        is_reprint: true,
+        reprint_count: (originalJob.reprint_count || 0) + 1,
       });
+
+      await reprintJob.save();
+
+      // ส่งไปปริ้น
+      await this.sendToPrinter(reprintJob, printerIp);
+
+      // อัพเดทสถานะ
+      reprintJob.status = 'printed';
+      reprintJob.printed_at = new Date();
+      await reprintJob.save();
+
+      // อัพเดท reprint_count ของ original
+      originalJob.reprint_count = (originalJob.reprint_count || 0) + 1;
+      await originalJob.save();
 
       return {
         status: 'success',
-        message: 'Reprint job created successfully',
+        message: `Label reprinted successfully (reprint #${reprintJob.reprint_count})`,
         data: [reprintJob],
       };
     } catch (error) {
       throw new HttpException(
         {
           status: 'error',
-          message: `Failed to create reprint job: ${(error as Error).message}`,
+          message: `Failed to reprint label: ${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
+
+  // async reprintLabel(originalJobId: string): Promise<ResponseFormat<LabelJob>> {
+  //   try {
+  //     const originalJob = await this.labelJobModel.findById(originalJobId);
+  //     if (!originalJob) {
+  //       throw new Error('Original label job not found');
+  //     }
+
+  //     // ตรวจสอบว่า original job พิมพ์แล้วหรือยัง
+  //     if (originalJob.status !== 'printed') {
+  //       throw new Error('Original job must be printed before reprint');
+  //     }
+
+  //     // สร้าง reprint job (ใช้ไฟล์เดิม)
+  //     const reprintJob = await this.labelJobModel.create({
+  //       production_record_ids: (originalJob.production_record_ids || []).map(
+  //         (id) => toObjectId(id),
+  //       ),
+  //       co_product_record_ids: (originalJob.co_product_record_ids || []).map(
+  //         (id) => toObjectId(id),
+  //       ),
+  //       label_type: originalJob.label_type,
+  //       printer_id: toObjectId(originalJob.printer_id),
+  //       position_mapping: originalJob.position_mapping,
+  //       image_path: originalJob.image_path, // ใช้ไฟล์เดิม
+  //       image_size: originalJob.image_size,
+  //       copies: originalJob.copies,
+  //       status: 'generated',
+  //       is_reprint: true,
+  //       original_job_id: originalJob._id,
+  //       reprint_count: 1,
+  //     });
+
+  //     return {
+  //       status: 'success',
+  //       message: 'Reprint job created successfully',
+  //       data: [reprintJob],
+  //     };
+  //   } catch (error) {
+  //     throw new HttpException(
+  //       {
+  //         status: 'error',
+  //         message: `Failed to create reprint job: ${(error as Error).message}`,
+  //         data: [],
+  //       },
+  //       HttpStatus.INTERNAL_SERVER_ERROR,
+  //     );
+  //   }
+  // }
 
   async getLabelJobs(
     status?: string,

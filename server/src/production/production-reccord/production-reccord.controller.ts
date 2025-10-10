@@ -83,6 +83,7 @@ export class ProductionRecordController {
 
   // Controller
   @Post('create-batch')
+  @UseInterceptors(new TimeoutInterceptor(20000))
   @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
   async createBatch(
     @Body()
@@ -111,6 +112,23 @@ export class ProductionRecordController {
       createData.create_production_record,
       userId,
       createData.machine_number,
+    );
+  }
+
+  @Post('reprint-label')
+  @UseInterceptors(new TimeoutInterceptor(20000))
+  @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
+  async reprintLabels(
+    @Body()
+    printData: {
+      production_record_id: string; // Array of Production Record IDs
+      machine_number: string; // Machine number for printing
+    },
+    @GetUserId() userId: string,
+  ): Promise<ResponseFormat<ProductionRecord>> {
+    return this.productionRecordService.reprintByRecordId(
+      printData.production_record_id,
+      printData.machine_number,
     );
   }
 

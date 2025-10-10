@@ -54,6 +54,7 @@ import { LabelService } from 'src/label/label.service';
 import * as _ from 'lodash';
 import { ProductionRecordQueryDto } from '../dto/production-reccord-query.dto';
 import { machine } from 'os';
+import { LabelJob } from 'src/schema/label-job.shema';
 @Injectable()
 export class ProductionRecordService {
   constructor(
@@ -92,6 +93,8 @@ export class ProductionRecordService {
 
     @InjectModel(PrinterDevice.name)
     private printerDeviecModel: Model<PrinterDevice>,
+
+    @InjectModel(LabelJob.name) private labelJobModel: Model<LabelJob>,
 
     private AssignEmployeeService: AssignEmployeeService,
 
@@ -2990,6 +2993,25 @@ export class ProductionRecordService {
         throw new Error('No records were created');
       }
 
+      const populatedRecords = await this.productionRecordModel.populate(
+        createdRecords,
+        [
+          {
+            path: 'assign_order_id',
+            populate: {
+              path: 'production_order_id',
+              select: 'material_number',
+            },
+          },
+        ],
+      );
+
+      // เรียงตาม material_number
+      const sortedRecords = this.sortByMaterialNumber(populatedRecords);
+
+      // สร้าง label
+      labelResult = await this.generateLabel(sortedRecords);
+
       // 3. สร้างและพิมพ์ label (ถ้ามี machine และ printer)
       if (machineNumber) {
         const machine = await this.machineInfoModel.findOne({
@@ -2999,24 +3021,6 @@ export class ProductionRecordService {
         if (machine?.printer_id) {
           try {
             // Populate records
-            const populatedRecords = await this.productionRecordModel.populate(
-              createdRecords,
-              [
-                {
-                  path: 'assign_order_id',
-                  populate: {
-                    path: 'production_order_id',
-                    select: 'material_number',
-                  },
-                },
-              ],
-            );
-
-            // เรียงตาม material_number
-            const sortedRecords = this.sortByMaterialNumber(populatedRecords);
-
-            // สร้าง label
-            labelResult = await this.generateLabel(sortedRecords);
 
             if (labelResult.status === 'success') {
               // พิมพ์ label
@@ -3032,14 +3036,9 @@ export class ProductionRecordService {
         }
       }
 
-      // 4. Return ตามสถานะ
-      const message = labelCreated
-        ? `${createdRecords.length} records created with label`
-        : `${createdRecords.length} records created without label`;
-
       return {
         status: 'success',
-        message,
+        message: `${createdRecords.length} records created successfully.`,
         data: labelCreated ? labelResult.data : createdRecords,
       };
     } catch (error) {
@@ -3077,8 +3076,6 @@ export class ProductionRecordService {
       copies: 1,
     };
 
-    // console.log('Generating label with DTO:', labelDto);
-
     if (records.length === 2) {
       labelDto.position_mapping = {
         position_1: { type: 'main', record_id: records[0]._id.toString() },
@@ -3113,6 +3110,54 @@ export class ProductionRecordService {
       return defaultPrinter._id.toString();
     } catch (error) {
       throw new Error('Cannot find any printer in system');
+    }
+  }
+
+  async reprintByRecordId(
+    recordId: string,
+    machineNumber: string,
+  ): Promise<ResponseFormat<any>> {
+    try {
+      const record = await this.productionRecordModel.findById(recordId);
+      if (!record) {
+        throw new Error(`Production Record with ID ${recordId} not found.`);
+      }
+
+      const latestLabel = await this.labelJobModel
+        .findOne({
+          production_record_ids: toObjectId(recordId),
+        })
+        .sort({ createdAt: -1 }) // เรียงจากล่าสุด
+        .exec();
+
+      if (machineNumber && latestLabel) {
+        const machine = await this.machineInfoModel.findOne({
+          machine_number: machineNumber,
+        });
+
+        if (machine?.printer_id) {
+          try {
+            await this.labelService.reprintLabel(
+              String(latestLabel._id),
+              machineNumber,
+            );
+          } catch (printError) {}
+        }
+      }
+
+      return {
+        status: 'success',
+        message: 'Label reprint successful',
+        data: [
+          {
+            recordId: recordId,
+            labelId: latestLabel?._id, // อาจเป็น null ถ้าไม่พบฉลาก
+            machineNumber: machineNumber,
+          },
+        ],
+      };
+    } catch (error) {
+      return this.handleServiceError(error);
     }
   }
 

@@ -58,11 +58,11 @@ export class LabelController {
     );
   }
 
-  @Post(':id/reprint')
-  // @Roles(Role.ADMIN, Role.OPERATOR)
-  async reprintLabel(@Param('id') originalJobId: string) {
-    return this.labelService.reprintLabel(originalJobId);
-  }
+  // @Post(':id/reprint')
+  // // @Roles(Role.ADMIN, Role.OPERATOR)
+  // async reprintLabel(@Param('id') originalJobId: string) {
+  //   return this.labelService.reprintLabel(originalJobId);
+  // }
 
   @Get('jobs')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
