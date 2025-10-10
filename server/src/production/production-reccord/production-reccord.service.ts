@@ -17,6 +17,7 @@ import {
   UpdateProductionRecordDto,
 } from '../dto/production-reccord.dto';
 import {
+  NotGoodSummary,
   ProductionDailySummary,
   ProductionStageOverview,
   ProductionStageSummary,
@@ -485,32 +486,47 @@ export class ProductionRecordService {
     queryDto: ProductionRecordQueryDto,
   ): Promise<ResponseFormat<ProductionRecord>> {
     try {
-      const pageNum = parseInt(queryDto.page?.toString()) || 1; // Limit to 1000 for consistency with Old's max limit
+      const pageNum = parseInt(queryDto.page?.toString()) || 1;
       const limitNum = Math.min(
         parseInt(queryDto.limit?.toString()) || 10,
-        1000, // Changed to 1000 to match Old's logic
+        1000,
       );
-      const skip = (pageNum - 1) * limitNum; // Build base query
+      const skip = (pageNum - 1) * limitNum;
 
       const baseQuery = this.buildQuery(queryDto);
 
       const pipeline: PipelineStage[] = [
-        { $match: baseQuery }, // --- 1. Lookup assign_order (with nested production_order lookup) (Style Old)
+        { $match: baseQuery },
 
+        // --- 1. Lookup assign_order
         {
           $lookup: {
             from: 'assign_order',
             localField: 'assign_order_id',
             foreignField: '_id',
-            as: 'assign_order_id', // <-- Retain original ID name
+            as: 'assign_order_id',
             pipeline: [
+              // Filter machine_number ก่อน lookup ซ้อน
+              ...(queryDto.machine_number
+                ? [{ $match: { machine_number: queryDto.machine_number } }]
+                : []),
               {
                 $lookup: {
                   from: 'production_order',
                   localField: 'production_order_id',
                   foreignField: '_id',
-                  as: 'production_order_id', // <-- Retain original ID name
+                  as: 'production_order_id',
                   pipeline: [
+                    // Filter material_number ก่อน project
+                    ...(queryDto.material_number
+                      ? [
+                          {
+                            $match: {
+                              material_number: queryDto.material_number,
+                            },
+                          },
+                        ]
+                      : []),
                     {
                       $project: {
                         order_id: 1,
@@ -531,32 +547,46 @@ export class ProductionRecordService {
               },
             ],
           },
-        }, // --- 2. Lookup master_not_good (Style Old - name change)
+        },
 
+        // --- 2. Lookup master_not_good
         {
           $lookup: {
             from: 'master_not_good',
             localField: 'master_not_good_id',
             foreignField: '_id',
-            as: 'master_not_good_lookup', // <-- Temp name
+            as: 'master_not_good_lookup',
             pipeline: [{ $project: { case_english: 1, case_thai: 1 } }],
           },
-        }, // --- 3. Lookup assign_employee_ids (with nested user lookup) (Style Old)
+        },
 
+        // --- 3. Lookup assign_employee_ids
         {
           $lookup: {
             from: 'assign_employee',
             localField: 'assign_employee_ids',
             foreignField: '_id',
-            as: 'assign_employee_ids', // <-- Retain original ID name (as array of objects)
+            as: 'assign_employee_ids',
             pipeline: [
               {
                 $lookup: {
                   from: 'users',
                   localField: 'user_id',
                   foreignField: '_id',
-                  as: 'user_id', // <-- Retain original ID name
-                  pipeline: [{ $project: { employee_id: 1 } }],
+                  as: 'user_id',
+                  pipeline: [
+                    // Filter employee_id
+                    ...(queryDto.employee_id
+                      ? [
+                          {
+                            $match: {
+                              employee_id: queryDto.employee_id,
+                            },
+                          },
+                        ]
+                      : []),
+                    { $project: { employee_id: 1 } },
+                  ],
                 },
               },
               {
@@ -564,42 +594,47 @@ export class ProductionRecordService {
                   user_id: { $arrayElemAt: ['$user_id', 0] },
                 },
               },
-              // { $project: { _id: 1, user_id: 1 } },
+              // กรอง assign_employee ที่ไม่มี user_id (กรณี filter employee_id)
+              ...(queryDto.employee_id
+                ? [{ $match: { 'user_id.employee_id': { $exists: true } } }]
+                : []),
             ],
           },
-        }, // --- 4. Lookup confirmed_by (Style Old - name change)
+        },
 
+        // --- 4. Lookup confirmed_by
         {
           $lookup: {
             from: 'users',
             localField: 'confirmed_by',
             foreignField: '_id',
-            as: 'confirmed_by_user', // <-- Temp name
+            as: 'confirmed_by_user',
             pipeline: [{ $project: { employee_id: 1 } }],
           },
-        }, // --- 5. Apply filters from QueryDto on LOOKUP fields (Must be after lookups)
+        },
 
+        // --- 5. Filter records ที่ไม่มี assign_order หรือ production_order (หลัง filter)
         {
           $match: {
-            // Filter machine_number (access nested field in assign_order_id array - requires $elemMatch)
-            ...(queryDto.machine_number && {
-              assign_order_id: {
-                $elemMatch: { machine_number: queryDto.machine_number },
-              },
-            }), // Filter material_number (access nested field inside assign_order_id.production_order_id array - complex, might need more specific unwind/lookup before or adjust query)
-            ...(queryDto.material_number && {
-              'assign_order_id.production_order_id.material_number':
-                queryDto.material_number,
-            }), // Employee filter is complex in this structure, using $lookup and $match is better, but since Old doesn't do this, we ignore the New's complex filter for format consistency, or you can simplify it before $facet.
+            assign_order_id: { $ne: [] }, // มี assign_order
+            ...(queryDto.employee_id && {
+              assign_employee_ids: { $ne: [] }, // มี employee ที่ match
+            }),
           },
-        }, // --- 6. Full-text search (Must be after lookups for nested fields)
+        },
 
+        // --- 6. Full-text search
         ...(queryDto.search
           ? [
               {
                 $match: {
                   $or: [
-                    { serial_code: { $regex: queryDto.search, $options: 'i' } },
+                    {
+                      serial_code: {
+                        $regex: queryDto.search.trim(),
+                        $options: 'i',
+                      },
+                    },
                     {
                       'assign_order_id.production_order_id.material_number': {
                         $regex: queryDto.search,
@@ -617,9 +652,9 @@ export class ProductionRecordService {
                 },
               },
             ]
-          : []), // --- 7. Apply Old's $addFields / $unset for final shape
-        // แปลง array fields ให้เป็น object
+          : []),
 
+        // --- 7. แปลง array เป็น object
         {
           $addFields: {
             master_not_good_id: {
@@ -628,13 +663,13 @@ export class ProductionRecordService {
             assign_order_id: { $arrayElemAt: ['$assign_order_id', 0] },
             confirmed_by: { $arrayElemAt: ['$confirmed_by_user', 0] },
           },
-        }, // เอา field ที่ไม่ต้องการออก (temp names)
+        },
 
         {
           $unset: ['confirmed_by_user', 'master_not_good_lookup'],
         },
 
-        { $sort: { createdAt: -1 } }, // Count before pagination
+        { $sort: { createdAt: -1 } },
 
         {
           $facet: {
@@ -685,6 +720,11 @@ export class ProductionRecordService {
 
     if (queryDto.confirmation_status) {
       query.confirmation_status = queryDto.confirmation_status;
+    }
+
+    // ✅ เพิ่ม assign_order_id filter
+    if (queryDto.assign_order_id) {
+      query.assign_order_id = queryDto.assign_order_id;
     }
 
     // Date range
@@ -2574,8 +2614,6 @@ export class ProductionRecordService {
     return employeeIds || '-';
   }
 
-  // ผลลัพธ์: "EMP001, EMP002, EMP003"
-
   // Helper method สำหรับ validate print payload
   private validatePrintPayload(payload: PrintDto): void {
     const requiredFields = ['sap_no', 'quantity'];
@@ -3139,6 +3177,150 @@ export class ProductionRecordService {
       };
     } catch (error) {
       return this.handleServiceError(error);
+    }
+  }
+
+  async getNotGoodSummary(filters: {
+    assign_order_id?: string;
+    machine_number?: string;
+    production_date?: string;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<ResponseFormat<NotGoodSummary>> {
+    try {
+      const matchStage: any = {
+        is_not_good: true,
+        confirmation_status: { $ne: 'rejected' },
+      };
+
+      // Filter by assign_order_id
+      if (filters.assign_order_id) {
+        matchStage.assign_order_id = toObjectId(filters.assign_order_id);
+      }
+
+      // Filter by production_date
+      if (filters.production_date) {
+        const date = moment(filters.production_date)
+          .tz('Asia/Bangkok')
+          .startOf('day');
+        matchStage.production_date = date.toDate();
+      }
+
+      // Filter by date range
+      if (filters.start_date && filters.end_date) {
+        const startDate = moment(filters.start_date)
+          .tz('Asia/Bangkok')
+          .startOf('day');
+        const endDate = moment(filters.end_date)
+          .tz('Asia/Bangkok')
+          .endOf('day');
+        matchStage.production_date = {
+          $gte: startDate.toDate(),
+          $lte: endDate.toDate(),
+        };
+      }
+
+      const pipeline: any[] = [{ $match: matchStage }];
+
+      // Add machine_number filter if provided
+      if (filters.machine_number) {
+        pipeline.push(
+          {
+            $lookup: {
+              from: 'assign_order',
+              localField: 'assign_order_id',
+              foreignField: '_id',
+              as: 'assign_order_info',
+            },
+          },
+          { $unwind: '$assign_order_info' },
+          {
+            $match: {
+              'assign_order_info.machine_number': filters.machine_number,
+            },
+          },
+        );
+      }
+
+      // Continue with aggregation
+      pipeline.push(
+        {
+          $lookup: {
+            from: 'master_not_good',
+            localField: 'master_not_good_id',
+            foreignField: '_id',
+            as: 'not_good_info',
+          },
+        },
+        { $unwind: '$not_good_info' },
+        {
+          $group: {
+            _id: '$master_not_good_id',
+            case_code: { $first: '$not_good_info.case_code' },
+            case_english: { $first: '$not_good_info.case_english' },
+            case_thai: { $first: '$not_good_info.case_thai' },
+            count: { $sum: 1 },
+            total_quantity: { $sum: '$quantity' },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total_not_good: { $sum: '$count' },
+            total_quantity: { $sum: '$total_quantity' },
+            breakdown_by_type: {
+              $push: {
+                master_not_good_id: '$_id',
+                case_code: '$case_code',
+                case_english: '$case_english',
+                case_thai: '$case_thai',
+                count: '$count',
+                total_quantity: '$total_quantity',
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            total_not_good: 1,
+            total_quantity: 1,
+            breakdown_by_type: {
+              $sortArray: {
+                input: '$breakdown_by_type',
+                sortBy: { total_quantity: -1 },
+              },
+            },
+          },
+        },
+      );
+
+      const result = await this.productionRecordModel.aggregate(pipeline);
+
+      return {
+        status: 'success',
+        message: 'Not good summary retrieved successfully',
+        data:
+          result.length > 0
+            ? result
+            : [
+                {
+                  total_not_good: 0,
+                  total_quantity: 0,
+                  breakdown_by_type: [],
+                },
+              ],
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message:
+            (error as Error).message || 'Failed to retrieve not good summary',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

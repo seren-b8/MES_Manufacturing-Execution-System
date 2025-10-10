@@ -1,5 +1,6 @@
 // production-record-query.dto.ts
 import { IsOptional, IsString, IsEnum } from 'class-validator';
+import { Types } from 'mongoose';
 
 export class ProductionRecordQueryDto {
   @IsOptional()
@@ -9,6 +10,9 @@ export class ProductionRecordQueryDto {
   @IsOptional()
   @IsString()
   material_number?: string;
+
+  @IsOptional()
+  assign_order_id?: string | Types.ObjectId;
 
   // รับได้ทั้ง string และ boolean
   @IsOptional()

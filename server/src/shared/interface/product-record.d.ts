@@ -75,3 +75,16 @@ export interface ProductionStageOverview {
   ng_quantity: number; // จำนวนงานเสีย
   defect_rate: number; // อัตราความเสียหาย (เปอร์เซ็นต์)
 }
+
+export interface NotGoodSummary {
+  total_not_good: number;
+  breakdown_by_type: Array<{
+    master_not_good_id: string;
+    case_code: string;
+    case_english: string;
+    case_thai: string;
+    count: number;
+    total_quantity: number;
+  }>;
+  total_quantity: number;
+}

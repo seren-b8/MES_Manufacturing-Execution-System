@@ -45,6 +45,7 @@ import { MicroCacheInterceptor } from 'src/machine/interceptors/simple-cache.int
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 import { ProductionRecordQueryDto } from '../dto/production-reccord-query.dto';
 import { parseBooleanQuery, parseIntQuery } from 'src/shared/utils/query.utils';
+import { toObjectId } from 'src/shared/utils/type.utils';
 
 @Controller('production-records')
 export class ProductionRecordController {
@@ -127,7 +128,6 @@ export class ProductionRecordController {
   //!print-label
   @Post('print-label')
   @UseGuards(JwtAuthGuard)
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR) // Adjust roles as needed
   async printLabel(@Body() data: PrintRequestDto) {
     return this.productionRecordService.printLabel(data);
   }
@@ -188,9 +188,8 @@ export class ProductionRecordController {
     return await this.productionRecordService.create(createDto, userId);
   }
 
-  // production-record.controller.ts
-  // production-record.controller.ts
   @Get()
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(MicroCacheInterceptor, new TimeoutInterceptor(20000))
   async findAll(@Query() query: ProductionRecordQueryDto) {
     const transformedQuery: ProductionRecordQueryDto = {
@@ -199,13 +198,45 @@ export class ProductionRecordController {
       is_synced_to_sap: parseBooleanQuery(query.is_synced_to_sap),
       page: parseIntQuery(query.page, 1),
       limit: parseIntQuery(query.limit, 10),
+      assign_order_id: query.assign_order_id
+        ? toObjectId(query.assign_order_id)
+        : undefined,
     };
 
-    return this.productionRecordService.findAll(transformedQuery);
+    try {
+      const result =
+        await this.productionRecordService.findAll(transformedQuery);
+      return result;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  @Get('not-good/summary')
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  async getNotGoodSummary(
+    @Query('assign_order_id') assignOrderId?: string,
+    @Query('machine_number') machineNumber?: string,
+    @Query('production_date') productionDate?: string,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+  ) {
+    const filters: any = {};
+
+    if (assignOrderId) filters.assign_order_id = assignOrderId;
+    if (machineNumber) filters.machine_number = machineNumber;
+    if (productionDate) filters.production_date = new Date(productionDate);
+    if (startDate && endDate) {
+      filters.start_date = new Date(startDate);
+      filters.end_date = new Date(endDate);
+    }
+
+    return this.productionRecordService.getNotGoodSummary(filters);
   }
 
   @Cron(CronExpression.EVERY_4_HOURS)
   async syncDailyRecords() {
-    return this.productionRecordService.autoConfirmOldNGRecords();
+    return await this.productionRecordService.autoConfirmOldNGRecords();
   }
 }
