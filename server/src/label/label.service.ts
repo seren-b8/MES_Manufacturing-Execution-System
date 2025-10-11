@@ -19,6 +19,7 @@ import { MachineInfo } from 'src/schema/machine-info.schema';
 import { toObjectId } from 'src/shared/utils/type.utils';
 import * as moment from 'moment-timezone';
 import { machine } from 'os';
+import { PrinterDevicesService } from 'src/machine/printer/printer.service';
 
 @Injectable()
 export class LabelService {
@@ -35,6 +36,7 @@ export class LabelService {
 
     private readonly labelGeneratorService: LabelGeneratorService,
     private readonly fileClientService: FileClientService,
+    private readonly printerService: PrinterDevicesService,
   ) {}
 
   async generateLabel(
@@ -139,21 +141,12 @@ export class LabelService {
         .populate('printer_id')
         .exec();
 
-      const printerIp =
-        (machine &&
-        typeof machine.printer_id === 'object' &&
-        'ip_device' in machine.printer_id
-          ? (machine.printer_id as any).ip_device
-          : undefined) ||
-        (job &&
-        typeof job.printer_id === 'object' &&
-        'ip_device' in job.printer_id
-          ? (job.printer_id as any).ip_device
-          : undefined);
-
-      if (!printerIp) {
-        throw new Error('Printer IP not found');
+      const printerId = machine?.printer_id?._id || job?.printer_id?._id;
+      if (!printerId) {
+        throw new Error('Printer not configured');
       }
+
+      const printer = await this.validateAndUpdatePrinter(printerId);
 
       if (!job) {
         throw new Error('Label job not found');
@@ -164,7 +157,7 @@ export class LabelService {
       await job.save();
 
       // ส่งไปปริ้น (mock - ในที่นี้จะ simulate)
-      await this.sendToPrinter(job, printerIp);
+      await this.sendToPrinter(job, printer.ip_device);
 
       // อัพเดทสถานะเป็น printed
       job.status = 'printed';
@@ -217,22 +210,14 @@ export class LabelService {
         .populate('printer_id')
         .exec();
 
-      const printerIp =
-        (machine &&
-        typeof machine.printer_id === 'object' &&
-        'ip_device' in machine.printer_id
-          ? (machine.printer_id as any).ip_device
-          : undefined) ||
-        (originalJob &&
-        typeof originalJob.printer_id === 'object' &&
-        'ip_device' in originalJob.printer_id
-          ? (originalJob.printer_id as any).ip_device
-          : undefined);
-
-      if (!printerIp) {
-        throw new Error('Printer IP not found');
+      const printerId =
+        machine?.printer_id?._id || originalJob?.printer_id?._id;
+      if (!printerId) {
+        throw new Error('Printer not configured');
       }
 
+      // ตรวจสอบและ update printer status
+      const printer = await this.validateAndUpdatePrinter(printerId);
       // สร้าง reprint job ใหม่
       const reprintJob = new this.labelJobModel({
         production_record_ids: originalJob.production_record_ids,
@@ -250,7 +235,7 @@ export class LabelService {
       await reprintJob.save();
 
       // ส่งไปปริ้น
-      await this.sendToPrinter(reprintJob, printerIp);
+      await this.sendToPrinter(reprintJob, printer.ip_device);
 
       // อัพเดทสถานะ
       reprintJob.status = 'printed';
@@ -1026,5 +1011,29 @@ export class LabelService {
     } else {
       throw new Error('Printer device information not found or not populated');
     }
+  }
+
+  private async validateAndUpdatePrinter(
+    printerId: Types.ObjectId,
+  ): Promise<PrinterDevice> {
+    let printer = await this.printerDeviceModel.findById(printerId);
+
+    if (!printer) {
+      throw new Error('Printer not found');
+    }
+
+    // ถ้า status != active ให้ update และตรวจสอบอีกครั้ง
+    if (printer.status !== 'active') {
+      await this.printerService.updateAllPrintersStatus();
+      printer = await this.printerDeviceModel.findById(printerId);
+
+      if (printer.status !== 'active') {
+        throw new Error(
+          `Printer ${printer.device_name} is ${printer.status}. Cannot print.`,
+        );
+      }
+    }
+
+    return printer;
   }
 }

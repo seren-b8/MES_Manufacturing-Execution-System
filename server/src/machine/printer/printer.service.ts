@@ -18,37 +18,6 @@ export class PrinterDevicesService {
     private readonly printerDeviceModel: Model<PrinterDevice>,
   ) {}
 
-  // private async pingPrinter(ip: string): Promise<boolean> {
-  //   return new Promise((resolve) => {
-  //     // console.log(`Checking printer at ${ip}...`);
-
-  //     const { exec } = require('child_process');
-  //     const isWindows = process.platform === 'win32';
-
-  //     // Command is different between Windows and Unix-based systems
-  //     const command = isWindows
-  //       ? `ping -n 1 -w 3000 ${ip}` // Windows: 1 packet, 3 second timeout
-  //       : `ping -c 1 -W 3 ${ip}`; // Unix/Linux: 1 packet, 3 second timeout
-
-  //     exec(command, (error, stdout, stderr) => {
-  //       if (error) {
-  //         console.log(`Could not ping ${ip}: ${error.message}`);
-  //         resolve(false);
-  //         return;
-  //       }
-
-  //       if (stderr) {
-  //         console.log(`Error output for ${ip}: ${stderr}`);
-  //         resolve(false);
-  //         return;
-  //       }
-
-  //       console.log(`Ping successful for ${ip}`);
-  //       resolve(true);
-  //     });
-  //   });
-  // }
-
   private async checkPrinterConnection(
     ip: string,
     port: number = 8000,

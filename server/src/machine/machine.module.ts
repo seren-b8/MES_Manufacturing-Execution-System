@@ -47,6 +47,6 @@ import { TimelineMachineCleanupService } from './timeline-machine/timeline-machi
     MachineAnalysisCacheInterceptor,
     TimelineMachineCleanupService,
   ],
-  exports: [MachineInfoService],
+  exports: [MachineInfoService, PrinterDevicesService],
 })
 export class MachineModule {}

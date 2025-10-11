@@ -3012,27 +3012,35 @@ export class ProductionRecordService {
       // สร้าง label
       labelResult = await this.generateLabel(sortedRecords);
 
+      if (
+        !labelResult ||
+        labelResult.status !== 'success' ||
+        !labelResult.data[0]
+      ) {
+        throw new Error('Failed to generate label');
+      }
+
       // 3. สร้างและพิมพ์ label (ถ้ามี machine และ printer)
+
       if (machineNumber) {
-        const machine = await this.machineInfoModel.findOne({
-          machine_number: machineNumber,
-        });
+        try {
+          await this.labelService.printLabel(
+            String(labelResult.data[0]._id),
+            machineNumber,
+          );
 
-        if (machine?.printer_id) {
-          try {
-            // Populate records
-
-            if (labelResult.status === 'success') {
-              // พิมพ์ label
-              await this.labelService.printLabel(
-                String(labelResult.data[0]._id),
-                machineNumber,
-              );
-              labelCreated = true;
-            }
-          } catch (error) {
-            // ไม่ throw เพราะ record สร้างสำเร็จแล้ว
-          }
+          return {
+            status: 'success',
+            message: `${createdRecords.length} records created and label printed successfully.`,
+            data: labelResult.data,
+          };
+        } catch (printError) {
+          // ถ้าพิมพ์ไม่สำเร็จ แต่ record และ label สร้างสำเร็จแล้ว
+          return {
+            status: 'success',
+            message: `${createdRecords.length} records created and label generated, but print failed: ${(printError as Error).message}`,
+            data: labelResult.data,
+          };
         }
       }
 
@@ -3130,20 +3138,19 @@ export class ProductionRecordService {
         .sort({ createdAt: -1 }) // เรียงจากล่าสุด
         .exec();
 
-      if (machineNumber && latestLabel) {
-        const machine = await this.machineInfoModel.findOne({
-          machine_number: machineNumber,
-        });
-
-        if (machine?.printer_id) {
-          try {
-            await this.labelService.reprintLabel(
-              String(latestLabel._id),
-              machineNumber,
-            );
-          } catch (printError) {}
-        }
+      if (!latestLabel) {
+        throw new Error('No label found for this record');
       }
+
+      // 3. ตรวจสอบ machine number
+      if (!machineNumber) {
+        throw new Error('Machine number is required');
+      }
+
+      await this.labelService.reprintLabel(
+        String(latestLabel._id),
+        machineNumber,
+      );
 
       return {
         status: 'success',

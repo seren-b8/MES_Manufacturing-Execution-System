@@ -7,12 +7,14 @@ import { FileClientModule } from 'src/shared/services/file-client/file-client.mo
 import { LabelController } from './label.controller';
 import { LabelGeneratorService } from './services/label-generator.service';
 import { LabelService } from './label.service';
+import { MachineModule } from 'src/machine/machine.module';
 
 @Module({
   imports: [
     MongooseSchemaModule,
     DatabaseModule,
     MesCacheModule,
+    MachineModule,
     ConfigModule,
     FileClientModule,
   ],
