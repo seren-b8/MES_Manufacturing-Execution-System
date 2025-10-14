@@ -447,6 +447,12 @@ export class TransactionService {
         status: 'success',
         message: `Found ${transactions.length} transactions (Total: ${total})`,
         data: transactions,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
       };
     } catch (error) {
       throw new BadRequestException({

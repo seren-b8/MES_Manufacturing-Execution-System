@@ -26,7 +26,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     throw new HttpException(
       {
         status: 'error',
-        message: 'จำนวนคำขอมากเกินไป กรุณาลองใหม่ภายหลัง',
+        message: 'Too many requests. Please try again later.',
         data: [],
       },
       HttpStatus.TOO_MANY_REQUESTS,
