@@ -85,7 +85,6 @@ function generatePositions(
         row: row.toString(),
         column: col.toString(),
         is_occupied: false,
-        max_capacity: 1000, // 1000 kg capacity per position
         current_materials: [],
       });
     }

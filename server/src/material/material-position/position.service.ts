@@ -109,7 +109,6 @@ export class PositionService {
           row: 1,
           column: 1,
           is_occupied: 1,
-          max_capacity: 1,
           materials: 1,
           createdAt: 1,
           updatedAt: 1,
@@ -367,15 +366,6 @@ export class PositionService {
         total_materials: materials.length, // ✅ นับจาก materials array
         total_quantity: totalQuantity,
       };
-
-      if (position.max_capacity) {
-        utilization.max_capacity = position.max_capacity;
-        utilization.available_capacity = position.max_capacity - totalQuantity;
-        utilization.utilization_percentage = (
-          (totalQuantity / position.max_capacity) *
-          100
-        ).toFixed(2);
-      }
 
       return {
         status: 'success',

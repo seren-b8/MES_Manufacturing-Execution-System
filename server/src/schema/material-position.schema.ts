@@ -37,9 +37,6 @@ export class MaterialPosition extends Document {
   @Prop({ default: false })
   is_occupied: boolean;
 
-  @Prop({ min: 0 })
-  max_capacity?: number;
-
   createdAt?: Date;
   updatedAt?: Date;
 }

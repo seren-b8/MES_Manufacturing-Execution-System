@@ -21,6 +21,7 @@ import { ProductionOrder } from 'src/schema/production-order.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { TransferMaterialDto } from './dto/transfer-material.dto';
 import { QueryTransactionDto } from './dto/query-transaction.dto';
+import { AssignOrder } from 'src/schema/assign-order.schema';
 
 @Injectable()
 export class TransactionService {
@@ -33,6 +34,8 @@ export class TransactionService {
     private machineModel: Model<MachineInfo>,
     @InjectModel(MaterialPosition.name) // ← เพิ่มบรรทัดนี้
     private positionModel: Model<MaterialPosition>,
+    @InjectModel(AssignOrder.name)
+    private assignOrderModel: Model<AssignOrder>,
 
     private readonly materialService: MaterialService,
     private readonly locationService: LocationService,
@@ -53,29 +56,28 @@ export class TransactionService {
       );
 
       // 3. Validate position if provided
+      let toPositionId = null;
       if (dto.to_position_code) {
-        await this.validatePositionInLocation(
+        const position = await this.validatePositionInLocation(
           dto.to_position_code,
           toLocation._id.toString(),
         );
+        toPositionId = position._id; // ← ใช้ position._id โดยตรง
       }
 
       // 4. Create transaction record
-      const transaction = await this.createTransactionRecord(
-        {
-          transaction_type: 'receive',
-          material_id: toObjectId(material._id as string),
-          quantity: dto.quantity,
-          to_location_id: toObjectId(toLocation._id as string),
-          reference_doc: dto.reference_doc,
-          user_id: toObjectId(dto.user_id),
-          transaction_date:
-            dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
-          lot_number: dto.lot_number, // ← เพิ่ม lot_number
-        },
-        undefined, // from_position_code
-        dto.to_position_code, // to_position_code
-      );
+      const transaction = await this.transactionModel.create({
+        transaction_type: 'receive',
+        material_id: toObjectId(material._id as string),
+        quantity: dto.quantity,
+        to_location_id: toObjectId(toLocation._id as string),
+        to_position_id: toPositionId, // ← ใช้ตรงนี้แทน
+        reference_doc: dto.reference_doc,
+        user_id: toObjectId(dto.user_id),
+        transaction_date:
+          dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
+        lot_number: dto.lot_number,
+      });
 
       // 5. Update material stock
       await this.materialService.addStockToLocation(
@@ -94,7 +96,7 @@ export class TransactionService {
           'material_number material_description unit_of_measurement',
         )
         .populate('to_location_id', 'location_name location_code')
-        .populate('to_position_id', 'position_code shelf_code') // ← เพิ่ม
+        .populate('to_position_id', 'position_code shelf_code')
         .populate('user_id', 'employee_id')
         .exec();
 
@@ -136,17 +138,23 @@ export class TransactionService {
       );
 
       // 3. Validate positions if provided
+      let fromPositionId = null;
+      let toPositionId = null;
+
       if (dto.from_position_code) {
-        await this.validatePositionInLocation(
+        const position = await this.validatePositionInLocation(
           dto.from_position_code,
           fromLocation._id.toString(),
         );
+        fromPositionId = position._id;
       }
+
       if (dto.to_position_code) {
-        await this.validatePositionInLocation(
+        const position = await this.validatePositionInLocation(
           dto.to_position_code,
           toLocation._id.toString(),
         );
+        toPositionId = position._id;
       }
 
       // 4. Check stock availability at from_location
@@ -163,21 +171,20 @@ export class TransactionService {
       }
 
       // 5. Create transaction record
-      const transaction = await this.createTransactionRecord(
-        {
-          transaction_type: 'transfer',
-          material_id: toObjectId(material._id as string),
-          quantity: dto.quantity,
-          from_location_id: toObjectId(fromLocation._id as string),
-          to_location_id: toObjectId(toLocation._id as string),
-          reference_doc: dto.reference_doc,
-          user_id: toObjectId(dto.user_id),
-          transaction_date:
-            dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
-        },
-        dto.from_position_code, // from_position_code
-        dto.to_position_code, // to_position_code
-      );
+      const transaction = await this.transactionModel.create({
+        transaction_type: 'transfer',
+        material_id: toObjectId(material._id as string),
+        quantity: dto.quantity,
+        from_location_id: toObjectId(fromLocation._id as string),
+        to_location_id: toObjectId(toLocation._id as string),
+        from_position_id: fromPositionId,
+        to_position_id: toPositionId,
+        reference_doc: dto.reference_doc,
+        user_id: toObjectId(dto.user_id),
+        transaction_date:
+          dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
+        lot_number: dto.lot_number,
+      });
 
       // 6. Update material stock (remove from source, add to destination)
       await this.executeStockUpdate(
@@ -198,9 +205,9 @@ export class TransactionService {
           'material_number material_description unit_of_measurement',
         )
         .populate('from_location_id', 'location_name location_code')
-        .populate('from_position_id', 'position_code shelf_code') // ← เพิ่ม
+        .populate('from_position_id', 'position_code shelf_code')
         .populate('to_location_id', 'location_name location_code')
-        .populate('to_position_id', 'position_code shelf_code') // ← เพิ่ม
+        .populate('to_position_id', 'position_code shelf_code')
         .populate('user_id', 'employee_id')
         .exec();
 
@@ -233,46 +240,46 @@ export class TransactionService {
         dto.material_number,
       );
 
-      // 2. Validate production_order_id exists
-      if (!Types.ObjectId.isValid(dto.production_order_id)) {
-        throw new BadRequestException('Invalid production order ID format');
-      }
-
-      const productionOrder = await this.productionOrderModel
-        .findById(dto.production_order_id)
+      // 2. Validate machine (required)
+      const machine = await this.machineModel
+        .findOne({ machine_number: dto.machine_number })
         .exec();
 
-      if (!productionOrder) {
-        throw new NotFoundException(
-          `Production order ${dto.production_order_id} not found`,
-        );
+      if (!machine) {
+        throw new NotFoundException(`Machine ${dto.machine_number} not found`);
       }
 
-      // 3. Validate from_location exists
+      // 3. Find active assign_order for this machine (auto-link if exists)
+      const activeAssignOrder = await this.assignOrderModel
+        .findOne({
+          machine_number: dto.machine_number,
+          status: 'active',
+        })
+        .populate('production_order_id')
+        .exec();
+
+      // 4. Validate from_location exists
       const fromLocation = await this.locationService.validateLocationExists(
         dto.from_location_code,
       );
 
-      // 4. Validate position if provided
+      // 5. Validate position if provided
+      let fromPositionId = null;
       if (dto.from_position_code) {
-        await this.validatePositionInLocation(
-          dto.from_position_code,
-          fromLocation._id.toString(),
-        );
-      }
-
-      // 5. Validate machine if provided
-      let machine = null;
-      if (dto.machine_number) {
-        machine = await this.machineModel
-          .findOne({ machine_number: dto.machine_number })
+        const position = await this.positionModel
+          .findOne({
+            position_code: dto.from_position_code,
+            location_id: toObjectId(fromLocation._id as string),
+          })
           .exec();
 
-        if (!machine) {
+        if (!position) {
           throw new NotFoundException(
-            `Machine ${dto.machine_number} not found`,
+            `Position ${dto.from_position_code} not found in location ${dto.from_location_code}`,
           );
         }
+
+        fromPositionId = toObjectId(position._id as string);
       }
 
       // 6. Check stock availability
@@ -289,22 +296,23 @@ export class TransactionService {
       }
 
       // 7. Create transaction record
-      const transaction = await this.createTransactionRecord(
-        {
-          transaction_type: 'consume',
-          material_id: toObjectId(material._id as string),
-          quantity: dto.quantity,
-          from_location_id: toObjectId(fromLocation._id as string),
-          production_order_id: toObjectId(productionOrder._id as string),
-          machine_id: machine?._id,
-          reference_doc: dto.reference_doc,
-          user_id: toObjectId(dto.user_id),
-          transaction_date:
-            dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
-        },
-        dto.from_position_code, // from_position_code
-        undefined,
-      );
+      const transaction = await this.transactionModel.create({
+        transaction_type: 'consume',
+        material_id: toObjectId(material._id as string),
+        quantity: dto.quantity,
+        from_location_id: toObjectId(fromLocation._id as string),
+        from_position_id: fromPositionId,
+        machine_id: toObjectId(machine._id as string),
+        production_order_id:
+          activeAssignOrder?.production_order_id?._id || null,
+        lot_number: dto.lot_number,
+        reference_doc:
+          dto.reference_doc ||
+          `CONSUME-${machine.machine_number}-${Date.now()}`,
+        user_id: toObjectId(dto.user_id),
+        transaction_date:
+          dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
+      });
 
       // 8. Update material stock (remove from location)
       await this.materialService.removeStockFromLocation(
@@ -323,15 +331,24 @@ export class TransactionService {
           'material_number material_description unit_of_measurement',
         )
         .populate('from_location_id', 'location_name location_code')
-        .populate('from_position_id', 'position_code shelf_code') // ← เพิ่ม
-        .populate('production_order_id', 'order_id material_number')
+        .populate('from_position_id', 'position_code shelf_code')
         .populate('machine_id', 'machine_number machine_name')
+        .populate('production_order_id', 'order_id material_number')
         .populate('user_id', 'employee_id')
         .exec();
 
+      // 10. Build success message
+      let message = `Consumed ${dto.quantity} units of ${dto.material_number} at machine ${dto.machine_number}`;
+
+      // Add order info if exists
+      if (activeAssignOrder?.production_order_id) {
+        const orderData = activeAssignOrder.production_order_id as any;
+        message += ` (Order: ${orderData.order_id || 'N/A'})`;
+      }
+
       return {
         status: 'success',
-        message: `Consumed ${dto.quantity} units of ${dto.material_number} for production`,
+        message,
         data: [populatedTransaction],
       };
     } catch (error) {
@@ -727,53 +744,6 @@ export class TransactionService {
     }
   }
 
-  // ===== Helper Methods =====
-
-  private async createTransactionRecord(
-    transactionData: Partial<MaterialTransaction>,
-    fromPositionCode?: string, // ← เพิ่ม parameter
-    toPositionCode?: string, // ← เพิ่ม parameter
-  ): Promise<MaterialTransaction> {
-    try {
-      // Resolve position IDs if position_codes are provided
-      let fromPositionId = null;
-      let toPositionId = null;
-
-      if (fromPositionCode) {
-        const fromPosition = await this.positionModel
-          .findOne({ position_code: fromPositionCode })
-          .exec();
-
-        if (fromPosition) {
-          fromPositionId = fromPosition._id;
-        }
-      }
-
-      if (toPositionCode) {
-        const toPosition = await this.positionModel
-          .findOne({ position_code: toPositionCode })
-          .exec();
-
-        if (toPosition) {
-          toPositionId = toPosition._id;
-        }
-      }
-
-      // Create transaction with position IDs
-      const transaction = new this.transactionModel({
-        ...transactionData,
-        from_position_id: fromPositionId,
-        to_position_id: toPositionId,
-      });
-
-      return await transaction.save();
-    } catch (error) {
-      throw new BadRequestException(
-        `Failed to create transaction record: ${(error as Error).message}`,
-      );
-    }
-  }
-
   private async executeStockUpdate(
     materialNumber: string,
     fromLocationCode: string,
@@ -811,18 +781,21 @@ export class TransactionService {
   private async validatePositionInLocation(
     positionCode: string,
     locationId: string,
-  ): Promise<void> {
-    const position = await this.transactionModel.db
-      .collection('material_position')
+  ): Promise<MaterialPosition> {
+    // ← เปลี่ยน return type
+    const position = await this.positionModel
       .findOne({
         position_code: positionCode,
         location_id: toObjectId(locationId),
-      });
+      })
+      .exec();
 
     if (!position) {
       throw new NotFoundException(
         `Position ${positionCode} not found in this location`,
       );
     }
+
+    return position; // ← return position object
   }
 }
