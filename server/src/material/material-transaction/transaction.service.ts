@@ -22,6 +22,10 @@ import { MachineInfo } from 'src/schema/machine-info.schema';
 import { TransferMaterialDto } from './dto/transfer-material.dto';
 import { QueryTransactionDto } from './dto/query-transaction.dto';
 import { AssignOrder } from 'src/schema/assign-order.schema';
+import { number } from 'yargs';
+import { User } from 'src/schema/user.schema';
+import { Material } from 'src/schema/material.schema';
+import { MaterialModule } from '../material.module';
 
 @Injectable()
 export class TransactionService {
@@ -36,6 +40,10 @@ export class TransactionService {
     private positionModel: Model<MaterialPosition>,
     @InjectModel(AssignOrder.name)
     private assignOrderModel: Model<AssignOrder>,
+    @InjectModel(User.name)
+    private userModel: Model<User>,
+    @InjectModel(Material.name)
+    private materialModel: Model<Material>,
 
     private readonly materialService: MaterialService,
     private readonly locationService: LocationService,
@@ -381,9 +389,10 @@ export class TransactionService {
         machine_number,
         start_date,
         end_date,
-        page = 1,
-        limit = 50,
       } = query;
+
+      const page = Number(query.page) || 1;
+      const limit = Number(query.limit) || 50;
 
       // Build filter
       const filter: any = {};
@@ -452,7 +461,9 @@ export class TransactionService {
           'material_number material_description unit_of_measurement',
         )
         .populate('from_location_id', 'location_name location_code')
+        .populate('from_position_id', 'position_code shelf_code') // 👈 เพิ่ม
         .populate('to_location_id', 'location_name location_code')
+        .populate('to_position_id', 'position_code shelf_code') // 👈 เพิ่ม
         .populate('production_order_id', 'order_id material_number')
         .populate('machine_id', 'machine_number machine_name')
         .populate('user_id', 'employee_id')
@@ -480,265 +491,170 @@ export class TransactionService {
     }
   }
 
-  async findByMaterial(
-    materialNumber: string,
-  ): Promise<ResponseFormat<MaterialTransaction>> {
+  // ใน class TransactionService
+
+  // ... (เมธอดที่มีอยู่)
+
+  // ใน class TransactionService ใต้เมธอด queryConsumptionByShift หรือส่วน Query Methods
+
+  /**
+   * ดึงข้อมูลสรุปการเบิกใช้ (Consumption) รายวันและแยกตามกะ
+   * สรุป: เครื่องจักร, ใบสั่งผลิต, ผู้ใช้งาน, จำนวนรวม
+   * @param query.date วันที่ที่ต้องการ (YYYY-MM-DD)
+   * @param query.shift กะที่ต้องการ ('day' หรือ 'night')
+   * @returns ResponseFormat<any> ข้อมูลสรุป
+   */
+  async summarizeConsumptionByShift(query: {
+    date: string;
+    shift: 'day' | 'night';
+  }): Promise<ResponseFormat<any>> {
     try {
-      const material =
-        await this.materialService.validateMaterialExists(materialNumber);
-
-      const transactions = await this.transactionModel
-        .find({ material_id: material._id })
-        .sort({ transaction_date: -1 })
-        .populate('from_location_id', 'location_name location_code')
-        .populate('to_location_id', 'location_name location_code')
-        .populate('production_order_id', 'order_id')
-        .populate('user_id', 'employee_id')
-        .exec();
-
-      return {
-        status: 'success',
-        message: `Found ${transactions.length} transactions for material ${materialNumber}`,
-        data: transactions,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      throw new BadRequestException({
-        status: 'error',
-        message: `Failed to fetch material transactions: ${(error as Error).message}`,
-        data: [],
-      });
-    }
-  }
-
-  async findByLocation(
-    locationCode: string,
-  ): Promise<ResponseFormat<MaterialTransaction>> {
-    try {
-      const location =
-        await this.locationService.validateLocationExists(locationCode);
-
-      const transactions = await this.transactionModel
-        .find({
-          $or: [
-            { from_location_id: location._id },
-            { to_location_id: location._id },
-          ],
-        })
-        .sort({ transaction_date: -1 })
-        .populate('material_id', 'material_number material_description')
-        .populate('from_location_id', 'location_name location_code')
-        .populate('to_location_id', 'location_name location_code')
-        .populate('user_id', 'employee_id')
-        .exec();
-
-      return {
-        status: 'success',
-        message: `Found ${transactions.length} transactions for location ${locationCode}`,
-        data: transactions,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      throw new BadRequestException({
-        status: 'error',
-        message: `Failed to fetch location transactions: ${(error as Error).message}`,
-        data: [],
-      });
-    }
-  }
-
-  async findByProductionOrder(
-    orderId: string,
-  ): Promise<ResponseFormat<MaterialTransaction>> {
-    try {
-      if (!Types.ObjectId.isValid(orderId)) {
-        throw new BadRequestException('Invalid production order ID format');
+      const { date, shift } = query;
+      if (!date || !shift) {
+        throw new BadRequestException('Date and shift are required.');
       }
 
-      const transactions = await this.transactionModel
-        .find({ production_order_id: toObjectId(orderId) })
-        .sort({ transaction_date: -1 })
-        .populate(
-          'material_id',
-          'material_number material_description unit_of_measurement',
-        )
-        .populate('from_location_id', 'location_name location_code')
-        .populate('machine_id', 'machine_number machine_name')
-        .populate('user_id', 'employee_id')
-        .exec();
-
-      return {
-        status: 'success',
-        message: `Found ${transactions.length} material transactions for this production order`,
-        data: transactions,
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      throw new BadRequestException({
-        status: 'error',
-        message: `Failed to fetch production order transactions: ${(error as Error).message}`,
-        data: [],
-      });
-    }
-  }
-
-  async findByUser(
-    userId: string,
-    startDate?: Date,
-    endDate?: Date,
-  ): Promise<ResponseFormat<MaterialTransaction>> {
-    try {
-      if (!Types.ObjectId.isValid(userId)) {
-        throw new BadRequestException('Invalid user ID format');
+      const today = moment.tz(date, 'YYYY-MM-DD', 'Asia/Bangkok');
+      if (!today.isValid()) {
+        throw new BadRequestException('Invalid date format. Use YYYY-MM-DD.');
       }
 
-      const filter: any = { user_id: toObjectId(userId) };
+      let startDate: Date, endDate: Date;
 
-      if (startDate || endDate) {
-        filter.transaction_date = {};
-        if (startDate) filter.transaction_date.$gte = startDate;
-        if (endDate) filter.transaction_date.$lte = endDate;
+      // 1. กำหนดช่วงเวลาตามกะ
+      if (shift === 'day') {
+        startDate = today.clone().hour(8).minute(0).second(0).toDate();
+        endDate = today.clone().hour(20).minute(0).second(0).toDate();
+      } else if (shift === 'night') {
+        startDate = today.clone().hour(20).minute(0).second(0).toDate();
+        endDate = today
+          .clone()
+          .add(1, 'day')
+          .hour(8)
+          .minute(0)
+          .second(0)
+          .toDate();
+      } else {
+        throw new BadRequestException(
+          'Invalid shift value. Must be "day" or "night".',
+        );
       }
 
-      const transactions = await this.transactionModel
-        .find(filter)
-        .sort({ transaction_date: -1 })
-        .populate('material_id', 'material_number material_description')
-        .populate('from_location_id', 'location_name location_code')
-        .populate('to_location_id', 'location_name location_code')
-        .exec();
+      // 2. สร้าง Aggregation Pipeline
+      const pipeline: any[] = [
+        // Filter ตามประเภทธุรกรรมและช่วงเวลา
+        {
+          $match: {
+            transaction_type: 'consume',
+            transaction_date: {
+              $gte: startDate,
+              $lt: endDate,
+            },
+          },
+        },
+        // Group เพื่อสรุปผลตาม Machine, Production Order, และ User
+        {
+          $group: {
+            _id: {
+              machineId: '$machine_id',
+              productionOrderId: '$production_order_id',
+              userId: '$user_id',
+              materialId: '$material_id', // เพิ่ม Material ID เข้าไปเพื่อแยกสรุปตามวัตถุดิบ
+            },
+            total_quantity_consumed: { $sum: '$quantity' },
+            count: { $sum: 1 },
+          },
+        },
+        // Lookup (Join) ข้อมูล Machine
+        {
+          $lookup: {
+            from: this.machineModel.collection.name, // ชื่อ Collection ของ MachineInfo
+            localField: '_id.machineId',
+            foreignField: '_id',
+            as: 'machine_info',
+          },
+        },
+        {
+          $unwind: { path: '$machine_info', preserveNullAndEmptyArrays: true },
+        },
+
+        // Lookup (Join) ข้อมูล Production Order
+        {
+          $lookup: {
+            from: this.productionOrderModel.collection.name, // ชื่อ Collection ของ ProductionOrder
+            localField: '_id.productionOrderId',
+            foreignField: '_id',
+            as: 'production_order_info',
+          },
+        },
+        {
+          $unwind: {
+            path: '$production_order_info',
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+
+        // Lookup (Join) ข้อมูล User (สมมติชื่อ Collection เป็น 'users')
+        {
+          $lookup: {
+            from: this.userModel.collection.name, // **อาจต้องเปลี่ยนชื่อ Collection ตามจริง**
+            localField: '_id.userId',
+            foreignField: '_id',
+            as: 'user_info',
+          },
+        },
+        { $unwind: { path: '$user_info', preserveNullAndEmptyArrays: true } },
+
+        // Lookup (Join) ข้อมูล Material
+        {
+          $lookup: {
+            from: this.materialModel.collection.name, // ชื่อ Collection ของ Material
+            localField: '_id.materialId',
+            foreignField: '_id',
+            as: 'material_info',
+          },
+        },
+        {
+          $unwind: { path: '$material_info', preserveNullAndEmptyArrays: true },
+        },
+
+        // Project เพื่อจัดรูปแบบผลลัพธ์
+        {
+          $project: {
+            _id: 0,
+            machine_number: '$machine_info.machine_number',
+            machine_name: '$machine_info.machine_name',
+            production_order_id: {
+              $ifNull: ['$production_order_info.order_id', 'N/A'],
+            },
+            consumed_by_employee: '$user_info.employee_id',
+            consumed_by_name: '$user_info.name', // สมมติว่ามีฟิลด์ 'name' ใน User
+            material_number: '$material_info.material_number',
+            material_description: '$material_info.material_description',
+            unit: '$material_info.unit_of_measurement',
+            total_quantity_consumed: '$total_quantity_consumed',
+            transaction_count: '$count',
+          },
+        },
+        // จัดเรียงตาม Machine Number
+        { $sort: { machine_number: 1, production_order_id: 1 } },
+      ];
+
+      const summary = await this.transactionModel.aggregate(pipeline).exec();
 
       return {
         status: 'success',
-        message: `Found ${transactions.length} transactions by this user`,
-        data: transactions,
-      };
-    } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      throw new BadRequestException({
-        status: 'error',
-        message: `Failed to fetch user transactions: ${(error as Error).message}`,
-        data: [],
-      });
-    }
-  }
-
-  // ===== Statistics =====
-
-  async getTransactionSummary(
-    materialNumber: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<any> {
-    try {
-      const material =
-        await this.materialService.validateMaterialExists(materialNumber);
-
-      const transactions = await this.transactionModel
-        .find({
-          material_id: material._id,
-          transaction_date: { $gte: startDate, $lte: endDate },
-        })
-        .exec();
-
-      const summary = {
-        material_number: materialNumber,
-        period: { start: startDate, end: endDate },
-        total_received: 0,
-        total_transferred: 0,
-        total_consumed: 0,
-        net_change: 0,
-        transaction_count: transactions.length,
-      };
-
-      transactions.forEach((txn) => {
-        switch (txn.transaction_type) {
-          case 'receive':
-            summary.total_received += txn.quantity;
-            break;
-          case 'transfer':
-            summary.total_transferred += txn.quantity;
-            break;
-          case 'consume':
-            summary.total_consumed += txn.quantity;
-            break;
-        }
-      });
-
-      summary.net_change = summary.total_received - summary.total_consumed;
-
-      return {
-        status: 'success',
-        message: 'Transaction summary retrieved successfully',
-        data: [summary],
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      throw new BadRequestException({
-        status: 'error',
-        message: `Failed to get summary: ${(error as Error).message}`,
-        data: [],
-      });
-    }
-  }
-
-  async getConsumptionByMachine(
-    machineNumber: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<ResponseFormat<any>> {
-    try {
-      const machine = await this.machineModel
-        .findOne({ machine_number: machineNumber })
-        .exec();
-
-      if (!machine) {
-        throw new NotFoundException(`Machine ${machineNumber} not found`);
-      }
-
-      const transactions = await this.transactionModel
-        .find({
-          machine_id: machine._id,
-          transaction_type: 'consume',
-          transaction_date: { $gte: startDate, $lte: endDate },
-        })
-        .populate(
-          'material_id',
-          'material_number material_description unit_of_measurement',
-        )
-        .exec();
-
-      // Group by material
-      const consumptionMap = new Map();
-
-      transactions.forEach((txn: any) => {
-        const matNum = txn.material_id.material_number;
-        if (!consumptionMap.has(matNum)) {
-          consumptionMap.set(matNum, {
-            material_number: matNum,
-            material_description: txn.material_id.material_description,
-            unit: txn.material_id.unit_of_measurement,
-            total_consumed: 0,
-            transaction_count: 0,
-          });
-        }
-        const record = consumptionMap.get(matNum);
-        record.total_consumed += txn.quantity;
-        record.transaction_count += 1;
-      });
-
-      const summary = Array.from(consumptionMap.values());
-
-      return {
-        status: 'success',
-        message: `Material consumption for machine ${machineNumber}`,
+        message: `Found ${summary.length} consumption summary groups for ${date} (${shift} shift)`,
         data: summary,
       };
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      // ใช้ ConflictException เพื่อเน้นว่าอาจมีปัญหาเรื่องการกำหนดค่า MongoDB (เช่น ชื่อ Collection)
       throw new BadRequestException({
         status: 'error',
-        message: `Failed to get consumption data: ${(error as Error).message}`,
+        message: `Failed to summarize consumption: ${(error as Error).message}`,
         data: [],
       });
     }

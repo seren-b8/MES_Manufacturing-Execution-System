@@ -15,12 +15,16 @@ import {
 } from 'src/schema/material-position.schema';
 import { Material, MaterialDocument } from 'src/schema/material.schema';
 import { MaterialStockDto } from './dto/material-stock-response.dto';
-import { QueryMaterialDto } from './dto/query-material.dto';
+import {
+  QueryMaterialDto,
+  QueryMaterialInventoryDto,
+} from './dto/query-material.dto';
 import {
   MaterialTransaction,
   MaterialTransactionDocument,
 } from 'src/schema/material-transaction.schema';
 import { MaterialLocation } from 'src/schema/material-location.schema';
+import { MaterialInventoryRow } from './dto/material-inventory-row.dto';
 
 @Injectable()
 export class MaterialService {
@@ -42,31 +46,21 @@ export class MaterialService {
         material_number,
         material_description,
         unit_of_measurement,
-        location_code,
-        lot_number,
-        has_stock,
-        min_stock,
-        max_stock,
         sort_by = 'material_number',
         sort_order = 'asc',
       } = query;
-      const page = Number(query.page) || 1;
-      const limit = Number(query.limit) || 50;
 
       // Build filter
       const filter: any = {};
-
       if (material_number) {
         filter.material_number = { $regex: material_number, $options: 'i' };
       }
-
       if (material_description) {
         filter.material_description = {
           $regex: material_description,
           $options: 'i',
         };
       }
-
       if (unit_of_measurement) {
         filter.unit_of_measurement = {
           $regex: unit_of_measurement,
@@ -74,93 +68,152 @@ export class MaterialService {
         };
       }
 
-      if (location_code) {
-        const location = await this.locationModel.findOne({
-          location_code,
-        });
-        if (location) {
-          filter['current_stock.location_id'] = location._id;
-        }
-      }
-
-      if (lot_number) {
-        filter['current_stock.lot_number'] = {
-          $regex: lot_number,
-          $options: 'i',
-        };
-      }
-
-      if (has_stock !== undefined) {
-        if (has_stock) {
-          filter['current_stock'] = { $exists: true, $ne: [] };
-        } else {
-          filter.$or = [
-            { current_stock: { $exists: false } },
-            { current_stock: { $eq: [] } },
-          ];
-        }
-      }
-
-      // Stock range filter (aggregation needed)
-      if (min_stock !== undefined || max_stock !== undefined) {
-        const stockFilter: any = {};
-        if (min_stock !== undefined) stockFilter.$gte = min_stock;
-        if (max_stock !== undefined) stockFilter.$lte = max_stock;
-
-        // Use aggregation for total stock calculation
-        const materialsWithStock = await this.materialModel.aggregate([
-          { $match: filter },
-          {
-            $addFields: {
-              total_stock: {
-                $sum: '$current_stock.stock_quantity',
-              },
-            },
-          },
-          { $match: { total_stock: stockFilter } },
-        ]);
-
-        filter._id = { $in: materialsWithStock.map((m) => m._id) };
-      }
-
-      // Sort & Pagination
+      // Sort
       const sortOrderNum = sort_order === 'asc' ? 1 : -1;
       const sortObj: any = { [sort_by]: sortOrderNum };
-      const skip = (page - 1) * limit;
 
-      // Execute query
-      const [materials, total] = await Promise.all([
-        this.materialModel
-          .find(filter)
-          .sort(sortObj)
-          .skip(skip)
-          .limit(limit)
-          .populate('current_stock.location_id', 'location_name location_code')
-          .populate('current_stock.position_id', 'position_code')
-          .exec(),
-        this.materialModel.countDocuments(filter),
-      ]);
-
-      // Calculate pagination metadata
-      const total_pages = Math.ceil(total / limit);
+      // Execute query - ไม่มี pagination
+      const materials = await this.materialModel
+        .find(filter)
+        .select(
+          'material_number material_description unit_of_measurement createdAt updatedAt',
+        )
+        .sort(sortObj)
+        .lean()
+        .exec();
 
       return {
         status: 'success',
         message: `Found ${materials.length} materials`,
         data: materials,
-        pagination: {
-          total: total,
-          page: page,
-          limit: limit,
-          totalPages: total_pages,
-        },
       };
     } catch (error) {
       throw new BadRequestException({
         status: 'error',
         message: `Failed to fetch materials: ${(error as Error).message}`,
         data: [],
-        pagination: null,
+      });
+    }
+  }
+
+  async findInventoryTable(
+    query: QueryMaterialInventoryDto,
+  ): Promise<ResponseFormat<MaterialInventoryRow>> {
+    try {
+      const {
+        material_number,
+        material_description,
+        location_code,
+        lot_number,
+        sort_by = 'material_number',
+        sort_order = 'asc',
+      } = query;
+      const page = Number(query.page) || 1;
+      const limit = Number(query.limit) || 50;
+
+      // Build match stage
+      const matchStage: any = {};
+      if (material_number) {
+        matchStage.material_number = { $regex: material_number, $options: 'i' };
+      }
+      if (material_description) {
+        matchStage.material_description = {
+          $regex: material_description,
+          $options: 'i',
+        };
+      }
+
+      // Aggregation pipeline
+      const pipeline: any[] = [
+        { $match: matchStage },
+        {
+          $unwind: {
+            path: '$current_stock',
+            preserveNullAndEmptyArrays: false,
+          },
+        },
+        {
+          $lookup: {
+            from: 'material_location',
+            localField: 'current_stock.location_id',
+            foreignField: '_id',
+            as: 'location',
+          },
+        },
+        {
+          $lookup: {
+            from: 'material_position',
+            localField: 'current_stock.position_id',
+            foreignField: '_id',
+            as: 'position',
+          },
+        },
+        { $unwind: { path: '$location', preserveNullAndEmptyArrays: true } },
+        { $unwind: { path: '$position', preserveNullAndEmptyArrays: true } },
+      ];
+
+      // Filter after unwind
+      const postUnwindMatch: any = {};
+      if (location_code) {
+        postUnwindMatch['location.location_code'] = location_code;
+      }
+      if (lot_number) {
+        postUnwindMatch['current_stock.lot_number'] = {
+          $regex: lot_number,
+          $options: 'i',
+        };
+      }
+      if (Object.keys(postUnwindMatch).length > 0) {
+        pipeline.push({ $match: postUnwindMatch });
+      }
+
+      // Project to flatten structure
+      pipeline.push({
+        $project: {
+          material_number: 1,
+          material_description: 1,
+          unit_of_measurement: 1,
+          location_code: '$location.location_code',
+          location_name: '$location.location_name',
+          position_code: '$position.position_code',
+          lot_number: '$current_stock.lot_number',
+          stock_quantity: '$current_stock.stock_quantity',
+        },
+      });
+
+      // Sort
+      const sortDirection = sort_order === 'asc' ? 1 : -1;
+      pipeline.push({ $sort: { [sort_by]: sortDirection } });
+
+      // Count total
+      const countPipeline = [...pipeline, { $count: 'total' }];
+      const countResult = await this.materialModel.aggregate(countPipeline);
+      const total = countResult[0]?.total || 0;
+
+      // Pagination
+      const skip = (page - 1) * limit;
+      pipeline.push({ $skip: skip }, { $limit: limit });
+
+      // Execute
+      const results = await this.materialModel.aggregate(pipeline);
+
+      return {
+        status: 'success',
+        message: `Found ${results.length} inventory records`,
+        data: results,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException({
+        status: 'error',
+        message: `Failed to fetch inventory: ${(error as Error).message}`,
+        data: [],
+        pagination: [],
       });
     }
   }

@@ -18,7 +18,10 @@ import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { RolesGuard } from '../auth/guard/roles.guard';
 import { Roles } from '../auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
-import { QueryMaterialDto } from './dto/query-material.dto';
+import {
+  QueryMaterialDto,
+  QueryMaterialInventoryDto,
+} from './dto/query-material.dto';
 
 @Controller('materials')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -34,6 +37,13 @@ export class MaterialController {
   @HttpCode(HttpStatus.OK)
   async findAll(@Query() query: QueryMaterialDto) {
     return this.materialService.findAll(query);
+  }
+
+  @Get('inventory')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
+  @HttpCode(HttpStatus.OK)
+  async getInventory(@Query() query: QueryMaterialInventoryDto) {
+    return this.materialService.findInventoryTable(query);
   }
 
   /**

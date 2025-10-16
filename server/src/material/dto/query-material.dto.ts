@@ -63,3 +63,7 @@ export class QueryMaterialDto {
   @IsIn(['asc', 'desc'])
   sort_order?: 'asc' | 'desc' = 'asc';
 }
+
+export class QueryMaterialInventoryDto extends QueryMaterialDto {
+  // ใช้ query เดิม + เพิ่ม filter ตาม current_stock ได้
+}
