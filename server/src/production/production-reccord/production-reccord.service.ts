@@ -3099,26 +3099,7 @@ export class ProductionRecordService {
     const machine = await this.machineInfoModel.findOne({
       machine_number: machineNumber,
     });
-    return (
-      machine?.printer_id?.toString() || (await this.getDefaultPrinterId())
-    );
-  }
-
-  private async getDefaultPrinterId(): Promise<string> {
-    try {
-      // หา printer ตัวแรกที่ active
-      const defaultPrinter = await this.printerDeviceModel
-        .findOne({ status: 'active' })
-        .exec();
-
-      if (!defaultPrinter) {
-        throw new Error('No active printer found');
-      }
-
-      return defaultPrinter._id.toString();
-    } catch (error) {
-      throw new Error('Cannot find any printer in system');
-    }
+    return machine?.printer_id?.toString() || null;
   }
 
   async reprintByRecordId(

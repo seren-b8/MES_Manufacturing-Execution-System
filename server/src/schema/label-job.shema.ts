@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { Document } from 'mongoose';
 import { ProductionRecord } from './production-record.schema';
 import { CoProductRecord } from './co-product-reccord.shema';
+import { PrinterDevice } from './printer-device.schema';
 
 @Schema({
   collection: 'label_jobs',
@@ -25,7 +26,7 @@ export class LabelJob extends Document {
     | 'co_product_combined'
     | 'co_product_separate';
 
-  @Prop({ type: Types.ObjectId, ref: 'PrinterDevice', required: true })
+  @Prop({ type: Types.ObjectId, ref: PrinterDevice.name, default: null })
   printer_id: Types.ObjectId;
 
   // Position mapping for 2_part/co_product_combined
