@@ -141,16 +141,16 @@ export class LabelService {
         .populate('printer_id')
         .exec();
 
-      const printerId = machine?.printer_id?._id || job?.printer_id?._id;
+      const printerId = machine?.printer_id?._id;
+
+      if (!job) {
+        throw new Error('Label job not found');
+      }
       if (!printerId) {
         throw new Error('Printer not configured');
       }
 
       const printer = await this.validateAndUpdatePrinter(printerId);
-
-      if (!job) {
-        throw new Error('Label job not found');
-      }
 
       // อัพเดทสถานะเป็น sending
       job.status = 'sent';
@@ -161,7 +161,7 @@ export class LabelService {
 
       // อัพเดทสถานะเป็น printed
       job.status = 'printed';
-      job.printed_at = new Date();
+      job.printed_at = moment().tz('Asia/Bangkok').toDate();
       await job.save();
 
       return {
@@ -210,8 +210,8 @@ export class LabelService {
         .populate('printer_id')
         .exec();
 
-      const printerId =
-        machine?.printer_id?._id || originalJob?.printer_id?._id;
+      const printerId = machine?.printer_id?._id;
+
       if (!printerId) {
         throw new Error('Printer not configured');
       }
@@ -239,7 +239,7 @@ export class LabelService {
 
       // อัพเดทสถานะ
       reprintJob.status = 'printed';
-      reprintJob.printed_at = new Date();
+      reprintJob.printed_at = moment().tz('Asia/Bangkok').toDate();
       await reprintJob.save();
 
       // อัพเดท reprint_count ของ original
@@ -473,7 +473,7 @@ export class LabelService {
       // อัพเดตสถานะใน database
       await this.labelJobModel.findByIdAndUpdate(job._id, {
         status: 'printed',
-        printed_at: new Date(),
+        printed_at: moment().tz('Asia/Bangkok').toDate(),
       });
     } catch (error) {
       console.error('Error sending to printer:', error);
