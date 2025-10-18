@@ -5,6 +5,7 @@ export class QueryTransactionDto {
   location_code?: string;
   user_id?: string;
   production_order_id?: string;
+  include_cancelled?: boolean | string;
   machine_number?: string;
   start_date?: Date;
   end_date?: Date;

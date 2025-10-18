@@ -453,8 +453,15 @@ export class TransactionService {
       const page = Number(query.page) || 1;
       const limit = Number(query.limit) || 50;
 
+      const includeCancelled =
+        query.include_cancelled === true || query.include_cancelled === 'true';
+
       // Build filter
       const filter: any = {};
+
+      if (includeCancelled !== true) {
+        filter.is_cancelled = { $ne: true };
+      }
 
       if (transaction_type) {
         filter.transaction_type = transaction_type;
@@ -526,6 +533,9 @@ export class TransactionService {
         .populate('production_order_id', 'order_id material_number')
         .populate('machine_id', 'machine_number machine_name')
         .populate('user_id', 'employee_id')
+        .populate('cancelled_transaction_id') // ← เพิ่ม
+        .populate('cancelled_by_transaction_id') // ← เพิ่ม
+        .populate('cancelled_by_user', 'employee_id') // ← เพิ่ม
         .exec();
 
       const total = await this.transactionModel.countDocuments(filter);
@@ -924,6 +934,7 @@ export class TransactionService {
         user_id: toObjectId(userId),
         reference_doc: `CANCEL-${original._id}`,
         lot_number: original.lot_number,
+        transaction_date: moment().tz('Asia/Bangkok').toDate(), // ← เพิ่มบรรทัดนี้
       });
     } else if (original.transaction_type === 'transfer') {
       // ย้อนกลับ: ลบที่ปลายทาง, เพิ่มที่ต้นทาง
@@ -975,6 +986,10 @@ export class TransactionService {
         machine_id: original.machine_id,
         production_order_id: original.production_order_id,
       });
+    } else {
+      throw new BadRequestException(
+        `Unsupported transaction type for cancellation: ${original.transaction_type}`,
+      );
     }
 
     // Populate before return
