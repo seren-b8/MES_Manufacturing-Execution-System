@@ -29,193 +29,102 @@ export class OEEService {
   async realTimeOEE(query: OEEQuery): Promise<ResponseFormat<any>> {
     try {
       const { date, shift, machine_numbers } = query;
-      let combinedData: any[] = [];
-      let machineList: string[] = [];
 
-      const timeFrame = this.calculateProductionShiftTimeFrame();
-      let startTime: Date | undefined;
-      let endTime: Date | undefined;
-
-      let isNotCurrentProductionDate = false;
-
+      // 1. Validate วันที่ในอนาคต
       if (date) {
         const targetDate = moment(date).tz('Asia/Bangkok').startOf('day');
-        const now = moment().tz('Asia/Bangkok');
-
-        // คำนวณ production date ของปัจจุบัน
-        const currentProductionDate = now.clone();
-        if (now.hour() < 8) {
-          currentProductionDate.subtract(1, 'day');
-        }
-        currentProductionDate.startOf('day');
-
-        // เช็คว่าไม่ใช่ production date ปัจจุบัน
-        isNotCurrentProductionDate = !targetDate.isSame(
-          currentProductionDate,
-          'day',
+        const currentProductionDate = moment(this.calculateProductionDate()).tz(
+          'Asia/Bangkok',
         );
 
-        // คำนวณ shift timeframe
-        if (shift === 'day' || shift === 'night') {
-          const result = this.calculateShiftTimeframeForDate(date, shift);
-          startTime = result.startTime;
-          endTime = result.endTime;
-        }
-      }
-      // --- 🚨 Logic สำหรับดึงข้อมูลย้อนหลังรายวัน/กะ 🚨 ---
-      if (
-        date &&
-        startTime &&
-        timeFrame.start_time.toString() !== startTime.toString() &&
-        (shift === 'day' || shift === 'night')
-      ) {
-        combinedData = await this.getHistoricalOEEByDayAndShift(
-          date,
-          shift,
-          machine_numbers,
-        );
-        machineList = combinedData.map((d) => d.machineNumber);
-
-        return {
-          status: 'success',
-          message: `Historical OEE data retrieved at ${date} ${shift} `,
-          data: combinedData,
-        };
-      }
-
-      if (date && !shift && isNotCurrentProductionDate) {
-        const filter: any = {
-          date: moment(date).tz('Asia/Bangkok').startOf('day').toDate(),
-        };
-
-        if (machine_numbers?.length > 0) {
-          filter.machine_number = { $in: machine_numbers };
-        }
-
-        const dailyRecords = await this.oeeDailyModel
-          .find(filter)
-          .sort({ machine_number: 1 })
-          .exec();
-
-        if (dailyRecords.length > 0) {
-          combinedData = dailyRecords.map((record) => ({
-            machineNumber: record.machine_number,
-            quality: record.quality,
-            availability: record.availability,
-            performance: record.performance,
-            oee: record.oee,
-            // // เพิ่มข้อมูลเสริม
-            // shift_breakdown: record.shift_breakdown,
-            // data_warnings: record.data_warnings,
-            // has_incomplete_data: record.has_incomplete_data,
-          }));
+        if (targetDate.isAfter(currentProductionDate, 'day')) {
+          const realTimeData = await this.calculateRealTimeOEE(
+            undefined, // ไม่ใช้ date
+            undefined, // ไม่ใช้ shift
+            machine_numbers,
+          );
 
           return {
             status: 'success',
-            message: `Daily OEE data retrieved for ${moment(date).format('YYYY-MM-DD')}`,
-            data: combinedData,
+            message: `Showing real-time OEE data. Requested production date (${targetDate.format('YYYY-MM-DD')}) is ahead of current production date (${currentProductionDate.format('YYYY-MM-DD')})`,
+            data: realTimeData.data,
           };
-        } else {
-          const requestedDate = moment(date).format('YYYY-MM-DD');
-          const nextGenerationTime = moment(date)
-            .tz('Asia/Bangkok')
-            .add(1, 'day')
-            .set({ hour: 8, minute: 10, second: 0 })
-            .format('YYYY-MM-DD HH:mm');
+        }
+      }
 
-          throw new HttpException(
-            {
-              status: 'error',
-              message: `Daily OEE data for ${requestedDate} is not yet available. It will be automatically generated at ${nextGenerationTime}.`,
-              data: [],
-            },
-            HttpStatus.NOT_FOUND,
+      // 2. พยายามดึงข้อมูล Historical ก่อน (ถ้ามี date)
+      if (date) {
+        try {
+          // 2.1 ถ้ามี shift → ลอง Historical Shift
+          if (shift === 'day' || shift === 'night') {
+            const historicalData = await this.getHistoricalOEEByDayAndShift(
+              date,
+              shift,
+              machine_numbers,
+            );
+
+            if (historicalData && historicalData.length > 0) {
+              return {
+                status: 'success',
+                message: `Historical OEE data retrieved for ${date} ${shift}`,
+                data: historicalData,
+              };
+            }
+            // ถ้าไม่มีข้อมูล → fallback to real-time
+          }
+          // 2.2 ไม่มี shift → ลอง Historical Daily
+          else {
+            const filter: any = {
+              date: moment(date).tz('Asia/Bangkok').startOf('day').toDate(),
+            };
+
+            if (machine_numbers?.length > 0) {
+              filter.machine_number = { $in: machine_numbers };
+            }
+
+            const dailyRecords = await this.oeeDailyModel
+              .find(filter)
+              .sort({ machine_number: 1 })
+              .exec();
+
+            if (dailyRecords && dailyRecords.length > 0) {
+              const combinedData = dailyRecords.map((record) => ({
+                machineNumber: record.machine_number,
+                quality: record.quality,
+                availability: record.availability,
+                performance: record.performance,
+                oee: record.oee,
+              }));
+
+              return {
+                status: 'success',
+                message: `Daily OEE data retrieved for ${moment(date).format('YYYY-MM-DD')}`,
+                data: combinedData,
+              };
+            }
+            // ถ้าไม่มีข้อมูล → fallback to real-time
+          }
+        } catch (error) {
+          // ถ้าเกิด error ในการดึง historical → fallback to real-time
+          console.log(
+            'Historical data not available, falling back to real-time calculation',
           );
         }
       }
 
-      const quality = await this.qualityService.calculate(timeFrame);
-
-      const availability =
-        await this.availabilityService.getAvailabilityDetails(timeFrame);
-      const performance =
-        await this.performanceService.getMultiMachinePerformanceArray(
-          timeFrame,
-        );
-
-      machineList =
-        timeFrame.machine_numbers?.length > 0
-          ? timeFrame.machine_numbers
-          : this.getAllUniqueMachines(quality, availability, performance);
-
-      combinedData = machineList.map((machineNumber) => {
-        const qualityData = quality.find(
-          (q) => q.machineNumber === machineNumber,
-        );
-        const availabilityData = availability.find(
-          (a) => a.machineNumber === machineNumber,
-        );
-        const performanceData = performance.find(
-          (p) => p.machineNumber === machineNumber,
-        );
-
-        return {
-          machineNumber,
-          quality: qualityData?.quality || 0,
-          availability: availabilityData?.availability || 0,
-          performance: performanceData?.performance || 0,
-
-          oee:
-            Math.round(
-              (((qualityData?.quality || 0) *
-                (availabilityData?.availability || 0) *
-                (performanceData?.performance || 0)) /
-                10000) *
-                100,
-            ) / 100,
-        };
-      });
-
-      const machineCount = machineList.length;
-
-      const factoryTotal = this.calculateFactoryOEEAvg(
-        quality,
-        availability,
-        performance,
-        machineCount,
+      // 3. Calculate Real-time OEE (Default หรือ Fallback)
+      return await this.calculateRealTimeOEE(
+        undefined, // ไม่ใช้ date
+        undefined, // ไม่ใช้ shift
+        machine_numbers,
       );
-
-      return {
-        status: 'success',
-        message: 'Real-time OEE calculated successfully',
-        data: [...combinedData, factoryTotal],
-      };
     } catch (error) {
-      // Handle specific HttpException
-      if (error instanceof HttpException) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
 
-      if (
-        (error as Error).name === 'MongoError' ||
-        (error as Error).name === 'MongoServerError'
-      ) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message: 'Database error occurred while calculating OEE',
-            data: [],
-          },
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
-      }
-
-      // Handle unexpected errors
       throw new HttpException(
         {
           status: 'error',
-          message:
-            (error as Error).message || 'Failed to calculate real-time OEE',
+          message: (error as Error).message || 'Failed to calculate OEE',
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -1305,5 +1214,184 @@ export class OEEService {
       await this.performanceService.getMultiMachinePerformanceArray(timeFrame);
 
     return this.calculateFactoryOEE(quality, availability, performance);
+  }
+
+  private async calculateRealTimeOEE(
+    date?: string,
+    shift?: string,
+    machine_numbers?: string[],
+  ): Promise<ResponseFormat<any>> {
+    // 1. คำนวณ timeframe
+    const timeFrame = this.calculateTimeFrame(date, shift);
+
+    // 2. Apply machine filter
+    if (machine_numbers?.length > 0) {
+      timeFrame.machine_numbers = machine_numbers;
+    }
+
+    // 3. Calculate metrics
+    const quality = await this.qualityService.calculate(timeFrame);
+    const availability =
+      await this.availabilityService.getAvailabilityDetails(timeFrame);
+    const performance =
+      await this.performanceService.getMultiMachinePerformanceArray(timeFrame);
+
+    // 4. Get machine list
+    const machineList =
+      timeFrame.machine_numbers?.length > 0
+        ? timeFrame.machine_numbers
+        : this.getAllUniqueMachines(quality, availability, performance);
+
+    if (machineList.length === 0) {
+      return {
+        status: 'success',
+        message: 'No OEE data available for the specified criteria',
+        data: [],
+      };
+    }
+
+    // 5. Combine data
+    const combinedData = machineList.map((machineNumber) => {
+      const qualityData = quality.find(
+        (q) => q.machineNumber === machineNumber,
+      );
+      const availabilityData = availability.find(
+        (a) => a.machineNumber === machineNumber,
+      );
+      const performanceData = performance.find(
+        (p) => p.machineNumber === machineNumber,
+      );
+
+      return {
+        machineNumber,
+        quality: qualityData?.quality || 0,
+        availability: availabilityData?.availability || 0,
+        performance: performanceData?.performance || 0,
+        oee:
+          Math.round(
+            (((qualityData?.quality || 0) *
+              (availabilityData?.availability || 0) *
+              (performanceData?.performance || 0)) /
+              10000) *
+              100,
+          ) / 100,
+      };
+    });
+
+    // 6. Calculate factory average
+    const factoryTotal = this.calculateFactoryOEEAvg(
+      quality,
+      availability,
+      performance,
+      machineList.length,
+    );
+
+    // 7. Determine message based on context
+    let message = 'Real-time OEE calculated successfully';
+    if (date && shift) {
+      message = `Real-time OEE calculated for ${date} ${shift} (historical data not available)`;
+    } else if (date) {
+      message = `Real-time OEE calculated for ${date} (historical data not available)`;
+    } else if (shift) {
+      message = `Real-time OEE calculated for current ${shift} shift`;
+    }
+
+    return {
+      status: 'success',
+      message,
+      data: [...combinedData, factoryTotal],
+    };
+  }
+
+  /**
+   * คำนวณ timeframe สำหรับ real-time calculation
+   */
+  private calculateTimeFrame(date?: string, shift?: string): TimeFrame {
+    const now = moment().tz('Asia/Bangkok');
+
+    // กรณีมี date และ shift
+    if (date && (shift === 'day' || shift === 'night')) {
+      const { startTime, endTime } = this.calculateShiftTimeframeForDate(
+        date,
+        shift,
+      );
+
+      // ถ้า endTime ยังไม่ถึง → ใช้เวลาปัจจุบัน
+      const actualEndTime = moment(endTime).isAfter(now)
+        ? now.toDate()
+        : endTime;
+
+      return {
+        machine_numbers: [],
+        start_time: startTime,
+        end_time: actualEndTime,
+        shift_type: shift,
+      };
+    }
+
+    // กรณีมี date เท่านั้น (ทั้งวัน)
+    if (date) {
+      const targetDate = moment(date).tz('Asia/Bangkok');
+
+      // ถ้าเป็นวันปัจจุบัน → ใช้เวลาปัจจุบัน
+      const currentProductionDate = moment(this.calculateProductionDate()).tz(
+        'Asia/Bangkok',
+      );
+
+      if (targetDate.isSame(currentProductionDate, 'day')) {
+        return this.calculateProductionShiftTimeFrame();
+      }
+
+      // ถ้าเป็นวันในอดีต → คำนวณทั้งวัน (8:00 - 8:00)
+      const dayShift = this.calculateShiftTimeframeForDate(date, 'day');
+      const nightShift = this.calculateShiftTimeframeForDate(date, 'night');
+
+      return {
+        machine_numbers: [],
+        start_time: dayShift.startTime,
+        end_time: nightShift.endTime,
+        shift_type: undefined, // ทั้งวัน
+      };
+    }
+
+    // กรณีมี shift เท่านั้น (ใช้ production date ปัจจุบัน)
+    if (shift === 'day' || shift === 'night') {
+      const currentProdDate = moment(this.calculateProductionDate())
+        .tz('Asia/Bangkok')
+        .format('YYYY-MM-DD');
+
+      const { startTime, endTime } = this.calculateShiftTimeframeForDate(
+        currentProdDate,
+        shift,
+      );
+
+      return {
+        machine_numbers: [],
+        start_time: startTime,
+        end_time: now.toDate(),
+        shift_type: shift,
+      };
+    }
+
+    // Default: กะปัจจุบัน
+    return this.calculateProductionShiftTimeFrame();
+  }
+
+  /**
+   * คำนวณ production date (ย้ายมาจาก schema logic)
+   */
+  private calculateProductionDate(date?: Date): Date {
+    const recordDate = date
+      ? moment(date).tz('Asia/Bangkok')
+      : moment().tz('Asia/Bangkok');
+
+    const cutoffHour = 8;
+
+    if (recordDate.hour() < cutoffHour) {
+      recordDate.subtract(1, 'days');
+    }
+
+    recordDate.startOf('day');
+    return recordDate.toDate();
   }
 }

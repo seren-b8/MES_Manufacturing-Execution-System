@@ -13,7 +13,10 @@ import { MaterialPosition } from './material-position.schema';
   versionKey: false,
 })
 export class MaterialTransaction extends Document {
-  @Prop({ required: true, enum: ['receive', 'transfer', 'consume'] })
+  @Prop({
+    required: true,
+    enum: ['receive', 'transfer', 'consume', 'cancellation'],
+  })
   transaction_type: string;
 
   @Prop({ type: Types.ObjectId, ref: Material.name, required: true })
@@ -54,19 +57,37 @@ export class MaterialTransaction extends Document {
 
   @Prop({ type: Types.ObjectId, ref: MachineInfo.name })
   machine_id: Types.ObjectId;
+
+  // Cancellation fields
+  @Prop({ default: false, index: true })
+  is_cancelled: boolean;
+
+  @Prop({ type: Types.ObjectId, ref: MaterialTransaction.name })
+  cancelled_transaction_id?: Types.ObjectId; // Transaction ที่ถูกยกเลิก
+
+  @Prop({ type: Types.ObjectId, ref: MaterialTransaction.name })
+  cancelled_by_transaction_id?: Types.ObjectId; // ถูกยกเลิกโดย transaction ไหน
+
+  @Prop({ type: Types.ObjectId, ref: User.name })
+  cancelled_by_user?: Types.ObjectId;
+
+  @Prop()
+  cancelled_at?: Date;
+
+  @Prop()
+  cancellation_reason?: string;
 }
 
 export type MaterialTransactionDocument = MaterialTransaction & Document;
 export const MaterialTransactionSchema =
   SchemaFactory.createForClass(MaterialTransaction);
 
-// เพิ่ม Indexes
 MaterialTransactionSchema.index({ material_id: 1, transaction_date: -1 });
 MaterialTransactionSchema.index({ from_location_id: 1, transaction_date: -1 });
 MaterialTransactionSchema.index({ to_location_id: 1, transaction_date: -1 });
-MaterialTransactionSchema.index({ from_position_id: 1 }); // ← เพิ่ม
-MaterialTransactionSchema.index({ to_position_id: 1 }); // ← เพิ่ม
+MaterialTransactionSchema.index({ from_position_id: 1 });
+MaterialTransactionSchema.index({ to_position_id: 1 });
 MaterialTransactionSchema.index({ production_order_id: 1 });
 MaterialTransactionSchema.index({ user_id: 1, transaction_date: -1 });
-MaterialTransactionSchema.index({ lot_number: 1 }); // ← เพิ่ม index สำหรับ lot_number
+MaterialTransactionSchema.index({ lot_number: 1 });
 MaterialTransactionSchema.index({ transaction_type: 1, transaction_date: -1 });

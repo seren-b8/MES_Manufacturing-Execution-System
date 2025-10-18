@@ -11,7 +11,6 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
-
 import { JwtAuthGuard } from '../../auth/guard/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guard/roles.guard';
 import { Roles } from '../../auth/decorator/roles.decorator';
@@ -21,6 +20,7 @@ import { ConsumeMaterialDto } from './dto/consume-material.dto';
 import { TransferMaterialDto } from './dto/transfer-material.dto';
 import { ReceiveMaterialDto } from './dto/receive-material.dto';
 import { GetUserId } from 'src/auth/decorator/get-current-user.decorator';
+import { CancelTransactionDto } from './dto/cancel-transaction.dto';
 
 @Controller('material-transactions')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -72,6 +72,18 @@ export class TransactionController {
     @GetUserId() userId: string,
   ) {
     return this.transactionService.consumeMaterial({
+      ...dto,
+      user_id: userId,
+    });
+  }
+
+  @Post('cancel')
+  @Roles(Role.ADMIN)
+  async cancelTransaction(
+    @Body() dto: CancelTransactionDto,
+    @GetUserId() userId: string,
+  ) {
+    return this.transactionService.cancelTransaction({
       ...dto,
       user_id: userId,
     });

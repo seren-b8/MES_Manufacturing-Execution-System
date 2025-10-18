@@ -374,6 +374,65 @@ export class TransactionService {
     }
   }
 
+  async cancelTransaction(dto: {
+    transaction_id: string;
+    cancellation_reason: string;
+    user_id: string;
+  }): Promise<ResponseFormat<MaterialTransaction>> {
+    try {
+      // 1. Validate transaction
+      const transaction = await this.validateCancellableTransaction(
+        dto.transaction_id,
+      );
+
+      // 2. สร้าง Cancellation Transaction (ย้อนกลับ)
+      const cancellationTx = await this.createCancellationTransaction(
+        transaction,
+        dto.user_id,
+        dto.cancellation_reason,
+      );
+
+      // 3. Mark original as cancelled
+      const cancelledTx = await this.transactionModel
+        .findByIdAndUpdate(
+          transaction._id,
+          {
+            is_cancelled: true,
+            cancelled_by_transaction_id: cancellationTx._id,
+            cancelled_by_user: toObjectId(dto.user_id),
+            cancelled_at: moment().tz('Asia/Bangkok').toDate(),
+            cancellation_reason: dto.cancellation_reason,
+          },
+          { new: true },
+        )
+        .populate('material_id', 'material_number material_description')
+        .populate('to_location_id', 'location_code location_name')
+        .populate('from_location_id', 'location_code location_name')
+        .populate('to_position_id', 'position_code')
+        .populate('from_position_id', 'position_code')
+        .exec();
+
+      return {
+        status: 'success',
+        message: `Transaction cancelled successfully`,
+        data: [cancelledTx, cancellationTx],
+      };
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException ||
+        error instanceof ConflictException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException({
+        status: 'error',
+        message: `Failed to cancel transaction: ${(error as Error).message}`,
+        data: [],
+      });
+    }
+  }
+
   // ===== Query Methods =====
 
   async findAll(
@@ -491,19 +550,6 @@ export class TransactionService {
     }
   }
 
-  // ใน class TransactionService
-
-  // ... (เมธอดที่มีอยู่)
-
-  // ใน class TransactionService ใต้เมธอด queryConsumptionByShift หรือส่วน Query Methods
-
-  /**
-   * ดึงข้อมูลสรุปการเบิกใช้ (Consumption) รายวันและแยกตามกะ
-   * สรุป: เครื่องจักร, ใบสั่งผลิต, ผู้ใช้งาน, จำนวนรวม
-   * @param query.date วันที่ที่ต้องการ (YYYY-MM-DD)
-   * @param query.shift กะที่ต้องการ ('day' หรือ 'night')
-   * @returns ResponseFormat<any> ข้อมูลสรุป
-   */
   async summarizeConsumptionByShift(query: {
     date: string;
     shift: 'day' | 'night';
@@ -660,6 +706,7 @@ export class TransactionService {
     }
   }
 
+  // ===== Private Helper Methods =====
   private async executeStockUpdate(
     materialNumber: string,
     fromLocationCode: string,
@@ -713,5 +760,258 @@ export class TransactionService {
     }
 
     return position; // ← return position object
+  }
+
+  private async validateCancellableTransaction(
+    transactionId: string,
+  ): Promise<MaterialTransaction> {
+    // 1. ตรวจสอบ ObjectId format
+    if (!Types.ObjectId.isValid(transactionId)) {
+      throw new BadRequestException(`Invalid transaction ID format`);
+    }
+
+    // 2. ดึงข้อมูล transaction
+    const transaction = await this.transactionModel
+      .findById(transactionId)
+      .populate('material_id', 'material_number material_description')
+      .populate('to_location_id', 'location_code location_name')
+      .populate('from_location_id', 'location_code location_name')
+      .populate('to_position_id', 'position_code')
+      .populate('from_position_id', 'position_code')
+      .exec();
+
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    // 3. ตรวจสอบว่าถูกยกเลิกไปแล้วหรือไม่
+    if (transaction.is_cancelled) {
+      throw new ConflictException('Transaction has already been cancelled');
+    }
+
+    // 4. ไม่สามารถยกเลิก cancellation transaction
+    if (transaction.transaction_type === 'cancellation') {
+      throw new BadRequestException('Cannot cancel a cancellation transaction');
+    }
+
+    // 5. ตรวจสอบช่วงเวลา (optional)
+    const transactionAge = moment().diff(
+      moment((transaction as any).createdAt),
+      'hours',
+    );
+
+    const MAX_CANCELLATION_HOURS = 72; // 3 วัน
+
+    if (transactionAge > MAX_CANCELLATION_HOURS) {
+      throw new BadRequestException(
+        `Transaction is too old to cancel (${transactionAge} hours). ` +
+          `Maximum: ${MAX_CANCELLATION_HOURS} hours`,
+      );
+    }
+
+    // 6. ตรวจสอบตามประเภท transaction
+    if (transaction.transaction_type === 'receive') {
+      return await this.validateCancellableReceive(transaction);
+    } else if (transaction.transaction_type === 'transfer') {
+      return await this.validateCancellableTransfer(transaction);
+    } else if (transaction.transaction_type === 'consume') {
+      return await this.validateCancellableConsume(transaction);
+    }
+
+    return transaction;
+  }
+
+  private async validateCancellableReceive(
+    transaction: MaterialTransaction,
+  ): Promise<MaterialTransaction> {
+    // ตรวจสอบว่ามีสต็อกเพียงพอที่จะย้อนกลับ
+    const hasStock = await this.materialService.checkStockAvailability(
+      (transaction.material_id as any).material_number,
+      (transaction.to_location_id as any).location_code,
+      transaction.quantity,
+    );
+
+    if (!hasStock) {
+      throw new BadRequestException(
+        `Cannot cancel: Insufficient stock to reverse. ` +
+          `Need ${transaction.quantity} at ${(transaction.to_location_id as any).location_code}`,
+      );
+    }
+
+    // ตรวจสอบว่าถูกใช้ไปแล้วหรือไม่
+    const hasConsumption = await this.checkRelatedConsumption(
+      transaction._id.toString(),
+      (transaction.material_id as any)._id.toString(),
+      (transaction.to_location_id as any)._id.toString(),
+    );
+
+    if (hasConsumption) {
+      throw new ConflictException('Cannot cancel: Material has been consumed');
+    }
+
+    return transaction;
+  }
+
+  private async validateCancellableTransfer(
+    transaction: MaterialTransaction,
+  ): Promise<MaterialTransaction> {
+    // ตรวจสอบที่ปลายทาง (to_location)
+    const hasStock = await this.materialService.checkStockAvailability(
+      (transaction.material_id as any).material_number,
+      (transaction.to_location_id as any).location_code,
+      transaction.quantity,
+    );
+
+    if (!hasStock) {
+      throw new BadRequestException(
+        'Cannot cancel transfer: Stock at destination has been used',
+      );
+    }
+
+    return transaction;
+  }
+
+  private async validateCancellableConsume(
+    transaction: MaterialTransaction,
+  ): Promise<MaterialTransaction> {
+    // ตรวจสอบว่า production record ที่เกี่ยวข้องยังไม่ถูก sync ไป SAP
+    if (transaction.production_order_id) {
+      const hasSync = await this.checkProductionSync(
+        transaction.production_order_id.toString(),
+      );
+
+      if (hasSync) {
+        throw new ConflictException(
+          'Cannot cancel: Production data has been synced to SAP',
+        );
+      }
+    }
+
+    return transaction;
+  }
+
+  private async checkProductionSync(orderId: string): Promise<boolean> {
+    // TODO: ตรวจสอบจาก production_records
+    // ว่ามี record ที่ is_synced_to_sap = true หรือไม่
+    return false;
+  }
+
+  private async createCancellationTransaction(
+    original: MaterialTransaction,
+    userId: string,
+    reason: string,
+  ): Promise<MaterialTransaction> {
+    let cancellationTx: MaterialTransaction;
+
+    if (original.transaction_type === 'receive') {
+      // ย้อนกลับ: ลบสต็อกที่รับเข้า
+      await this.materialService.removeStockFromLocation(
+        (original.material_id as any).material_number,
+        (original.to_location_id as any).location_code,
+        original.quantity,
+        (original.to_position_id as any)?.position_code,
+        original.lot_number,
+      );
+
+      cancellationTx = await this.transactionModel.create({
+        transaction_type: 'cancellation',
+        material_id: original.material_id,
+        quantity: -original.quantity,
+        to_location_id: original.to_location_id,
+        to_position_id: original.to_position_id,
+        cancelled_transaction_id: original._id,
+        cancellation_reason: reason,
+        user_id: toObjectId(userId),
+        reference_doc: `CANCEL-${original._id}`,
+        lot_number: original.lot_number,
+      });
+    } else if (original.transaction_type === 'transfer') {
+      // ย้อนกลับ: ลบที่ปลายทาง, เพิ่มที่ต้นทาง
+      await this.executeStockUpdate(
+        (original.material_id as any).material_number,
+        (original.to_location_id as any).location_code,
+        (original.from_location_id as any).location_code,
+        original.quantity,
+        (original.to_position_id as any)?.position_code,
+        (original.from_position_id as any)?.position_code,
+        original.lot_number,
+      );
+
+      cancellationTx = await this.transactionModel.create({
+        transaction_type: 'cancellation',
+        material_id: original.material_id,
+        quantity: original.quantity,
+        from_location_id: original.to_location_id, // สลับกลับ
+        to_location_id: original.from_location_id,
+        from_position_id: original.to_position_id,
+        to_position_id: original.from_position_id,
+        cancelled_transaction_id: original._id,
+        cancellation_reason: reason,
+        user_id: toObjectId(userId),
+        reference_doc: `CANCEL-${original._id}`,
+        lot_number: original.lot_number,
+      });
+    } else if (original.transaction_type === 'consume') {
+      // ย้อนกลับ: เพิ่มสต็อกกลับมา
+      await this.materialService.addStockToLocation(
+        (original.material_id as any).material_number,
+        (original.from_location_id as any).location_code,
+        original.quantity,
+        (original.from_position_id as any)?.position_code,
+        original.lot_number,
+      );
+
+      cancellationTx = await this.transactionModel.create({
+        transaction_type: 'cancellation',
+        material_id: original.material_id,
+        quantity: original.quantity,
+        to_location_id: original.from_location_id,
+        to_position_id: original.from_position_id,
+        cancelled_transaction_id: original._id,
+        cancellation_reason: reason,
+        user_id: toObjectId(userId),
+        reference_doc: `CANCEL-${original._id}`,
+        lot_number: original.lot_number,
+        machine_id: original.machine_id,
+        production_order_id: original.production_order_id,
+      });
+    }
+
+    // Populate before return
+    return this.transactionModel
+      .findById(cancellationTx._id)
+      .populate('material_id', 'material_number material_description')
+      .populate('to_location_id', 'location_code location_name')
+      .populate('from_location_id', 'location_code location_name')
+      .populate('to_position_id', 'position_code')
+      .populate('from_position_id', 'position_code')
+      .exec();
+  }
+
+  private async checkRelatedConsumption(
+    receiveTransactionId: string,
+    materialId: string,
+    locationId: string,
+  ): Promise<boolean> {
+    const receiveTransaction = await this.transactionModel
+      .findById(receiveTransactionId)
+      .exec();
+
+    if (!receiveTransaction) {
+      return false;
+    }
+
+    // หา consumption ที่เกิดขึ้นหลังจากรับเข้า
+    const consumptionCount = await this.transactionModel
+      .countDocuments({
+        transaction_type: 'consume',
+        material_id: toObjectId(materialId),
+        from_location_id: toObjectId(locationId),
+        transaction_date: { $gte: receiveTransaction.transaction_date },
+        is_cancelled: { $ne: true }, // ← เพิ่มบรรทัดนี้ (ไม่นับ transaction ที่ถูกยกเลิก)
+      })
+      .exec();
+
+    return consumptionCount > 0;
   }
 }
