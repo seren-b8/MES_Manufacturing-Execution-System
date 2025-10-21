@@ -311,30 +311,77 @@ export class MaterialService {
     materialNumber: string,
     locationCode: string,
     requiredQuantity: number,
+    positionCode?: string,
+    lotNumber?: string,
   ): Promise<boolean> {
     try {
+      // 1. Validate inputs
+      if (requiredQuantity <= 0) {
+        throw new BadRequestException(
+          'Required quantity must be greater than 0',
+        );
+      }
+
+      // 2. Fetch material with populated location
       const material = await this.materialModel
         .findOne({ material_number: materialNumber })
-        .populate('current_stock.location_id', 'location_code')
+        .populate('current_stock.location_id', 'location_code location_name')
+        .populate('current_stock.position_id', 'position_code')
         .exec();
 
       if (!material) {
         throw new NotFoundException(`Material ${materialNumber} not found`);
       }
 
-      const stockAtLocation = material.current_stock.find(
+      // 3. Filter stock entries by location
+      const stocksAtLocation = material.current_stock.filter(
         (stock: any) => stock.location_id?.location_code === locationCode,
       );
 
-      if (!stockAtLocation) {
+      if (stocksAtLocation.length === 0) {
         return false;
       }
 
-      return stockAtLocation.stock_quantity >= requiredQuantity;
+      // 4. Further filter by position if specified
+      let relevantStocks = stocksAtLocation;
+
+      if (positionCode) {
+        relevantStocks = stocksAtLocation.filter(
+          (stock: any) => stock.position_id?.position_code === positionCode,
+        );
+
+        if (relevantStocks.length === 0) {
+          return false;
+        }
+      }
+
+      // 5. Further filter by lot number if specified
+      if (lotNumber) {
+        relevantStocks = relevantStocks.filter(
+          (stock: any) => stock.lot_number === lotNumber,
+        );
+
+        if (relevantStocks.length === 0) {
+          return false;
+        }
+      }
+
+      // 6. Calculate total available quantity
+      const totalAvailable = relevantStocks.reduce(
+        (sum: number, stock: any) => sum + (stock.stock_quantity || 0),
+        0,
+      );
+
+      return totalAvailable >= requiredQuantity;
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
       throw new BadRequestException(
-        `Failed to check stock: ${(error as Error).message}`,
+        `Failed to check stock availability: ${(error as Error).message}`,
       );
     }
   }
@@ -348,27 +395,21 @@ export class MaterialService {
     positionCode?: string,
     lotNumber?: string,
   ): Promise<void> {
-    try {
-      if (quantityChange > 0) {
-        await this.addStockToLocation(
-          materialNumber,
-          locationCode,
-          quantityChange,
-          positionCode,
-          lotNumber,
-        );
-      } else if (quantityChange < 0) {
-        await this.removeStockFromLocation(
-          materialNumber,
-          locationCode,
-          Math.abs(quantityChange),
-          positionCode,
-          lotNumber,
-        );
-      }
-    } catch (error) {
-      throw new BadRequestException(
-        `Stock update failed: ${(error as Error).message}`,
+    if (quantityChange > 0) {
+      await this.addStockToLocation(
+        materialNumber,
+        locationCode,
+        quantityChange,
+        positionCode,
+        lotNumber,
+      );
+    } else if (quantityChange < 0) {
+      await this.removeStockFromLocation(
+        materialNumber,
+        locationCode,
+        Math.abs(quantityChange),
+        positionCode,
+        lotNumber,
       );
     }
   }
@@ -380,110 +421,35 @@ export class MaterialService {
     positionCode?: string,
     lotNumber?: string,
   ): Promise<void> {
-    try {
-      // Validate material exists
-      const material = await this.validateMaterialExists(materialNumber);
+    // Validate material exists
+    const material = await this.validateMaterialExists(materialNumber);
 
-      // Find location by code
-      const {
-        MaterialLocation,
-      } = require('../schema/material-location.schema');
-      const location = await this.materialModel.db
-        .collection('material_location')
-        .findOne({ location_code: locationCode });
+    // Find location by code
+    const location = await this.materialModel.db
+      .collection('material_location')
+      .findOne({ location_code: locationCode });
 
-      if (!location) {
-        throw new NotFoundException(`Location ${locationCode} not found`);
-      }
-
-      const locationId = location._id;
-
-      // Find position if provided
-      let positionId = null;
-      if (positionCode) {
-        const position = await this.materialModel.db
-          .collection('material_position')
-          .findOne({ position_code: positionCode, location_id: locationId });
-
-        if (position) {
-          positionId = position._id;
-        }
-      }
-
-      // Check if stock already exists for this location/position/lot
-      const existingStockIndex = material.current_stock.findIndex(
-        (stock: any) => {
-          const locationMatch =
-            stock.location_id.toString() === locationId.toString();
-          const positionMatch = positionId
-            ? stock.position_id?.toString() === positionId.toString()
-            : !stock.position_id;
-          const lotMatch = lotNumber
-            ? stock.lot_number === lotNumber
-            : !stock.lot_number;
-
-          return locationMatch && positionMatch && lotMatch;
-        },
-      );
-
-      if (existingStockIndex !== -1) {
-        // Update existing stock
-        material.current_stock[existingStockIndex].stock_quantity += quantity;
-      } else {
-        // Add new stock entry
-        material.current_stock.push({
-          location_id: locationId,
-          position_id: positionId,
-          stock_quantity: quantity,
-          lot_number: lotNumber,
-        } as any);
-      }
-
-      await material.save();
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      throw new BadRequestException(
-        `Failed to add stock: ${(error as Error).message}`,
-      );
+    if (!location) {
+      throw new NotFoundException(`Location ${locationCode} not found`);
     }
-  }
 
-  async removeStockFromLocation(
-    materialNumber: string,
-    locationCode: string,
-    quantity: number,
-    positionCode?: string,
-    lotNumber?: string,
-  ): Promise<void> {
-    try {
-      // Validate material exists
-      const material = await this.validateMaterialExists(materialNumber);
+    const locationId = location._id;
 
-      // Find location
-      const location = await this.materialModel.db
-        .collection('material_location')
-        .findOne({ location_code: locationCode });
+    // Find position if provided
+    let positionId = null;
+    if (positionCode) {
+      const position = await this.materialModel.db
+        .collection('material_position')
+        .findOne({ position_code: positionCode, location_id: locationId });
 
-      if (!location) {
-        throw new NotFoundException(`Location ${locationCode} not found`);
+      if (position) {
+        positionId = position._id;
       }
+    }
 
-      const locationId = location._id;
-
-      // Find position if provided
-      let positionId = null;
-      if (positionCode) {
-        const position = await this.materialModel.db
-          .collection('material_position')
-          .findOne({ position_code: positionCode, location_id: locationId });
-
-        if (position) {
-          positionId = position._id;
-        }
-      }
-
-      // Find matching stock entry
-      const stockIndex = material.current_stock.findIndex((stock: any) => {
+    // Check if stock already exists for this location/position/lot
+    const existingStockIndex = material.current_stock.findIndex(
+      (stock: any) => {
         const locationMatch =
           stock.location_id.toString() === locationId.toString();
         const positionMatch = positionId
@@ -494,42 +460,95 @@ export class MaterialService {
           : !stock.lot_number;
 
         return locationMatch && positionMatch && lotMatch;
-      });
+      },
+    );
 
-      if (stockIndex === -1) {
-        throw new NotFoundException(
-          `No stock found for material ${materialNumber} at location ${locationCode}`,
-        );
+    if (existingStockIndex !== -1) {
+      // Update existing stock
+      material.current_stock[existingStockIndex].stock_quantity += quantity;
+    } else {
+      // Add new stock entry
+      material.current_stock.push({
+        location_id: locationId,
+        position_id: positionId,
+        stock_quantity: quantity,
+        lot_number: lotNumber,
+      } as any);
+    }
+
+    await material.save();
+  }
+
+  async removeStockFromLocation(
+    materialNumber: string,
+    locationCode: string,
+    quantity: number,
+    positionCode?: string,
+    lotNumber?: string,
+  ): Promise<void> {
+    // Validate material exists
+    const material = await this.validateMaterialExists(materialNumber);
+
+    // Find location
+    const location = await this.materialModel.db
+      .collection('material_location')
+      .findOne({ location_code: locationCode });
+
+    if (!location) {
+      throw new NotFoundException(`Location ${locationCode} not found`);
+    }
+
+    const locationId = location._id;
+
+    // Find position if provided
+    let positionId = null;
+    if (positionCode) {
+      const position = await this.materialModel.db
+        .collection('material_position')
+        .findOne({ position_code: positionCode, location_id: locationId });
+
+      if (position) {
+        positionId = position._id;
       }
+    }
 
-      const currentStock = material.current_stock[stockIndex].stock_quantity;
+    // Find matching stock entry
+    const stockIndex = material.current_stock.findIndex((stock: any) => {
+      const locationMatch =
+        stock.location_id.toString() === locationId.toString();
+      const positionMatch = positionId
+        ? stock.position_id?.toString() === positionId.toString()
+        : !stock.position_id;
+      const lotMatch = lotNumber
+        ? stock.lot_number === lotNumber
+        : !stock.lot_number;
 
-      if (currentStock < quantity) {
-        throw new BadRequestException(
-          `Insufficient stock. Available: ${currentStock}, Required: ${quantity}`,
-        );
-      }
+      return locationMatch && positionMatch && lotMatch;
+    });
 
-      // Update stock
-      material.current_stock[stockIndex].stock_quantity -= quantity;
-
-      // Remove entry if stock becomes 0
-      if (material.current_stock[stockIndex].stock_quantity === 0) {
-        material.current_stock.splice(stockIndex, 1);
-      }
-
-      await material.save();
-    } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
-      }
-      throw new BadRequestException(
-        `Failed to remove stock: ${(error as Error).message}`,
+    if (stockIndex === -1) {
+      throw new NotFoundException(
+        `No stock found for material ${materialNumber} at location ${locationCode}`,
       );
     }
+
+    const currentStock = material.current_stock[stockIndex].stock_quantity;
+
+    if (currentStock < quantity) {
+      throw new BadRequestException(
+        `Insufficient stock. Available: ${currentStock}, Required: ${quantity}`,
+      );
+    }
+
+    // Update stock
+    material.current_stock[stockIndex].stock_quantity -= quantity;
+
+    // Remove entry if stock becomes 0
+    if (material.current_stock[stockIndex].stock_quantity === 0) {
+      material.current_stock.splice(stockIndex, 1);
+    }
+
+    await material.save();
   }
 
   // ===== Helper Methods =====
@@ -537,9 +556,11 @@ export class MaterialService {
   async validateMaterialExists(
     materialNumber: string,
   ): Promise<MaterialDocument> {
-    const material = await this.materialModel
-      .findOne({ material_number: materialNumber })
-      .exec();
+    const query = this.materialModel.findOne({
+      material_number: materialNumber,
+    });
+
+    const material = await query.exec();
 
     if (!material) {
       throw new NotFoundException(`Material ${materialNumber} not found`);
@@ -549,40 +570,30 @@ export class MaterialService {
   }
 
   async clearAllStock(): Promise<ResponseFormat<any>> {
-    try {
-      // 1. Clear all current_stock
-      const materialResult = await this.materialModel
-        .updateMany({}, { $set: { current_stock: [] } })
-        .exec();
+    // 1. Clear all current_stock
+    const materialResult = await this.materialModel
+      .updateMany({}, { $set: { current_stock: [] } })
+      .exec();
 
-      // 2. Delete all transactions
-      const transactionResult = await this.transactionModel
-        .deleteMany({})
-        .exec();
+    // 2. Delete all transactions
+    const transactionResult = await this.transactionModel.deleteMany({}).exec();
 
-      // 3. Reset all positions to not occupied
-      const positionResult = await this.positionModel
-        .updateMany({}, { $set: { is_occupied: false } })
-        .exec();
+    // 3. Reset all positions to not occupied
+    const positionResult = await this.positionModel
+      .updateMany({}, { $set: { is_occupied: false } })
+      .exec();
 
-      return {
-        status: 'success',
-        message: 'All stock cleared successfully',
-        data: [
-          {
-            materials_updated: materialResult.modifiedCount,
-            transactions_deleted: transactionResult.deletedCount,
-            positions_reset: positionResult.modifiedCount,
-          },
-        ],
-      };
-    } catch (error) {
-      throw new BadRequestException({
-        status: 'error',
-        message: `Failed to clear stock: ${(error as Error).message}`,
-        data: [],
-      });
-    }
+    return {
+      status: 'success',
+      message: 'All stock cleared successfully',
+      data: [
+        {
+          materials_updated: materialResult.modifiedCount,
+          transactions_deleted: transactionResult.deletedCount,
+          positions_reset: positionResult.modifiedCount,
+        },
+      ],
+    };
   }
 
   private calculateTotalStock(material: Material): number {

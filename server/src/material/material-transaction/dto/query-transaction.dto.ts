@@ -7,6 +7,7 @@ export class QueryTransactionDto {
   production_order_id?: string;
   include_cancelled?: boolean | string;
   machine_number?: string;
+  lot_number?: string;
   start_date?: Date;
   end_date?: Date;
   page?: number;
