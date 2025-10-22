@@ -422,7 +422,13 @@ export class MaterialService {
     lotNumber?: string,
   ): Promise<void> {
     // Validate material exists
-    const material = await this.validateMaterialExists(materialNumber);
+    const material = await this.materialModel
+      .findOne({ material_number: materialNumber })
+      .exec();
+
+    if (!material) {
+      throw new NotFoundException(`Material ${materialNumber} not found`);
+    }
 
     // Find location by code
     const location = await this.materialModel.db
@@ -442,9 +448,13 @@ export class MaterialService {
         .collection('material_position')
         .findOne({ position_code: positionCode, location_id: locationId });
 
-      if (position) {
-        positionId = position._id;
+      if (!position) {
+        throw new NotFoundException(
+          `Position ${positionCode} not found in location ${locationCode}`,
+        );
       }
+
+      positionId = position._id;
     }
 
     // Check if stock already exists for this location/position/lot
@@ -476,6 +486,12 @@ export class MaterialService {
       } as any);
     }
 
+    if (positionId) {
+      await this.materialModel.db
+        .collection('material_position')
+        .updateOne({ _id: positionId }, { $set: { is_occupied: true } });
+    }
+
     await material.save();
   }
 
@@ -487,7 +503,14 @@ export class MaterialService {
     lotNumber?: string,
   ): Promise<void> {
     // Validate material exists
-    const material = await this.validateMaterialExists(materialNumber);
+
+    const material = await this.materialModel
+      .findOne({ material_number: materialNumber })
+      .exec();
+
+    if (!material) {
+      throw new NotFoundException(`Material ${materialNumber} not found`);
+    }
 
     // Find location
     const location = await this.materialModel.db
@@ -507,9 +530,13 @@ export class MaterialService {
         .collection('material_position')
         .findOne({ position_code: positionCode, location_id: locationId });
 
-      if (position) {
-        positionId = position._id;
+      if (!position) {
+        throw new NotFoundException(
+          `Position ${positionCode} not found in location ${locationCode}`,
+        );
       }
+
+      positionId = position._id;
     }
 
     // Find matching stock entry
@@ -527,25 +554,36 @@ export class MaterialService {
     });
 
     if (stockIndex === -1) {
-      throw new NotFoundException(
-        `No stock found for material ${materialNumber} at location ${locationCode}`,
-      );
+      // Build detailed error message
+      let errorMsg = `No stock found for material ${materialNumber} at location ${locationCode}`;
+      if (positionCode) errorMsg += `, position ${positionCode}`;
+      if (lotNumber) errorMsg += `, lot ${lotNumber}`;
+
+      throw new NotFoundException(errorMsg);
     }
 
     const currentStock = material.current_stock[stockIndex].stock_quantity;
 
     if (currentStock < quantity) {
       throw new BadRequestException(
-        `Insufficient stock. Available: ${currentStock}, Required: ${quantity}`,
+        `Insufficient stock at ${locationCode}` +
+          (positionCode ? ` (${positionCode})` : '') +
+          (lotNumber ? ` [Lot: ${lotNumber}]` : '') +
+          `. Available: ${currentStock}, Required: ${quantity}`,
       );
     }
-
     // Update stock
     material.current_stock[stockIndex].stock_quantity -= quantity;
 
     // Remove entry if stock becomes 0
     if (material.current_stock[stockIndex].stock_quantity === 0) {
       material.current_stock.splice(stockIndex, 1);
+
+      if (positionId) {
+        await this.materialModel.db
+          .collection('material_position')
+          .updateOne({ _id: positionId }, { $set: { is_occupied: false } });
+      }
     }
 
     await material.save();

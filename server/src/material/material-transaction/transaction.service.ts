@@ -277,32 +277,24 @@ export class TransactionService {
       dto.material_number,
       dto.from_location_code,
       dto.quantity,
+      dto.from_position_code,
+      dto.lot_number,
     );
 
     if (!hasStock) {
+      const availableStock = await this.getAvailableStockForError(
+        dto.material_number,
+        dto.from_location_code,
+        dto.from_position_code,
+        dto.lot_number,
+      );
       throw new BadRequestException(
-        `Insufficient stock at ${dto.from_location_code}. Required: ${dto.quantity}`,
+        `Insufficient stock at ${dto.from_location_code}` +
+          (dto.from_position_code ? ` (${dto.from_position_code})` : '') +
+          (dto.lot_number ? ` [Lot: ${dto.lot_number}]` : '') +
+          `. Available: ${availableStock}, Required: ${dto.quantity}`,
       );
     }
-
-    // 7. Create transaction record
-    const transaction = await this.transactionModel.create({
-      transaction_type: 'consume',
-      material_id: toObjectId(material._id as string),
-      quantity: dto.quantity,
-      from_location_id: toObjectId(fromLocation._id as string),
-      from_position_id: fromPositionId,
-      machine_id: toObjectId(machine._id as string),
-      production_order_id: activeAssignOrder?.production_order_id?._id || null,
-      lot_number: dto.lot_number,
-      reference_doc:
-        dto.reference_doc || `CONSUME-${machine.machine_number}-${Date.now()}`,
-      user_id: toObjectId(dto.user_id),
-      transaction_date:
-        dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
-    });
-
-    // 8. Update material stock (remove from location)
     await this.materialService.removeStockFromLocation(
       dto.material_number,
       dto.from_location_code,
@@ -310,39 +302,75 @@ export class TransactionService {
       dto.from_position_code,
       dto.lot_number,
     );
+    try {
+      // 7. Create transaction record
+      const transaction = await this.transactionModel.create({
+        transaction_type: 'consume',
+        material_id: toObjectId(material._id as string),
+        quantity: dto.quantity,
+        from_location_id: toObjectId(fromLocation._id as string),
+        from_position_id: fromPositionId,
+        machine_id: toObjectId(machine._id as string),
+        production_order_id:
+          activeAssignOrder?.production_order_id?._id || null,
+        lot_number: dto.lot_number,
+        reference_doc:
+          dto.reference_doc ||
+          `CONSUME-${machine.machine_number}-${Date.now()}`,
+        user_id: toObjectId(dto.user_id),
+        transaction_date:
+          dto.transaction_date || moment().tz('Asia/Bangkok').toDate(),
+      });
 
-    // 9. Populate and return
-    const populatedTransaction = await this.transactionModel
-      .findById(transaction._id)
-      .populate(
-        'material_id',
-        'material_number material_description unit_of_measurement',
-      )
-      .populate('from_location_id', 'location_name location_code')
-      .populate('from_position_id', 'position_code shelf_code')
-      .populate('machine_id', 'machine_number machine_name')
-      .populate('production_order_id', 'order_id material_number')
-      .populate('user_id', 'employee_id')
-      .exec();
+      // 9. Populate and return
+      const populatedTransaction = await this.transactionModel
+        .findById(transaction._id)
+        .populate(
+          'material_id',
+          'material_number material_description unit_of_measurement',
+        )
+        .populate('from_location_id', 'location_name location_code')
+        .populate('from_position_id', 'position_code shelf_code')
+        .populate('machine_id', 'machine_number machine_name')
+        .populate('production_order_id', 'order_id material_number')
+        .populate('user_id', 'employee_id')
+        .exec();
 
-    if (!populatedTransaction) {
-      throw new NotFoundException('Transaction created but not found');
+      if (!populatedTransaction) {
+        throw new NotFoundException('Transaction created but not found');
+      }
+
+      // 10. Build success message
+      let message = `Consumed ${dto.quantity} units of ${dto.material_number} at machine ${dto.machine_number}`;
+
+      // Add order info if exists
+      if (activeAssignOrder?.production_order_id) {
+        const orderData = activeAssignOrder.production_order_id as any;
+        message += ` (Order: ${orderData.order_id || 'N/A'})`;
+      }
+
+      return {
+        status: 'success',
+        message,
+        data: [populatedTransaction],
+      };
+    } catch (error) {
+      // Rollback: Add stock back if transaction creation fails
+      await this.materialService
+        .addStockToLocation(
+          dto.material_number,
+          dto.from_location_code,
+          dto.quantity,
+          dto.from_position_code,
+          dto.lot_number,
+        )
+        .catch((rollbackError) => {
+          // Log rollback error but don't throw
+          console.error('Failed to rollback stock:', rollbackError);
+        });
+
+      throw error;
     }
-
-    // 10. Build success message
-    let message = `Consumed ${dto.quantity} units of ${dto.material_number} at machine ${dto.machine_number}`;
-
-    // Add order info if exists
-    if (activeAssignOrder?.production_order_id) {
-      const orderData = activeAssignOrder.production_order_id as any;
-      message += ` (Order: ${orderData.order_id || 'N/A'})`;
-    }
-
-    return {
-      status: 'success',
-      message,
-      data: [populatedTransaction],
-    };
   }
 
   async cancelTransaction(dto: {
@@ -472,11 +500,23 @@ export class TransactionService {
     // Date range filter
     if (start_date || end_date) {
       filter.transaction_date = {};
+
+      // ตั้งค่าเวลาเริ่มต้น (start_date) เป็น 00:00:00 ของวันที่เลือก
       if (start_date) {
-        filter.transaction_date.$gte = new Date(start_date);
+        filter.transaction_date.$gte = moment
+          .tz(start_date, 'Asia/Bangkok')
+          .startOf('day') // เพิ่ม .startOf('day') เพื่อให้แน่ใจว่าเป็น 00:00:00
+          .toDate();
       }
+
+      // ตั้งค่าเวลาสิ้นสุด (end_date) ให้ครอบคลุมทั้งวัน
       if (end_date) {
-        filter.transaction_date.$lte = new Date(end_date);
+        // วิธีนี้รับประกันว่าครอบคลุมข้อมูลถึงวินาทีสุดท้ายของวันและเป็นมาตรฐานที่ดีกว่า
+        filter.transaction_date.$lt = moment
+          .tz(end_date, 'Asia/Bangkok')
+          .add(1, 'days') // เพิ่มไป 1 วัน
+          .startOf('day') // ตั้งเป็น 00:00:00 ของวันถัดไป
+          .toDate();
       }
     }
 
@@ -1000,6 +1040,40 @@ export class TransactionService {
       throw new BadRequestException(
         'Quantity exceeds maximum limit (1,000,000)',
       );
+    }
+  }
+
+  private async getAvailableStockForError(
+    materialNumber: string,
+    locationCode: string,
+    positionCode?: string,
+    lotNumber?: string,
+  ): Promise<number> {
+    try {
+      const material = await this.materialModel
+        .findOne({ material_number: materialNumber })
+        .populate('current_stock.location_id', 'location_code')
+        .populate('current_stock.position_id', 'position_code')
+        .exec();
+
+      if (!material) return 0;
+
+      const relevantStocks = material.current_stock.filter((stock: any) => {
+        const locationMatch = stock.location_id?.location_code === locationCode;
+        const positionMatch = positionCode
+          ? stock.position_id?.position_code === positionCode
+          : true;
+        const lotMatch = lotNumber ? stock.lot_number === lotNumber : true;
+
+        return locationMatch && positionMatch && lotMatch;
+      });
+
+      return relevantStocks.reduce(
+        (sum: number, stock: any) => sum + (stock.stock_quantity || 0),
+        0,
+      );
+    } catch {
+      return 0;
     }
   }
 }
