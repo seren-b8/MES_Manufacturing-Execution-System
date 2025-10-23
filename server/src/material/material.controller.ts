@@ -43,6 +43,7 @@ export class MaterialController {
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   @HttpCode(HttpStatus.OK)
   async getInventory(@Query() query: QueryMaterialInventoryDto) {
+    console.log('Received inventory query:', query);
     return this.materialService.findInventoryTable(query);
   }
 

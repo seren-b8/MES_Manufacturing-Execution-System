@@ -22,6 +22,10 @@ export class QueryMaterialDto {
   location_code?: string;
 
   @IsOptional()
+  @IsString()
+  position_code?: string;
+
+  @IsOptional()
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   has_stock?: boolean;

@@ -104,6 +104,7 @@ export class MaterialService {
         material_number,
         material_description,
         location_code,
+        position_code,
         lot_number,
         sort_by = 'material_number',
         sort_order = 'asc',
@@ -156,6 +157,13 @@ export class MaterialService {
       const postUnwindMatch: any = {};
       if (location_code) {
         postUnwindMatch['location.location_code'] = location_code;
+      }
+      if (position_code) {
+        // เพิ่ม
+        postUnwindMatch['position.position_code'] = {
+          $regex: position_code,
+          $options: 'i',
+        };
       }
       if (lot_number) {
         postUnwindMatch['current_stock.lot_number'] = {
