@@ -22,6 +22,8 @@ import {
   QueryMaterialDto,
   QueryMaterialInventoryDto,
 } from './dto/query-material.dto';
+import { stat } from 'fs';
+import { Cron, CronExpression } from '@nestjs/schedule';
 
 @Controller('materials')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -131,6 +133,23 @@ export class MaterialController {
         },
       ],
     };
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT) // ทุกเที่ยงคืน 00:00
+  async syncMaterialStockFromSQLCron() {
+    try {
+      const result = await this.materialService.syncMaterialStockFromSQL();
+      console.log(`SQL sync completed: ${JSON.stringify(result)}`);
+    } catch (error) {
+      console.error(`SQL sync failed: ${(error as Error).message}`);
+    }
+  }
+
+  @Get('dev/sql-sync')
+  @Roles(Role.ADMIN) // เฉพาะ Admin เท่านั้น
+  async syncMaterialStock() {
+    const sync = await this.materialService.syncMaterialStockFromSQL();
+    return { status: 'success', message: 'SQL sync completed', data: [sync] };
   }
 
   @Delete('dev/clear-stock')

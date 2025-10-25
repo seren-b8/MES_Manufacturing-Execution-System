@@ -9,6 +9,7 @@ import { TransactionService } from './material-transaction/transaction.service';
 import { LocationService } from './material-location/location.service';
 import { PositionController } from './material-position/position.controller';
 import { PositionService } from './material-position/position.service';
+import { SqlService } from 'src/shared/services/sql.service';
 
 @Module({
   imports: [MongooseSchemaModule],
@@ -23,6 +24,7 @@ import { PositionService } from './material-position/position.service';
     TransactionService,
     LocationService,
     PositionService,
+    SqlService,
   ],
   exports: [MaterialService],
 })

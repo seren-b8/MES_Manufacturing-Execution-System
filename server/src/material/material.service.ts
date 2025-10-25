@@ -25,6 +25,8 @@ import {
 } from 'src/schema/material-transaction.schema';
 import { MaterialLocation } from 'src/schema/material-location.schema';
 import { MaterialInventoryRow } from './dto/material-inventory-row.dto';
+import { SqlService } from 'src/shared/services/sql.service';
+import { query } from 'express';
 
 @Injectable()
 export class MaterialService {
@@ -38,6 +40,7 @@ export class MaterialService {
     @InjectModel(MaterialLocation.name)
     private readonly locationModel: Model<MaterialLocation>,
     private readonly locationService: LocationService,
+    private readonly sqlService: SqlService,
   ) {}
 
   async findAll(query: QueryMaterialDto): Promise<ResponseFormat<Material>> {
@@ -595,6 +598,61 @@ export class MaterialService {
     }
 
     await material.save();
+  }
+
+  // ===== SQL Sync Methods =====
+
+  async syncMaterialStockFromSQL(): Promise<{
+    synced: number;
+    created: number;
+    updated: number;
+  }> {
+    const query = await this.sqlService.query(`SELECT 
+    [Material],
+    [Short_Text],
+    [Unit],
+    [Material_Group_Desc],
+    [Material_Grp_Desc2],
+    [Plant]
+FROM (
+    SELECT 
+        [Material],
+        [Short_Text],
+        [Unit],
+        [Material_Group_Desc],
+        [Material_Grp_Desc2],
+        [Plant],
+        ROW_NUMBER() OVER (PARTITION BY [Material] ORDER BY [Recived_Date] DESC) as rn
+    FROM [SNC-SAP].[dbo].[View_Report_PO_Received_1620]
+) sub
+WHERE rn = 1 and (Material like '393%' or Material like '19%')
+ORDER BY [Material]`);
+
+    const bulkOps = query.map((row) => ({
+      updateOne: {
+        filter: { material_number: row.Material },
+        update: {
+          $set: {
+            material_number: row.Material,
+            material_description: row.Short_Text,
+            unit_of_measurement: row.Unit,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    if (bulkOps.length > 0) {
+      const result = await this.materialModel.bulkWrite(bulkOps);
+
+      return {
+        synced: bulkOps.length,
+        created: result.upsertedCount,
+        updated: result.modifiedCount,
+      };
+    }
+
+    return { synced: 0, created: 0, updated: 0 };
   }
 
   // ===== Helper Methods =====
