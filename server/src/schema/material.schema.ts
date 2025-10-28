@@ -24,6 +24,7 @@ export class Material {
         position_id: { type: Types.ObjectId, ref: 'MaterialPosition' },
         stock_quantity: Number,
         lot_number: String,
+        last_updated: { type: Date, default: Date.now }, // เพิ่มฟิลด์นี้
       },
     ],
     default: [],
@@ -33,6 +34,7 @@ export class Material {
     position_id?: Types.ObjectId;
     stock_quantity: number;
     lot_number?: string;
+    last_updated: Date;
   }>;
 }
 

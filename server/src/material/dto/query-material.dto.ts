@@ -60,8 +60,8 @@ export class QueryMaterialDto {
   limit?: number = 50;
 
   @IsOptional()
-  @IsString()
-  sort_by?: string = 'material_number';
+  @IsIn(['material_number', 'location_code', 'stock_quantity', 'last_updated'])
+  sort_by?: string = 'last_updated';
 
   @IsOptional()
   @IsIn(['asc', 'desc'])

@@ -27,6 +27,7 @@ import { MaterialLocation } from 'src/schema/material-location.schema';
 import { MaterialInventoryRow } from './dto/material-inventory-row.dto';
 import { SqlService } from 'src/shared/services/sql.service';
 import { query } from 'express';
+import * as moment from 'moment-timezone';
 
 @Injectable()
 export class MaterialService {
@@ -109,8 +110,8 @@ export class MaterialService {
         location_code,
         position_code,
         lot_number,
-        sort_by = 'material_number',
-        sort_order = 'asc',
+        sort_by = 'last_updated',
+        sort_order = 'desc',
       } = query;
       const page = Number(query.page) || 1;
       const limit = Number(query.limit) || 50;
@@ -189,6 +190,7 @@ export class MaterialService {
           position_code: '$position.position_code',
           lot_number: '$current_stock.lot_number',
           stock_quantity: '$current_stock.stock_quantity',
+          last_updated: '$current_stock.last_updated', // เพิ่มบรรทัดนี้
         },
       });
 
@@ -484,9 +486,12 @@ export class MaterialService {
       },
     );
 
+    const now = moment.tz('Asia/Bangkok').toDate();
+
     if (existingStockIndex !== -1) {
       // Update existing stock
       material.current_stock[existingStockIndex].stock_quantity += quantity;
+      material.current_stock[existingStockIndex].last_updated = now;
     } else {
       // Add new stock entry
       material.current_stock.push({
@@ -494,6 +499,7 @@ export class MaterialService {
         position_id: positionId,
         stock_quantity: quantity,
         lot_number: lotNumber,
+        last_updated: now,
       } as any);
     }
 
@@ -583,8 +589,11 @@ export class MaterialService {
           `. Available: ${currentStock}, Required: ${quantity}`,
       );
     }
+    const now = moment.tz('Asia/Bangkok').toDate();
+
     // Update stock
     material.current_stock[stockIndex].stock_quantity -= quantity;
+    material.current_stock[stockIndex].last_updated = now;
 
     // Remove entry if stock becomes 0
     if (material.current_stock[stockIndex].stock_quantity === 0) {
