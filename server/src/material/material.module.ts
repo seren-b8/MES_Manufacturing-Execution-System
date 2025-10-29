@@ -10,6 +10,8 @@ import { LocationService } from './material-location/location.service';
 import { PositionController } from './material-position/position.controller';
 import { PositionService } from './material-position/position.service';
 import { SqlService } from 'src/shared/services/sql.service';
+import { MaterialReceiptService } from './material-receipt/receipt.service';
+import { MaterialReceiptController } from './material-receipt/receipt.controller';
 
 @Module({
   imports: [MongooseSchemaModule],
@@ -18,6 +20,7 @@ import { SqlService } from 'src/shared/services/sql.service';
     TransactionController,
     LocationController,
     PositionController,
+    MaterialReceiptController,
   ],
   providers: [
     MaterialService,
@@ -25,6 +28,7 @@ import { SqlService } from 'src/shared/services/sql.service';
     LocationService,
     PositionService,
     SqlService,
+    MaterialReceiptService,
   ],
   exports: [MaterialService],
 })
