@@ -137,4 +137,59 @@ export class PositionService {
       });
     }
   }
+
+  // ⭐ เพิ่ม method นี้ (ถ้ายังไม่มี)
+  async validatePositionExists(positionId: string): Promise<MaterialPosition> {
+    let position: MaterialPosition | null;
+
+    // ลองหาด้วย _id ก่อน
+    if (Types.ObjectId.isValid(positionId)) {
+      position = await this.positionModel.findById(positionId);
+    }
+
+    // ถ้าไม่เจอ ลองหาด้วย position_code
+    if (!position) {
+      position = await this.positionModel.findOne({
+        position_code: positionId,
+      });
+    }
+
+    if (!position) {
+      throw new NotFoundException(`Position ${positionId} not found`);
+    }
+
+    return position;
+  }
+
+  async validatePositionInLocation(
+    positionId: string,
+    locationId: string,
+  ): Promise<MaterialPosition> {
+    let position: MaterialPosition | null;
+
+    // ลองหาด้วย _id ก่อน
+    if (Types.ObjectId.isValid(positionId)) {
+      position = await this.positionModel.findById(positionId);
+    }
+
+    // ถ้าไม่เจอ ลองหาด้วย position_code
+    if (!position) {
+      position = await this.positionModel.findOne({
+        position_code: positionId,
+      });
+    }
+
+    if (!position) {
+      throw new NotFoundException(`Position ${positionId} not found`);
+    }
+
+    // ตรวจสอบว่า position อยู่ใน location ที่ถูกต้อง
+    if (position.location_id.toString() !== locationId) {
+      throw new BadRequestException(
+        `Position ${positionId} does not belong to location ${locationId}`,
+      );
+    }
+
+    return position;
+  }
 }

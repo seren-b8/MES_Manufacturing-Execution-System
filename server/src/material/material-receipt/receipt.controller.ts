@@ -166,8 +166,9 @@ export class MaterialReceiptController {
   @Roles(Role.ADMIN, Role.MANAGER)
   async deleteReceiptItem(
     @Param('itemId') itemId: string,
+    @GetUser() userId: string,
   ): Promise<ResponseFormat<any>> {
-    return this.materialReceiptService.deleteReceiptItem(itemId);
+    return this.materialReceiptService.deleteReceiptItem(itemId, userId);
   }
 
   // ==================== STATISTICS ====================

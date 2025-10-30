@@ -22,6 +22,10 @@ import { Material, MaterialDocument } from 'src/schema/material.schema';
 import { ResponseFormat } from 'src/shared/interface';
 import { SqlService } from 'src/shared/services/sql.service';
 import * as moment from 'moment-timezone';
+import { TransactionService } from '../material-transaction/transaction.service';
+import { MaterialService } from '../material.service';
+import { LocationService } from '../material-location/location.service';
+import { PositionService } from '../material-position/position.service';
 
 @Injectable()
 export class MaterialReceiptService {
@@ -35,6 +39,10 @@ export class MaterialReceiptService {
     @InjectModel(MaterialTransaction.name)
     private readonly materialTransactionModel: Model<MaterialTransactionDocument>,
     private readonly sqlService: SqlService,
+    private readonly materialTransactionService: TransactionService, // ⭐ เพิ่ม
+    private readonly materialService: MaterialService, // ⭐ เพิ่ม
+    private readonly locationService: LocationService, // ⭐ เพิ่ม
+    private readonly positionService: PositionService, // ⭐ เพิ่ม
   ) {}
 
   // ==================== SYNC FROM SAP ====================
@@ -256,6 +264,7 @@ export class MaterialReceiptService {
       const receipts = await this.materialReceiptModel
         .find(query)
         .sort({ received_date: -1 })
+        .lean() // ⭐ ใช้ lean() เพื่อได้ plain object
         .exec();
 
       return {
@@ -328,77 +337,87 @@ export class MaterialReceiptService {
     }>,
     userId: string,
   ): Promise<ResponseFormat<MaterialReceiptItem>> {
+    const receipt = await this.materialReceiptModel.findById(receiptId);
+    if (!receipt) {
+      throw new NotFoundException(`Receipt with ID ${receiptId} not found`);
+    }
+
+    if (receipt.receipt_status === 'completed') {
+      throw new BadRequestException('Receipt already completed');
+    }
+
+    if (receipt.receipt_status === 'cancelled') {
+      throw new BadRequestException('Cannot process cancelled receipt');
+    }
+
+    // Validate total quantity
+    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+    if (
+      receipt.processed_quantity + totalQuantity >
+      receipt.total_received_quantity
+    ) {
+      throw new BadRequestException(
+        `Total quantity (${totalQuantity}) exceeds remaining quantity (${receipt.remaining_quantity})`,
+      );
+    }
+
+    const receiptItems = [];
+    const createdItemIds = []; // ⭐ เก็บ receipt item IDs เพื่อ rollback
+
     try {
-      const receipt = await this.materialReceiptModel.findById(receiptId);
+      const material = await this.materialService.validateMaterialExists(
+        receipt.material_number,
+      );
 
-      if (!receipt) {
-        throw new NotFoundException(`Receipt with ID ${receiptId} not found`);
-      }
-
-      if (receipt.receipt_status === 'completed') {
-        throw new BadRequestException('Receipt already completed');
-      }
-
-      if (receipt.receipt_status === 'cancelled') {
-        throw new BadRequestException('Cannot process cancelled receipt');
-      }
-
-      // Validate total quantity
-      const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-
-      if (
-        receipt.processed_quantity + totalQuantity >
-        receipt.total_received_quantity
-      ) {
-        throw new BadRequestException(
-          `Total quantity (${totalQuantity}) exceeds remaining quantity (${receipt.remaining_quantity})`,
-        );
-      }
-
-      const receiptItems = [];
-
-      // Process each item
       for (const item of items) {
-        // 1. Create receipt item
+        const location = await this.locationService.validateLocationExists(
+          item.location_id,
+        );
+
+        let positionId = null;
+        if (item.position_id) {
+          const position =
+            await this.positionService.validatePositionInLocation(
+              item.position_id,
+              location._id.toString(),
+            );
+          positionId = position._id;
+        }
+
+        // Create receipt item
         const receiptItem = await this.materialReceiptItemModel.create({
           material_receipt_id: receiptId,
           location_id: item.location_id,
-          position_id: item.position_id,
+          position_id: positionId,
           quantity: item.quantity,
           lot_number: item.lot_number,
           received_by: userId,
           remark: item.remark,
         });
 
-        // 2. Create material transaction
-        const transaction = await this.materialTransactionModel.create({
-          transaction_type: 'receive',
-          material_id: await this.getMaterialId(receipt.material_number),
-          quantity: item.quantity,
-          to_location_id: item.location_id,
-          to_position_id: item.position_id,
-          lot_number: item.lot_number,
-          reference_doc: receipt._id.toString(),
-          user_id: userId,
-        });
+        createdItemIds.push(receiptItem._id); // ⭐ เก็บไว้
 
-        // 3. Update stock in material
-        await this.updateMaterialStock(
-          receipt.material_number,
-          item.location_id,
-          item.position_id,
-          item.quantity,
-          item.lot_number,
-        );
+        // Create transaction (จะ update stock อัตโนมัติ)
+        const transactionResult =
+          await this.materialTransactionService.receiveMaterial({
+            material_number: receipt.material_number,
+            quantity: item.quantity,
+            to_location_code: location.location_code,
+            to_position_code: item.position_id,
+            lot_number: item.lot_number,
+            reference_doc: receipt._id.toString(),
+            user_id: userId,
+            transaction_date: moment().tz('Asia/Bangkok').toDate(),
+          });
 
-        // 4. Link transaction to receipt item
+        const transaction = transactionResult.data[0];
         receiptItem.material_transaction_id = transaction._id as Types.ObjectId;
         await receiptItem.save();
 
         receiptItems.push(receiptItem);
       }
 
-      // 5. Update receipt status
+      // Update receipt
       receipt.processed_quantity += totalQuantity;
       receipt.remaining_quantity =
         receipt.total_received_quantity - receipt.processed_quantity;
@@ -406,7 +425,7 @@ export class MaterialReceiptService {
       if (receipt.remaining_quantity === 0) {
         receipt.receipt_status = 'completed';
         receipt.sync_status = 'processed';
-        receipt.processed_at = new Date();
+        receipt.processed_at = moment().tz('Asia/Bangkok').toDate();
       } else {
         receipt.receipt_status = 'partial';
       }
@@ -419,12 +438,14 @@ export class MaterialReceiptService {
         data: receiptItems,
       };
     } catch (error) {
-      if (
-        error instanceof NotFoundException ||
-        error instanceof BadRequestException
-      ) {
-        throw error;
+      // ⭐ Rollback: ลบ receipt items ที่สร้างไว้
+      // (Transactions จะถูก cancel อัตโนมัติเมื่อลบ receipt items ผ่าน deleteReceiptItem)
+      for (const itemId of createdItemIds) {
+        await this.deleteReceiptItem(itemId.toString(), userId).catch((err) => {
+          console.error(`Failed to rollback receipt item ${itemId}:`, err);
+        });
       }
+
       throw new BadRequestException(
         `Failed to process receipt: ${(error as Error).message}`,
       );
@@ -457,7 +478,10 @@ export class MaterialReceiptService {
     }
   }
 
-  async deleteReceiptItem(itemId: string): Promise<ResponseFormat<any>> {
+  async deleteReceiptItem(
+    itemId: string,
+    userId: string,
+  ): Promise<ResponseFormat<any>> {
     try {
       const item = await this.materialReceiptItemModel.findById(itemId);
 
@@ -473,36 +497,40 @@ export class MaterialReceiptService {
         throw new NotFoundException('Parent receipt not found');
       }
 
-      // Update receipt quantities
-      receipt.processed_quantity -= item.quantity;
-      receipt.remaining_quantity += item.quantity;
-      receipt.receipt_status =
-        receipt.remaining_quantity > 0 ? 'partial' : 'pending';
-      await receipt.save();
-
-      // Delete transaction
+      // ⭐ Cancel transaction (จะ reverse stock อัตโนมัติใน createCancellationTransaction)
       if (item.material_transaction_id) {
-        await this.materialTransactionModel.deleteOne({
-          _id: item.material_transaction_id,
+        await this.materialTransactionService.cancelTransaction({
+          transaction_id: item.material_transaction_id.toString(),
+          cancellation_reason: `Receipt item ${itemId} deleted by user`,
+          user_id: userId,
         });
       }
 
-      // Reverse stock update
-      await this.updateMaterialStock(
-        receipt.material_number,
-        item.location_id.toString(),
-        item.position_id?.toString(),
-        -item.quantity, // Negative to reverse
-        item.lot_number,
-      );
+      // Update receipt quantities
+      receipt.processed_quantity -= item.quantity;
+      receipt.remaining_quantity += item.quantity;
 
+      // ⭐ Update status based on remaining
+      if (receipt.remaining_quantity === receipt.total_received_quantity) {
+        receipt.receipt_status = 'pending';
+      } else if (receipt.remaining_quantity > 0) {
+        receipt.receipt_status = 'partial';
+      }
+
+      await receipt.save();
       // Delete item
       await item.deleteOne();
 
       return {
         status: 'success',
-        message: 'Receipt item deleted successfully',
-        data: [{ deleted_item_id: itemId }],
+        message: 'Receipt item deleted and stock reversed successfully',
+        data: [
+          {
+            deleted_item_id: itemId,
+            reversed_quantity: item.quantity,
+            updated_receipt_status: receipt.receipt_status,
+          },
+        ],
       };
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
@@ -513,60 +541,6 @@ export class MaterialReceiptService {
   }
 
   // ==================== HELPER METHODS ====================
-
-  private async getMaterialId(materialNumber: string): Promise<Types.ObjectId> {
-    let material = await this.materialModel.findOne({
-      material_number: materialNumber,
-    });
-
-    if (!material) {
-      material = await this.materialModel.create({
-        material_number: materialNumber,
-        unit_of_measurement: 'kg',
-        current_stock: [],
-      });
-    }
-
-    return material._id as Types.ObjectId;
-  }
-
-  private async updateMaterialStock(
-    materialNumber: string,
-    locationId: string,
-    positionId: string | undefined,
-    quantity: number,
-    lotNumber?: string,
-  ): Promise<void> {
-    const material = await this.materialModel.findOne({
-      material_number: materialNumber,
-    });
-
-    if (!material) {
-      throw new NotFoundException(`Material ${materialNumber} not found`);
-    }
-
-    const stockIndex = material.current_stock.findIndex(
-      (stock) =>
-        stock.location_id.toString() === locationId &&
-        (positionId ? stock.position_id?.toString() === positionId : true) &&
-        (lotNumber ? stock.lot_number === lotNumber : true),
-    );
-
-    if (stockIndex >= 0) {
-      material.current_stock[stockIndex].stock_quantity += quantity;
-      material.current_stock[stockIndex].last_updated = new Date();
-    } else {
-      material.current_stock.push({
-        location_id: new Types.ObjectId(locationId),
-        position_id: positionId ? new Types.ObjectId(positionId) : undefined,
-        stock_quantity: quantity,
-        lot_number: lotNumber,
-        last_updated: new Date(),
-      });
-    }
-
-    await material.save();
-  }
 
   async cancelReceipt(
     receiptId: string,
