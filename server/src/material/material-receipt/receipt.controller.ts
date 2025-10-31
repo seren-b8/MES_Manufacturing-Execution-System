@@ -136,11 +136,15 @@ export class MaterialReceiptController {
   @Post(':id/process')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
   async processReceipt(
-    @Param('id') id: string,
+    @Param('id') receiptId: string,
     @Body() dto: ProcessReceiptDto,
     @GetUser() userId: string,
   ): Promise<ResponseFormat<MaterialReceiptItem>> {
-    return this.materialReceiptService.processReceipt(id, dto.items, userId);
+    return this.materialReceiptService.processReceipt(
+      receiptId,
+      dto.items,
+      userId,
+    );
   }
 
   /**

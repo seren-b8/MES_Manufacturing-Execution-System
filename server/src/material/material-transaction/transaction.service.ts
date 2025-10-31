@@ -26,6 +26,8 @@ import { number } from 'yargs';
 import { User } from 'src/schema/user.schema';
 import { Material } from 'src/schema/material.schema';
 import { MaterialModule } from '../material.module';
+import { MaterialReceiptItem } from 'src/schema/material-receipt-items';
+import { MaterialReceipt } from 'src/schema/material-receipts.schema';
 
 @Injectable()
 export class TransactionService {
@@ -44,6 +46,10 @@ export class TransactionService {
     private userModel: Model<User>,
     @InjectModel(Material.name)
     private materialModel: Model<Material>,
+    @InjectModel(MaterialReceiptItem.name)
+    private receiptItemModel: Model<MaterialReceiptItem>,
+    @InjectModel(MaterialReceipt.name)
+    private receiptModel: Model<MaterialReceipt>,
 
     private readonly materialService: MaterialService,
     private readonly locationService: LocationService,
@@ -383,6 +389,10 @@ export class TransactionService {
       dto.transaction_id,
     );
 
+    const receiptItem = await this.receiptItemModel
+      .findOne({ material_transaction_id: transaction._id })
+      .exec();
+
     // 2. สร้าง Cancellation Transaction (ย้อนกลับ)
     const cancellationTx = await this.createCancellationTransaction(
       transaction,
@@ -412,6 +422,25 @@ export class TransactionService {
 
     if (!cancelledTx) {
       throw new NotFoundException('Failed to mark transaction as cancelled');
+    }
+
+    if (receiptItem) {
+      const receipt = await this.receiptModel
+        .findById(receiptItem.material_receipt_id)
+        .exec();
+
+      if (receipt) {
+        receipt.processed_quantity -= receiptItem.quantity;
+        receipt.remaining_quantity += receiptItem.quantity;
+
+        if (receipt.remaining_quantity === receipt.total_received_quantity) {
+          receipt.receipt_status = 'pending';
+        } else if (receipt.remaining_quantity > 0) {
+          receipt.receipt_status = 'partial';
+        }
+
+        await receipt.save();
+      }
     }
 
     return {

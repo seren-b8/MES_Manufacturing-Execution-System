@@ -13,11 +13,11 @@ import { Type } from 'class-transformer';
 export class ReceiptItemDto {
   @IsNotEmpty()
   @IsString()
-  location_id: string;
+  location_code: string; // ⭐ เปลี่ยนจาก location_id
 
   @IsOptional()
   @IsString()
-  position_id?: string;
+  position_code?: string; // ⭐ เปลี่ยนจาก position_id
 
   @IsNumber()
   @Min(0.001)

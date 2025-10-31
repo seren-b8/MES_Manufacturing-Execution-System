@@ -9,6 +9,7 @@ import { MaterialLocation } from 'src/schema/material-location.schema';
 import { MaterialPosition } from 'src/schema/material-position.schema';
 import { Material } from 'src/schema/material.schema';
 import { ResponseFormat } from 'src/shared/interface';
+import { toObjectId } from 'src/shared/utils/type.utils';
 
 @Injectable()
 export class PositionService {
@@ -187,6 +188,26 @@ export class PositionService {
     if (position.location_id.toString() !== locationId) {
       throw new BadRequestException(
         `Position ${positionId} does not belong to location ${locationId}`,
+      );
+    }
+
+    return position;
+  }
+
+  async validatePositionByCode(
+    positionCode: string,
+    locationId: string,
+  ): Promise<MaterialPosition> {
+    const position = await this.positionModel
+      .findOne({
+        position_code: positionCode,
+        location_id: toObjectId(locationId),
+      })
+      .exec();
+
+    if (!position) {
+      throw new NotFoundException(
+        `Position ${positionCode} not found in the specified location`,
       );
     }
 

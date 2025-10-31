@@ -329,8 +329,8 @@ export class MaterialReceiptService {
   async processReceipt(
     receiptId: string,
     items: Array<{
-      location_id: string;
-      position_id?: string;
+      location_code: string; // ⭐ เปลี่ยนจาก location_id
+      position_code?: string; // ⭐ เปลี่ยนจาก position_id
       quantity: number;
       lot_number?: string;
       remark?: string;
@@ -338,6 +338,7 @@ export class MaterialReceiptService {
     userId: string,
   ): Promise<ResponseFormat<MaterialReceiptItem>> {
     const receipt = await this.materialReceiptModel.findById(receiptId);
+
     if (!receipt) {
       throw new NotFoundException(`Receipt with ID ${receiptId} not found`);
     }
@@ -350,8 +351,8 @@ export class MaterialReceiptService {
       throw new BadRequestException('Cannot process cancelled receipt');
     }
 
-    // Validate total quantity
     const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+
     if (
       receipt.processed_quantity + totalQuantity >
       receipt.total_received_quantity
@@ -362,7 +363,7 @@ export class MaterialReceiptService {
     }
 
     const receiptItems = [];
-    const createdItemIds = []; // ⭐ เก็บ receipt item IDs เพื่อ rollback
+    const createdItemIds = [];
 
     try {
       const material = await this.materialService.validateMaterialExists(
@@ -370,40 +371,41 @@ export class MaterialReceiptService {
       );
 
       for (const item of items) {
+        // ⭐ Validate location by code (แทน ID)
         const location = await this.locationService.validateLocationExists(
-          item.location_id,
+          item.location_code, // ⭐ ใช้ code
         );
 
         let positionId = null;
-        if (item.position_id) {
-          const position =
-            await this.positionService.validatePositionInLocation(
-              item.position_id,
-              location._id.toString(),
-            );
+        if (item.position_code) {
+          // ⭐ Validate position by code
+          const position = await this.positionService.validatePositionByCode(
+            item.position_code, // ⭐ ใช้ code
+            location._id.toString(),
+          );
           positionId = position._id;
         }
 
-        // Create receipt item
+        // Create receipt item (เก็บ ID ใน database)
         const receiptItem = await this.materialReceiptItemModel.create({
           material_receipt_id: receiptId,
-          location_id: item.location_id,
-          position_id: positionId,
+          location_id: location._id, // เก็บ ObjectId ใน DB
+          position_id: positionId, // เก็บ ObjectId ใน DB
           quantity: item.quantity,
           lot_number: item.lot_number,
           received_by: userId,
           remark: item.remark,
         });
 
-        createdItemIds.push(receiptItem._id); // ⭐ เก็บไว้
+        createdItemIds.push(receiptItem._id);
 
-        // Create transaction (จะ update stock อัตโนมัติ)
+        // Create transaction (ส่ง code)
         const transactionResult =
           await this.materialTransactionService.receiveMaterial({
             material_number: receipt.material_number,
             quantity: item.quantity,
-            to_location_code: location.location_code,
-            to_position_code: item.position_id,
+            to_location_code: item.location_code, // ⭐ ใช้ code
+            to_position_code: item.position_code, // ⭐ ใช้ code
             lot_number: item.lot_number,
             reference_doc: receipt._id.toString(),
             user_id: userId,
@@ -438,8 +440,7 @@ export class MaterialReceiptService {
         data: receiptItems,
       };
     } catch (error) {
-      // ⭐ Rollback: ลบ receipt items ที่สร้างไว้
-      // (Transactions จะถูก cancel อัตโนมัติเมื่อลบ receipt items ผ่าน deleteReceiptItem)
+      // Rollback
       for (const itemId of createdItemIds) {
         await this.deleteReceiptItem(itemId.toString(), userId).catch((err) => {
           console.error(`Failed to rollback receipt item ${itemId}:`, err);
