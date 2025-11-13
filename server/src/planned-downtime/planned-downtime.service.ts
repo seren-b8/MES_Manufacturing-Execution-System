@@ -7,7 +7,7 @@ import { UpdatePlannedDowntimeDto } from './dto/update-planned-downtime.dto';
 import { CreatePlannedDowntimeDto } from './dto/create-planned-downtime.dto';
 import { BulkCreatePlannedDowntimeDto } from './dto/bulk-create-planned-downtime.dto';
 import { BulkCreateByTemplateDto } from './dto/bulk-create-by-template.dto';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 
 // planned-downtime.service.ts
 @Injectable()

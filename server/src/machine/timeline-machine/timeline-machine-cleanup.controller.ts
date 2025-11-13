@@ -13,7 +13,7 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
 import { TimelineMachineCleanupService } from './timeline-machine-cleanup.service';
 import { Cron } from '@nestjs/schedule';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 
 // DTOs
 export class CleanupTimelineDto {

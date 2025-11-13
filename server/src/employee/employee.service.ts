@@ -15,7 +15,7 @@ import { formatDate } from 'src/shared/utils/date.utils';
 import { CreateTempEmployeeDto } from 'src/auth/dto/create-temp-employee.dto';
 import { User } from 'src/schema/user.schema';
 import { UserWithEmployeeData } from 'src/shared/interface/employee';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { AuthService } from 'src/auth/auth.service';
 
 @Injectable()

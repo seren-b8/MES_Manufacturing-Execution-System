@@ -21,7 +21,7 @@ import {
 import { Material, MaterialDocument } from 'src/schema/material.schema';
 import { ResponseFormat } from 'src/shared/interface';
 import { SqlService } from 'src/shared/services/sql.service';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { TransactionService } from '../material-transaction/transaction.service';
 import { MaterialService } from '../material.service';
 import { LocationService } from '../material-location/location.service';

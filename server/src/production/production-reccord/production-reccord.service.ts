@@ -34,7 +34,7 @@ import { ProductionOrder } from 'src/schema/production-order.schema';
 import { MasterCavity } from 'src/schema/master-cavity.schema';
 import { MasterPart } from 'src/schema/master_parts.schema';
 import { User } from 'src/schema/user.schema';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import axios from 'axios';
 import { AssignEmployeeService } from 'src/assign/assign-employee/assign-employee.service';
 import { DateRangeSummaryData } from 'src/shared/interface/product';

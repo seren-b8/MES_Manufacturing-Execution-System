@@ -27,7 +27,7 @@ import { MaterialLocation } from 'src/schema/material-location.schema';
 import { MaterialInventoryRow } from './dto/material-inventory-row.dto';
 import { SqlService } from 'src/shared/services/sql.service';
 import { query } from 'express';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 
 @Injectable()
 export class MaterialService {

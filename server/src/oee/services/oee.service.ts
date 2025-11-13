@@ -9,7 +9,7 @@ import { OEEHourly } from 'src/schema/oee-hourly.schema';
 import { OEEQuery, ShiftConfig, TimeFrame } from 'src/shared/interface/oee';
 import { OEEResponseDto } from '../dto/timeframe.dto';
 import { ResponseFormat } from 'src/shared/interface';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { GetHourlyOEEDto } from '../dto/get-hourly-oee.dto';
 import { machine } from 'os';
 import { OEEDaily } from 'src/schema/oee-daily.schema';

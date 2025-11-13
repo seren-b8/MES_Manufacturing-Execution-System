@@ -23,7 +23,7 @@ import { ResponseFormat } from 'src/shared/interface';
 import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { Roles } from 'src/auth/decorator/roles.decorator';
 import { Role } from 'src/auth/enum/roles.enum';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { MachineAnalysisCacheInterceptor } from '../interceptors/machine-analysis-cache.interceptor';
 import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 import {

@@ -12,7 +12,7 @@ import { MaterialPosition } from '../../schema/material-position.schema';
 
 import { MaterialService } from '../material.service';
 import { LocationService } from '../material-location/location.service';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { toObjectId } from 'src/shared/utils/type.utils';
 import { ResponseFormat } from 'src/shared/interface';
 import { ReceiveMaterialDto } from './dto/receive-material.dto';

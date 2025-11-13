@@ -1,6 +1,6 @@
 import { Prop, SchemaFactory, Schema } from '@nestjs/mongoose';
 import mongoose, { Document, Types } from 'mongoose';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { User, UserSchema } from './user.schema';
 import { AssignOrder } from './assign-order.schema';
 import { AssignEmployee } from './assign-employee.schema';

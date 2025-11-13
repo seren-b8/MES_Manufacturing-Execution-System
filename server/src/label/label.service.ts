@@ -17,9 +17,9 @@ import { CoProductRecord } from 'src/schema/co-product-reccord.shema';
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { MachineInfo } from 'src/schema/machine-info.schema';
 import { toObjectId } from 'src/shared/utils/type.utils';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { machine } from 'os';
-import { PrinterDevicesService } from 'src/machine/printer/printer.service';
+import { PrinterDevicesService } from 'src/machine/printer/service/printer-devices.service';
 
 @Injectable()
 export class LabelService {

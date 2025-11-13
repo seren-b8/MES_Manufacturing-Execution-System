@@ -1,7 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './shared/filters/http-exception.fillter';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
+
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';

@@ -6,7 +6,7 @@ import { ProductionRecord } from 'src/schema/production-record.schema';
 import { SAPSyncLog } from 'src/schema/sap_sync_log.schema';
 import { GroupedProductionData } from 'src/shared/interface/sap';
 import { SapSyncValidationService } from './sap-sync-validation.service';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import * as _ from 'lodash';
 import { ProductionOrder } from 'src/schema/production-order.schema';
 import { toObjectId } from 'src/shared/utils/type.utils';

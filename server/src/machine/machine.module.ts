@@ -11,7 +11,6 @@ import { MasterNotGoodService } from './master-not-good/master-not-good.service'
 import { MasterPartsController } from './master-parts/master-parts.controller';
 import { MasterPartsService } from './master-parts/master-parts.service';
 import { PrinterDevicesController } from './printer/printer.controller';
-import { PrinterDevicesService } from './printer/printer.service';
 import { ConfigModule } from '@nestjs/config';
 import { CustomCacheKeyGenerator } from 'src/shared/utils/custom-cache-key.generator';
 import { MachineAnalysisCacheInterceptor } from './interceptors/machine-analysis-cache.interceptor';
@@ -19,6 +18,9 @@ import { MesCacheModule } from 'src/shared/cache/cache.module';
 import { FileClientModule } from 'src/shared/services/file-client/file-client.module';
 import { TimelineMachineCleanupController } from './timeline-machine/timeline-machine-cleanup.controller';
 import { TimelineMachineCleanupService } from './timeline-machine/timeline-machine-cleanup.service';
+import { HttpModule } from '@nestjs/axios';
+import { PrinterDevicesService } from './printer/service/printer-devices.service';
+import { PrinterOperationService } from './printer/service/printer-operation.service';
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { TimelineMachineCleanupService } from './timeline-machine/timeline-machi
     MesCacheModule,
     ConfigModule,
     FileClientModule,
+    HttpModule,
   ],
   controllers: [
     MachineInfoController,
@@ -43,10 +46,11 @@ import { TimelineMachineCleanupService } from './timeline-machine/timeline-machi
     MasterNotGoodService,
     MasterPartsService,
     PrinterDevicesService,
+    PrinterOperationService,
     CustomCacheKeyGenerator,
     MachineAnalysisCacheInterceptor,
     TimelineMachineCleanupService,
   ],
-  exports: [MachineInfoService, PrinterDevicesService],
+  exports: [MachineInfoService, PrinterDevicesService, PrinterOperationService],
 })
 export class MachineModule {}

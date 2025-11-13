@@ -12,7 +12,7 @@ import {
 import { User } from 'src/schema/user.schema';
 import { AssignOrder } from 'src/schema/assign-order.schema';
 import { IAssignEmployeeDocument } from 'src/shared/interface/assign.emp';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { error } from 'console';
 import e from 'express';
 import { toObjectId } from '../../shared/utils/type.utils';

@@ -1,4 +1,4 @@
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model } from 'mongoose';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';

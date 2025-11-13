@@ -25,7 +25,7 @@ import {
 import { TimelineMachine } from 'src/schema/timeline-machine.schema';
 import * as _ from 'lodash';
 import { MasterPart } from 'src/schema/master_parts.schema';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { ProductionRecord } from 'src/schema/production-record.schema';
 import { PrinterDevice } from 'src/schema/printer-device.schema';
 import { count, error } from 'console';

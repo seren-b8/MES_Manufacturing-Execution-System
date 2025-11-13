@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { Model, Types } from 'mongoose';
 import { ResponseFormat } from 'src/shared/interface';
 import { AssignOrder } from 'src/schema/assign-order.schema';

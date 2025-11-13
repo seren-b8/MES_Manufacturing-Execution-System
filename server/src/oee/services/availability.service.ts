@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import * as moment from 'moment-timezone';
+import moment = require('moment-timezone');
 import { Model } from 'mongoose';
 import { MachineInfoService } from 'src/machine/machine-info/machine-info.service';
 import { PlannedDowntime } from 'src/schema/planned-downtime.schema';
