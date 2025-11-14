@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ProductionOrder } from 'src/schema/production-order.schema';
 import { SqlService } from 'src/shared/services/sql.service';
-import * as moment from 'moment';
+import moment = require('moment-timezone');
 import { errorMonitor } from 'events';
 import { error } from 'console';
 import { MasterPart } from 'src/schema/master_parts.schema';

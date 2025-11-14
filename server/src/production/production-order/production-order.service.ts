@@ -188,7 +188,6 @@ export class ProductionOrderService {
   /**
    * หาข้อมูลที่สามารถ assign ได้
    */
-
   async getJobWaiting(
     workCenter?: string,
   ): Promise<ResponseFormat<ProductionOrder>> {
