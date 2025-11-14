@@ -1,5 +1,10 @@
 // src/printer/printer-devices.service.ts
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { PrinterDevice } from 'src/schema/printer-device.schema';
@@ -45,7 +50,6 @@ export class PrinterOperationService {
       }
 
       if (labelJob.status === 'printed') {
-        this.logger.warn(`Label Job ${labelJobId} already printed`);
       }
 
       // 2. ตรวจสอบ printer
@@ -78,21 +82,12 @@ export class PrinterOperationService {
       labelJob.printed_at = new Date();
       await labelJob.save();
 
-      this.logger.log(
-        `✅ Printed Label Job ${labelJobId} on ${printer.device_name}`,
-      );
-
       return {
         status: 'success',
         message: `Label printed successfully on ${printer.device_name}`,
         data: [labelJob],
       };
     } catch (error) {
-      this.logger.error(
-        `❌ Failed to print Label Job ${labelJobId}:`,
-        (error as Error).stack,
-      );
-
       // อัพเดทสถานะเป็น failed
       await this.labelJobModel.findByIdAndUpdate(labelJobId, {
         status: 'failed',
@@ -144,10 +139,6 @@ export class PrinterOperationService {
       // 3. พิมพ์
       return await this.printLabel(reprintJob._id.toString());
     } catch (error) {
-      this.logger.error(
-        `❌ Failed to reprint Label Job ${originalLabelJobId}:`,
-        (error as Error).stack,
-      );
       throw error;
     }
   }
@@ -160,21 +151,18 @@ export class PrinterOperationService {
     printerIp: string,
     rotate: boolean = false,
     copies: number = 1,
-  ): Promise<void> {
+  ): Promise<ResponseFormat<any>> {
     try {
       // 1. ดาวน์โหลดรูป
-      this.logger.log(`🌐 Downloading image: ${url}`);
       const response = await firstValueFrom(
         this.httpService.get(url, { responseType: 'arraybuffer' }),
       );
       const imageBuffer = Buffer.from(response.data);
-      this.logger.log(`✅ Downloaded ${imageBuffer.length} bytes`);
 
       // 2. ประมวลผลรูปภาพ
       let processedImage = sharp(imageBuffer);
 
       if (rotate) {
-        this.logger.log('🔄 Rotating image 90 degrees');
         processedImage = processedImage.rotate(90);
       }
 
@@ -185,11 +173,6 @@ export class PrinterOperationService {
         .threshold(128)
         .png() // แปลงเป็น PNG
         .toBuffer();
-
-      // Convert buffer to base64 string
-      const imageBase64 = finalImageBuffer.toString('base64');
-
-      this.logger.log('📐 Image processing completed');
 
       // 3. สร้าง printer instance
       const printer = new ThermalPrinter({
@@ -205,10 +188,6 @@ export class PrinterOperationService {
 
       // 4. Print ตามจำนวน copies
       for (let i = 0; i < copies; i++) {
-        this.logger.log(
-          `🖨️ Printing copy ${i + 1}/${copies} to ${printerIp}...`,
-        );
-
         // เชื่อมต่อกับ printer
         const isConnected = await printer.isPrinterConnected();
         if (!isConnected) {
@@ -228,11 +207,7 @@ export class PrinterOperationService {
         fs.unlinkSync(tempFilePath);
 
         // ขึ้นบรรทัด
-        printer.newLine();
-        printer.newLine();
-        printer.newLine();
-        printer.newLine();
-        printer.newLine();
+        // printer.newLine();
 
         // ตัดกระดาษ (เฉพาะครั้งสุดท้าย)
         if (i === copies - 1) {
@@ -244,20 +219,15 @@ export class PrinterOperationService {
         // Execute print
         await printer.execute();
 
-        this.logger.log(`✅ Copy ${i + 1} printed successfully`);
-
         // รอเล็กน้อยระหว่าง copies
         if (i < copies - 1) {
           await this.delay(500);
         }
       }
 
-      this.logger.log(
-        `✅ Print completed (${copies} ${copies > 1 ? 'copies' : 'copy'})`,
-      );
+      return { status: 'success', message: 'Print completed', data: [] };
     } catch (error) {
-      this.logger.error('❌ Print error:', (error as Error).stack);
-      throw error;
+      throw new BadRequestException(error);
     }
   }
 
@@ -303,15 +273,12 @@ export class PrinterOperationService {
 
       await printer.execute();
 
-      this.logger.log(`✅ Test print successful: ${printerIP}`);
-
       return {
         status: 'success',
         message: 'Test print completed',
         data: [printerIP],
       };
     } catch (error) {
-      this.logger.error(`❌ Test printer failed:`, (error as Error).stack);
       throw error;
     }
   }
@@ -349,10 +316,6 @@ export class PrinterOperationService {
         data: [printer],
       };
     } catch (error) {
-      this.logger.error(
-        `❌ Get printer status failed:`,
-        (error as Error).stack,
-      );
       throw error;
     }
   }
@@ -382,7 +345,6 @@ export class PrinterOperationService {
         data: queue,
       };
     } catch (error) {
-      this.logger.error('❌ Get print queue failed:', (error as Error).stack);
       throw error;
     }
   }

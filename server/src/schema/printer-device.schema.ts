@@ -20,6 +20,9 @@ export class PrinterDevice extends Document {
   })
   ip_device: string; // IP address ของเครื่องปริ้น
 
+  @Prop({ type: Boolean, default: false })
+  is_socket: boolean; // false = usb_relay, true = socket
+
   @Prop({
     type: String,
     enum: ['active', 'inactive', 'maintenance'],

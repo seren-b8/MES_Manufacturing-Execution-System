@@ -274,8 +274,10 @@ export class PrinterDevicesService {
         printers.map(async (printer) => {
           try {
             // ส่ง ping request ไปที่เครื่องปริ้น
+            const port = printer.is_socket ? 9100 : 8000;
             const isOnline = await this.checkPrinterConnection(
               printer.ip_device,
+              port,
             );
 
             // ตรวจสอบการเปลี่ยนแปลงสถานะ
@@ -350,7 +352,12 @@ export class PrinterDevicesService {
 
       try {
         // ส่ง ping request ไปที่เครื่องปริ้น
-        const isOnline = await this.checkPrinterConnection(printer.ip_device);
+        const port = printer.is_socket ? 9100 : 8000;
+
+        const isOnline = await this.checkPrinterConnection(
+          printer.ip_device,
+          port,
+        );
 
         // อัพเดทสถานะเครื่องปริ้น
         const oldStatus = printer.status;

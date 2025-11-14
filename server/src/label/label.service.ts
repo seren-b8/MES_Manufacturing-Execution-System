@@ -20,6 +20,7 @@ import { toObjectId } from 'src/shared/utils/type.utils';
 import moment = require('moment-timezone');
 import { machine } from 'os';
 import { PrinterDevicesService } from 'src/machine/printer/service/printer-devices.service';
+import { PrinterOperationService } from 'src/machine/printer/service/printer-operation.service';
 
 @Injectable()
 export class LabelService {
@@ -36,7 +37,8 @@ export class LabelService {
 
     private readonly labelGeneratorService: LabelGeneratorService,
     private readonly fileClientService: FileClientService,
-    private readonly printerService: PrinterDevicesService,
+    private readonly printerDevicesService: PrinterDevicesService,
+    private readonly printerOperationService: PrinterOperationService,
   ) {}
 
   async generateLabel(
@@ -151,7 +153,9 @@ export class LabelService {
       await job.save();
 
       // ส่งไปปริ้น (mock - ในที่นี้จะ simulate)
-      await this.sendToPrinter(job, printer.ip_device);
+      const soket = printer.is_socket ? true : false;
+
+      await this.sendToPrinter(job, printer.ip_device, soket);
 
       // อัพเดทสถานะเป็น printed
       job.status = 'printed';
@@ -228,8 +232,9 @@ export class LabelService {
 
       await reprintJob.save();
 
+      const soket = printer.is_socket ? true : false;
       // ส่งไปปริ้น
-      await this.sendToPrinter(reprintJob, printer.ip_device);
+      await this.sendToPrinter(reprintJob, printer.ip_device, soket);
 
       // อัพเดทสถานะ
       reprintJob.status = 'printed';
@@ -391,8 +396,13 @@ export class LabelService {
     }
   }
 
-  private async sendToPrinter(job: LabelJob, printerIp: string): Promise<void> {
+  private async sendToPrinter(
+    job: LabelJob,
+    printerIp: string,
+    isSocket: boolean,
+  ): Promise<void> {
     try {
+      let response;
       // Prepare print request
       const printRequest = {
         image_url: job.image_path,
@@ -404,12 +414,21 @@ export class LabelService {
       // Send to Python print service
       const printServiceUrl = `http://${printerIp}:8000/api/print/image`;
 
-      const response = await axios.post(printServiceUrl, printRequest, {
-        timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      if (!isSocket) {
+        response = await axios.post(printServiceUrl, printRequest, {
+          timeout: 30000,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+      } else {
+        response = await this.printerOperationService.printFromUrl(
+          job.image_path,
+          printerIp,
+          true,
+          1,
+        );
+      }
 
       if (response.data.status !== 'success') {
         throw new Error(`Print failed: ${response.data.message}`);
@@ -969,7 +988,7 @@ export class LabelService {
 
     // ถ้า status != active ให้ update และตรวจสอบอีกครั้ง
     if (printer.status !== 'active') {
-      await this.printerService.updateAllPrintersStatus();
+      await this.printerDevicesService.updateAllPrintersStatus();
       printer = await this.printerDeviceModel.findById(printerId);
 
       if (printer.status !== 'active') {
