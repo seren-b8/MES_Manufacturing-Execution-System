@@ -451,6 +451,42 @@ export class MachineInfoService {
         },
       ];
 
+      const bomItemsPipeline = [
+        {
+          $lookup: {
+            from: 'bom_items',
+            let: {
+              orderId: '$order_id',
+              materialNumber: '$material_number',
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$order_id', '$$orderId'] },
+                      { $eq: ['$parent_material_number', '$$materialNumber'] },
+                    ],
+                  },
+                },
+              },
+              {
+                $project: {
+                  component_material_number: 1,
+                  component_description: 1,
+                  required_quantity: 1,
+                  unit: 1,
+                  reservation: 1,
+                  bom_item: 1,
+                  item_number: 1,
+                },
+              },
+            ],
+            as: 'bom_items',
+          },
+        },
+      ];
+
       const partPipeline = [
         {
           $lookup: {
@@ -489,6 +525,7 @@ export class MachineInfoService {
                 },
               },
               ...partPipeline,
+              ...bomItemsPipeline, // เพิ่มตรงนี้
             ],
             as: 'orders',
           },
@@ -651,6 +688,7 @@ export class MachineInfoService {
                   assign_employees: '$assign_employees.user',
                   daily_summary: '$daily_summary',
                   current_summary: 1,
+                  bom_items: { $arrayElemAt: ['$orders.bom_items', 0] }, // เพิ่มบรรทัดนี้
                 },
               },
             ],
@@ -736,6 +774,8 @@ export class MachineInfoService {
               production_order: {
                 id: productionOrder._id,
                 order_number: productionOrder.order_id,
+                // เพิ่ม material_info ตรงนี้
+
                 material_number: productionOrder.material_number,
                 material_description: productionOrder.material_description,
                 target_quantity: productionOrder.target_quantity,
@@ -762,6 +802,12 @@ export class MachineInfoService {
                       }
                     : null,
                 },
+
+                material_info: {
+                  material_number: productionOrder.material_number,
+                  material_name: productionOrder.material_description,
+                },
+                bom_items: activeOrder.bom_items ?? [],
               },
               production_summary: activeOrder.current_summary ?? {},
               daily_summary: activeOrder.daily_summary ?? {},
@@ -789,6 +835,7 @@ export class MachineInfoService {
         status: 'success',
         message: 'All machine info retrieved successfully',
         data: formattedMachines,
+        // data: machines,
       };
     } catch (error) {
       if (error instanceof HttpException) throw error;

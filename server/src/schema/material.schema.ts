@@ -17,6 +17,40 @@ export class Material {
   @Prop({ required: true })
   unit_of_measurement: string;
 
+  // เม็ดนี้ถูกใช้ในสินค้า FG อะไรบ้าง (Default)
+  @Prop({
+    type: {
+      used_in_products: [String], // FG material numbers ที่ใช้เม็ดนี้
+      last_updated: Date,
+      is_active: { type: Boolean, default: true },
+    },
+    default: null,
+  })
+  default_usage?: {
+    used_in_products: string[]; // FG material numbers
+    last_updated: Date;
+    is_active: boolean;
+  };
+
+  // เม็ดนี้ถูกใช้ใน Order ไหนบ้าง (เฉพาะ Order)
+  @Prop({
+    type: [
+      {
+        order_id: { type: String, required: true },
+        used_in_products: [String], // FG material numbers
+        log_date: Date,
+        is_active: { type: Boolean, default: true },
+      },
+    ],
+    default: [],
+  })
+  usage_by_orders: Array<{
+    order_id: string;
+    used_in_products: string[]; // FG material numbers
+    log_date?: Date;
+    is_active: boolean;
+  }>;
+
   @Prop({
     type: [
       {
@@ -43,3 +77,7 @@ export const MaterialSchema = SchemaFactory.createForClass(Material);
 
 MaterialSchema.index({ 'current_stock.location_id': 1 });
 MaterialSchema.index({ 'current_stock.position_id': 1 });
+MaterialSchema.index({ material_number: 1 });
+MaterialSchema.index({ 'bom_by_orders.order_id': 1 });
+MaterialSchema.index({ 'default_bom.components': 1 });
+MaterialSchema.index({ 'bom_by_orders.components': 1 });

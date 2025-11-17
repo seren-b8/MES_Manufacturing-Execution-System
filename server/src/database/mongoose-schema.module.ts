@@ -79,7 +79,6 @@ import {
   MaterialReceipt,
   MaterialReceiptSchema,
 } from 'src/schema/material-receipts.schema';
-import { BOMItem, BOMItemSchema } from 'src/schema/bom-items.schema';
 
 @Module({
   imports: [
@@ -92,7 +91,6 @@ import { BOMItem, BOMItemSchema } from 'src/schema/bom-items.schema';
       { name: SerialCounter.name, schema: SerialCounterSchema },
       { name: CoProductRecord.name, schema: CoProductRecordSchema },
       { name: ProductionPlanning.name, schema: ProductionPlanningSchema },
-      { name: BOMItem.name, schema: BOMItemSchema },
 
       // Material Management
       { name: Material.name, schema: MaterialSchema },
