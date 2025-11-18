@@ -49,22 +49,21 @@ export class BOMService {
           });
           createdCount++;
         } else {
-          // Update existing material
-          if (usageInfo.defaultUsage) {
-            material.default_usage = usageInfo.defaultUsage;
-          }
+          // ✅ Merge used_in_products
+          const existingProducts =
+            material.default_usage?.used_in_products || [];
+          const newProducts = usageInfo.defaultUsage.used_in_products;
 
-          for (const orderUsage of usageInfo.orderUsages) {
-            const existingIndex = material.usage_by_orders.findIndex(
-              (u) => u.order_id === orderUsage.order_id,
-            );
+          material.default_usage = {
+            used_in_products: [
+              ...new Set([...existingProducts, ...newProducts]),
+            ],
+            last_updated: new Date(),
+            is_active: true,
+          };
 
-            if (existingIndex >= 0) {
-              material.usage_by_orders[existingIndex] = orderUsage;
-            } else {
-              material.usage_by_orders.push(orderUsage);
-            }
-          }
+          // แทนที่ usage_by_orders
+          material.usage_by_orders = usageInfo.orderUsages;
 
           await material.save();
           updatedCount++;

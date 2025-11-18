@@ -894,7 +894,7 @@ export class MachineInfoService {
               productionOrder.material_info || []
             ).map((mat) => ({
               material_number: mat.material_number,
-              material_description: mat.material_description,
+              material_name: mat.material_description,
               // unit_of_measurement: mat.unit_of_measurement,
               // total_stock: (mat.current_stock || []).reduce(
               //   (sum, stock) => sum + (stock.stock_quantity || 0),
