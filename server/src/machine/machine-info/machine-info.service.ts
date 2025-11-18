@@ -32,6 +32,7 @@ import { count, error } from 'console';
 import { toObjectId } from 'src/shared/utils/type.utils';
 import { stat } from 'fs';
 import path from 'path';
+import { Material } from 'src/schema/material.schema';
 
 @Injectable()
 export class MachineInfoService {
@@ -64,6 +65,9 @@ export class MachineInfoService {
 
     @InjectModel(ProductionRecord.name)
     private productionRecordModel: Model<ProductionRecord>,
+
+    @InjectModel(Material.name)
+    private materialModel: Model<Material>,
   ) {}
 
   private calculateAchievementRate(
@@ -291,6 +295,7 @@ export class MachineInfoService {
         user: this.userModel.collection.collectionName,
         cavity: this.masterCavityModel.collection.collectionName,
         part: this.masterPartModel.collection.collectionName,
+        material: this.materialModel.collection.collectionName, // เพิ่มบรรทัดนี้
       };
 
       const productionDateNow = this.calculateProductionDate();
@@ -451,10 +456,10 @@ export class MachineInfoService {
         },
       ];
 
-      const bomItemsPipeline = [
+      const materialPipeline = [
         {
           $lookup: {
-            from: 'bom_items',
+            from: collectionNames.material,
             let: {
               orderId: '$order_id',
               materialNumber: '$material_number',
@@ -463,26 +468,141 @@ export class MachineInfoService {
               {
                 $match: {
                   $expr: {
-                    $and: [
-                      { $eq: ['$order_id', '$$orderId'] },
-                      { $eq: ['$parent_material_number', '$$materialNumber'] },
+                    $or: [
+                      // เงื่อนไข 1: หาจาก usage_by_orders ที่มี order_id ตรงกับ orderId
+                      {
+                        $and: [
+                          {
+                            $in: [
+                              '$$orderId',
+                              {
+                                $map: {
+                                  input: {
+                                    $filter: {
+                                      input: '$usage_by_orders',
+                                      as: 'usage',
+                                      cond: {
+                                        $eq: ['$$usage.is_active', true],
+                                      },
+                                    },
+                                  },
+                                  as: 'order',
+                                  in: '$$order.order_id',
+                                },
+                              },
+                            ],
+                          },
+                          {
+                            $in: [
+                              '$$materialNumber',
+                              {
+                                $reduce: {
+                                  input: {
+                                    $filter: {
+                                      input: '$usage_by_orders',
+                                      as: 'usage',
+                                      cond: {
+                                        $and: [
+                                          {
+                                            $eq: [
+                                              '$$usage.order_id',
+                                              '$$orderId',
+                                            ],
+                                          },
+                                          { $eq: ['$$usage.is_active', true] },
+                                        ],
+                                      },
+                                    },
+                                  },
+                                  initialValue: [],
+                                  in: {
+                                    $concatArrays: [
+                                      '$$value',
+                                      '$$this.used_in_products',
+                                    ],
+                                  },
+                                },
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                      // เงื่อนไข 2: ถ้าไม่เจอใน usage_by_orders ให้หาจาก default_usage
+                      {
+                        $and: [
+                          {
+                            $eq: [
+                              {
+                                $size: {
+                                  $filter: {
+                                    input: '$usage_by_orders',
+                                    as: 'usage',
+                                    cond: {
+                                      $and: [
+                                        {
+                                          $eq: [
+                                            '$$usage.order_id',
+                                            '$$orderId',
+                                          ],
+                                        },
+                                        { $eq: ['$$usage.is_active', true] },
+                                      ],
+                                    },
+                                  },
+                                },
+                              },
+                              0,
+                            ],
+                          },
+                          { $eq: ['$default_usage.is_active', true] },
+                          {
+                            $in: [
+                              '$$materialNumber',
+                              '$default_usage.used_in_products',
+                            ],
+                          },
+                        ],
+                      },
                     ],
                   },
                 },
               },
               {
                 $project: {
-                  component_material_number: 1,
-                  component_description: 1,
-                  required_quantity: 1,
-                  unit: 1,
-                  reservation: 1,
-                  bom_item: 1,
-                  item_number: 1,
+                  _id: 1,
+                  material_number: 1,
+                  material_description: 1,
+                  unit_of_measurement: 1,
+                  current_stock: 1,
+                  source: {
+                    $cond: {
+                      if: {
+                        $gt: [
+                          {
+                            $size: {
+                              $filter: {
+                                input: '$usage_by_orders',
+                                as: 'usage',
+                                cond: {
+                                  $and: [
+                                    { $eq: ['$$usage.order_id', '$$orderId'] },
+                                    { $eq: ['$$usage.is_active', true] },
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                          0,
+                        ],
+                      },
+                      then: 'order',
+                      else: 'default',
+                    },
+                  },
                 },
               },
             ],
-            as: 'bom_items',
+            as: 'material_info',
           },
         },
       ];
@@ -525,7 +645,7 @@ export class MachineInfoService {
                 },
               },
               ...partPipeline,
-              ...bomItemsPipeline, // เพิ่มตรงนี้
+              ...materialPipeline,
             ],
             as: 'orders',
           },
@@ -769,6 +889,19 @@ export class MachineInfoService {
         if (machine.assign_orders.length > 0) {
           formatActiveOrders = machine.assign_orders.map((activeOrder) => {
             const productionOrder = activeOrder.order[0];
+
+            const formattedMaterialInfo = (
+              productionOrder.material_info || []
+            ).map((mat) => ({
+              material_number: mat.material_number,
+              material_description: mat.material_description,
+              // unit_of_measurement: mat.unit_of_measurement,
+              // total_stock: (mat.current_stock || []).reduce(
+              //   (sum, stock) => sum + (stock.stock_quantity || 0),
+              //   0,
+              // ),
+              source: mat.source, // 'order' หรือ 'default'
+            }));
             const activeOrderData = {
               order_id: activeOrder._id,
               production_order: {
@@ -803,11 +936,7 @@ export class MachineInfoService {
                     : null,
                 },
 
-                material_info: {
-                  material_number: productionOrder.material_number,
-                  material_name: productionOrder.material_description,
-                },
-                bom_items: activeOrder.bom_items ?? [],
+                material_info: formattedMaterialInfo, // เปลี่ยนเป็น array
               },
               production_summary: activeOrder.current_summary ?? {},
               daily_summary: activeOrder.daily_summary ?? {},
