@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsObject,
   IsIP,
+  IsBoolean,
 } from 'class-validator';
 import { PartialType } from '@nestjs/mapped-types';
 
@@ -30,6 +31,10 @@ export class CreatePrinterDeviceDto {
   @IsOptional()
   @IsObject()
   settings?: Record<string, any>;
+
+  @IsBoolean()
+  @IsNotEmpty()
+  is_socket: boolean;
 
   @IsOptional()
   @IsString()
