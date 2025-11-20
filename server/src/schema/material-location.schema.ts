@@ -25,20 +25,6 @@ export class MaterialLocation extends Document {
   location_code: string;
 
   @Prop({
-    enum: [
-      'warehouse',
-      'production',
-      'machine',
-      'scrap',
-      'quarantine',
-      'staging',
-    ],
-    default: 'warehouse',
-    index: true,
-  })
-  location_type: string;
-
-  @Prop({
     type: Types.ObjectId,
     ref: 'MaterialLocation',
     default: null,
@@ -51,19 +37,6 @@ export class MaterialLocation extends Document {
     index: true,
   })
   has_positions: boolean; // มี position หรือไม่
-
-  @Prop({
-    trim: true,
-    validate: {
-      validator: function (v: string) {
-        // Validate position format pattern
-        if (!v) return true; // Optional field
-        return /^[A-Z]-\{[a-z_]+\}-\{[a-z_]+\}$/.test(v);
-      },
-      message: 'Position format must follow pattern like "A-{row}-{column}"',
-    },
-  })
-  position_format?: string; // "A-{row}-{column}" pattern
 
   @Prop({
     type: String,
@@ -156,25 +129,6 @@ MaterialLocationSchema.statics.findWithPositions = function () {
     is_active: true,
   });
 };
-
-// Pre-save validation
-MaterialLocationSchema.pre('save', function (next) {
-  // Validate hierarchy - parent cannot be child of itself
-  if (
-    this.parent_location_id &&
-    this.parent_location_id.equals(toObjectId(this._id as string))
-  ) {
-    next(new Error('Location cannot be parent of itself'));
-    return;
-  }
-
-  // Set has_positions to false if no position_format
-  if (!this.position_format) {
-    this.has_positions = false;
-  }
-
-  next();
-});
 
 // Pre-remove middleware
 MaterialLocationSchema.pre(

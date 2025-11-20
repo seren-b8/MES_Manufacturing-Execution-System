@@ -143,17 +143,14 @@ export class SAPPOReceiptService {
           processing_notes: `${doLog.processing_notes || ''} | SAP Error: ${JSON.stringify(sapData)}`,
         });
 
-        // 🔥 Map response ให้เข้ากับ Format กลางของระบบคุณ
-        throw new HttpException(
-          {
-            status: 'error',
-            // ใช้ message จาก SAP ถ้าไม่มีให้ใช้ default
-            message: sapData.message || 'SAP Validation Failed',
-            // เอา errors object ใส่เข้าไปใน array ตาม format data: []
-            data: sapData.errors ? [sapData.errors] : ['momo'],
-          },
-          axiosError.response.status,
-        );
+        // throw new HttpException(
+        //   {
+        //     status: 'error',
+        //     message: sapData.message || 'SAP Validation Failed',
+        //     data: sapData.errors ? [sapData.errors] : [],
+        //   },
+        //   axiosError.response.status,
+        // );
       }
 
       // กรณี Error อื่นๆ (Network, Time out)
@@ -220,11 +217,10 @@ export class SAPPOReceiptService {
         const receiveResult = await this.transactionService.receiveMaterial({
           material_number: item.material,
           quantity: item.del_qty,
-          to_location_code: 'WH-01',
+          to_location_code: '1P10',
           user_id: doLog.created_by.toString(),
           reference_doc: `PO-${item.po_doc}`,
           lot_number: item.po_doc,
-          transaction_date: doLog.del_date,
         });
 
         // Create MaterialReceipt & ReceiptItem
