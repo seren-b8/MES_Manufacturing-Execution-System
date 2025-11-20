@@ -224,16 +224,12 @@ export class OEEService {
           const savedDoc = await this.oeeHourlyModel.create(record);
           savedRecords.push(savedDoc);
         } catch (error) {
-          // Type guard สำหรับ MongoDB duplicate key error
           if (
             error &&
             typeof error === 'object' &&
             'code' in error &&
             error.code === 11000
           ) {
-            console.log(
-              `Skipping duplicate for machine ${record.machine_number}`,
-            );
             continue;
           }
           throw error;
@@ -260,7 +256,6 @@ export class OEEService {
             'code' in error &&
             error.code === 11000
           ) {
-            console.log('Skipping duplicate for factory average (ALL)');
           } else {
             throw error;
           }

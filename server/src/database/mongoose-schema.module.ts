@@ -79,6 +79,7 @@ import {
   MaterialReceipt,
   MaterialReceiptSchema,
 } from 'src/schema/material-receipts.schema';
+import { SAPDOLog, SAPDOLogSchema } from 'src/schema/sap-do-logs.schema';
 
 @Module({
   imports: [
@@ -129,6 +130,7 @@ import {
 
       // SAP Integration
       { name: SAPSyncLog.name, schema: SAPSyncLogSchema },
+      { name: SAPDOLog.name, schema: SAPDOLogSchema },
     ]),
   ],
   exports: [MongooseModule],

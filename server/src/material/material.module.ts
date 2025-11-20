@@ -12,15 +12,25 @@ import { PositionService } from './material-position/position.service';
 import { SqlService } from 'src/shared/services/sql.service';
 import { MaterialReceiptService } from './material-receipt/receipt.service';
 import { MaterialReceiptController } from './material-receipt/receipt.controller';
+import { SAPPOReceiptService } from './sap-po-receipt/receipt.service';
+import { SAPPOReceiptController } from './sap-po-receipt/receipt.controller';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
-  imports: [MongooseSchemaModule],
+  imports: [
+    MongooseSchemaModule,
+    HttpModule.register({
+      timeout: 30000,
+      maxRedirects: 5,
+    }),
+  ],
   controllers: [
     MaterialController,
     TransactionController,
     LocationController,
     PositionController,
     MaterialReceiptController,
+    SAPPOReceiptController,
   ],
   providers: [
     MaterialService,
@@ -29,6 +39,7 @@ import { MaterialReceiptController } from './material-receipt/receipt.controller
     PositionService,
     SqlService,
     MaterialReceiptService,
+    SAPPOReceiptService,
   ],
   exports: [MaterialService],
 })

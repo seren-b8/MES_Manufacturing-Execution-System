@@ -31,9 +31,8 @@ export class SqlOrderController {
       if (response.status === 'success') {
         await this.sqlOrderService.activateOrder();
         await this.sqlOrderService.autoCreateNewPart();
-        console.log('Sync completed successfully');
       } else {
-        console.log('Sync failed:', response.message);
+        console.error('Sync failed:', response.message);
       }
     } catch (error) {
       console.error('Cron sync error:', error);

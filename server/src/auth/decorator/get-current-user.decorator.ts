@@ -10,6 +10,13 @@ export const GetUserId = createParamDecorator(
   },
 );
 
+export const GetEmployeeId = createParamDecorator(
+  (data: undefined, ctx: ExecutionContext): string => {
+    const request = ctx.switchToHttp().getRequest();
+    return request.user.employee_id;
+  },
+);
+
 // ดึงข้อมูล user ทั้งหมด หรือเฉพาะ field ที่ต้องการ
 export const GetUser = createParamDecorator(
   (data: string | undefined, ctx: ExecutionContext) => {
