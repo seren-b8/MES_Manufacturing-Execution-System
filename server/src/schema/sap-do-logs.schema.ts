@@ -1,14 +1,15 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { User } from './user.schema';
-import { MaterialReceiptItem } from './material-receipt-items';
 import { MaterialTransaction } from './material-transaction.schema';
 
 export interface SAPDOItem {
   po_doc: string;
   material: string;
   del_qty: number;
-  material_receipt_item_id?: Types.ObjectId;
+  to_location_code: String;
+  to_position_code: String;
+  lot_number: String;
   material_transaction_id?: Types.ObjectId;
   process_status: 'pending' | 'completed' | 'failed';
   error_message?: string;
@@ -50,10 +51,14 @@ export class SAPDOLog extends Document {
         po_doc: { type: String, required: true },
         material: { type: String, required: true },
         del_qty: { type: Number, required: true },
-        material_receipt_item_id: {
-          type: Types.ObjectId,
-          ref: MaterialReceiptItem.name,
-        },
+
+        // เพิ่มฟิลด์ใหม่ใน Schema
+        to_location_code: { type: String, required: true }, // ← เพิ่ม
+
+        to_position_code: { type: String }, // ← เพิ่ม
+
+        lot_number: { type: String }, // ← เพิ่ม
+
         material_transaction_id: {
           type: Types.ObjectId,
           ref: MaterialTransaction.name,

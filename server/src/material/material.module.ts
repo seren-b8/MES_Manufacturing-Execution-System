@@ -10,8 +10,6 @@ import { LocationService } from './material-location/location.service';
 import { PositionController } from './material-position/position.controller';
 import { PositionService } from './material-position/position.service';
 import { SqlService } from 'src/shared/services/sql.service';
-import { MaterialReceiptService } from './material-receipt/receipt.service';
-import { MaterialReceiptController } from './material-receipt/receipt.controller';
 import { SAPPOReceiptService } from './sap-po-receipt/receipt.service';
 import { SAPPOReceiptController } from './sap-po-receipt/receipt.controller';
 import { HttpModule } from '@nestjs/axios';
@@ -29,7 +27,6 @@ import { HttpModule } from '@nestjs/axios';
     TransactionController,
     LocationController,
     PositionController,
-    MaterialReceiptController,
     SAPPOReceiptController,
   ],
   providers: [
@@ -38,7 +35,6 @@ import { HttpModule } from '@nestjs/axios';
     LocationService,
     PositionService,
     SqlService,
-    MaterialReceiptService,
     SAPPOReceiptService,
   ],
   exports: [MaterialService],

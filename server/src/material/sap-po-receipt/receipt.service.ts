@@ -8,8 +8,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import moment = require('moment-timezone');
 import { Model, Types } from 'mongoose';
 import { SAPDOLog, SAPDOItem } from 'src/schema/sap-do-logs.schema';
-import { MaterialReceipt } from 'src/schema/material-receipts.schema';
-import { MaterialReceiptItem } from 'src/schema/material-receipt-items';
 import { TransactionService } from '../material-transaction/transaction.service';
 import { ReceiveFromSAPPODto } from './dto/sap-po.dto';
 import { ResponseFormat } from 'src/shared/interface';
@@ -23,10 +21,6 @@ export class SAPPOReceiptService {
 
   constructor(
     @InjectModel(SAPDOLog.name) private doLogModel: Model<SAPDOLog>,
-    @InjectModel(MaterialReceipt.name)
-    private receiptModel: Model<MaterialReceipt>,
-    @InjectModel(MaterialReceiptItem.name)
-    private receiptItemModel: Model<MaterialReceiptItem>,
     private readonly transactionService: TransactionService,
     private readonly httpService: HttpService, // เพิ่ม
   ) {}
@@ -52,6 +46,9 @@ export class SAPPOReceiptService {
           material: item.material,
           del_qty: item.del_qty,
           process_status: 'pending',
+          to_location_code: item.to_location_code || '1P10',
+          to_position_code: item.to_position_code || '',
+          lot_number: item.lot_number || item.po_doc,
         }),
       ),
       overall_status: 'processing',
@@ -223,21 +220,16 @@ export class SAPPOReceiptService {
           lot_number: item.po_doc,
         });
 
-        // Create MaterialReceipt & ReceiptItem
-        const receiptItem = await this.createReceiptItem(
-          doLog,
-          item,
-          receiveResult,
-        );
-
         // Update item status
         const updatedItem: SAPDOItem = {
           po_doc: item.po_doc,
           material: item.material,
           del_qty: item.del_qty,
-          material_receipt_item_id: receiptItem._id as Types.ObjectId,
           material_transaction_id: receiveResult.data[0]._id as Types.ObjectId,
           process_status: 'completed',
+          to_location_code: item.to_location_code || '1P10',
+          to_position_code: item.to_position_code || '',
+          lot_number: item.lot_number || item.po_doc,
         };
 
         doLog.items[i] = updatedItem;
@@ -249,6 +241,9 @@ export class SAPPOReceiptService {
           del_qty: item.del_qty,
           process_status: 'failed',
           error_message: (error as Error).message,
+          to_location_code: item.to_location_code || '1P10',
+          to_position_code: item.to_position_code || '',
+          lot_number: item.lot_number || item.po_doc,
         };
 
         doLog.items[i] = failedItem;
@@ -260,47 +255,6 @@ export class SAPPOReceiptService {
     await doLog.save();
 
     return { success, failed, total: doLog.items.length };
-  }
-
-  private async createReceiptItem(
-    doLog: SAPDOLog,
-    item: SAPDOItem,
-    receiveResult: any,
-  ) {
-    let receipt = await this.receiptModel.findOne({
-      material_number: item.material,
-      received_date: doLog.del_date,
-      sync_status: 'pending',
-    });
-
-    if (!receipt) {
-      receipt = await this.receiptModel.create({
-        plant: 'PLANT-01',
-        material_number: item.material,
-        short_text: item.material,
-        movement_type: '101',
-        received_date: doLog.del_date,
-        total_received_quantity: item.del_qty,
-        remaining_quantity: 0,
-        receipt_status: 'completed',
-        unit: 'PC',
-        sync_status: 'processed',
-      });
-    }
-
-    const receiptItem = await this.receiptItemModel.create({
-      material_receipt_id: receipt._id,
-      location_id: receiveResult.data[0].to_location_id,
-      position_id: receiveResult.data[0].to_position_id,
-      quantity: item.del_qty,
-      lot_number: item.po_doc,
-      material_transaction_id: receiveResult.data[0]._id,
-      received_by: doLog.created_by,
-      received_at: doLog.del_date,
-      remark: `SAP PO ${item.po_doc}`,
-    });
-
-    return receiptItem;
   }
 
   private async updateDOLogStatus(

@@ -71,14 +71,7 @@ import {
   PlannedDowntimeSchema,
 } from '../schema/planned-downtime.schema';
 import { OEEDaily, OEEDailySchema } from '../schema/oee-daily.schema';
-import {
-  MaterialReceiptItem,
-  MaterialReceiptItemSchema,
-} from 'src/schema/material-receipt-items';
-import {
-  MaterialReceipt,
-  MaterialReceiptSchema,
-} from 'src/schema/material-receipts.schema';
+
 import { SAPDOLog, SAPDOLogSchema } from 'src/schema/sap-do-logs.schema';
 
 @Module({
@@ -98,8 +91,6 @@ import { SAPDOLog, SAPDOLogSchema } from 'src/schema/sap-do-logs.schema';
       { name: MaterialLocation.name, schema: MaterialLocationSchema },
       { name: MaterialPosition.name, schema: MaterialPositionSchema },
       { name: MaterialTransaction.name, schema: MaterialTransactionSchema },
-      { name: MaterialReceiptItem.name, schema: MaterialReceiptItemSchema },
-      { name: MaterialReceipt.name, schema: MaterialReceiptSchema },
 
       // Machine Management
       { name: MachineInfo.name, schema: MachineInfoSchema },

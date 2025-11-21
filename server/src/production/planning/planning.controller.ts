@@ -292,7 +292,6 @@ export class ProductionPlanningController {
   async autoSyncPlanningStatus() {
     try {
       await this.productionPlanningService.syncAllPlanningStatus();
-      console.log('Auto-sync planning status completed');
     } catch (error) {
       console.error('Auto-sync planning status failed:', error);
     }

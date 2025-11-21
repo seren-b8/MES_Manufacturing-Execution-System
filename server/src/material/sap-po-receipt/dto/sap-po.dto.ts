@@ -9,6 +9,7 @@ import {
   IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { Types } from 'mongoose';
 
 // Header DTO - เหลือเฉพาะที่จำเป็น
 export class SAPPOHeaderDto {
@@ -43,6 +44,18 @@ export class SAPPOItemDto {
   @IsNumber()
   @Min(0.01)
   del_qty: number;
+
+  @IsNotEmpty()
+  @IsString()
+  to_location_code: string;
+
+  @IsOptional()
+  @IsString()
+  to_position_code?: string;
+
+  @IsOptional()
+  @IsString()
+  lot_number?: string;
 }
 
 // Main DTO
