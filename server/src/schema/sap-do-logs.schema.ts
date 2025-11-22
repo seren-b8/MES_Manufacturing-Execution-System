@@ -7,9 +7,9 @@ export interface SAPDOItem {
   po_doc: string;
   material: string;
   del_qty: number;
-  to_location_code: String;
-  to_position_code: String;
-  lot_number: String;
+  to_location_code?: string; // เปลี่ยนเป็น optional
+  to_position_code?: string; // เปลี่ยนเป็น optional
+  lot_number?: string; // เปลี่ยนเป็น optional
   material_transaction_id?: Types.ObjectId;
   process_status: 'pending' | 'completed' | 'failed';
   error_message?: string;
@@ -48,12 +48,12 @@ export class SAPDOLog extends Document {
   @Prop({
     type: [
       {
-        po_doc: { type: String, required: true },
-        material: { type: String, required: true },
-        del_qty: { type: Number, required: true },
+        po_doc: { type: String },
+        material: { type: String },
+        del_qty: { type: Number },
 
         // เพิ่มฟิลด์ใหม่ใน Schema
-        to_location_code: { type: String, required: true }, // ← เพิ่ม
+        to_location_code: { type: String }, // ← เพิ่ม
 
         to_position_code: { type: String }, // ← เพิ่ม
 

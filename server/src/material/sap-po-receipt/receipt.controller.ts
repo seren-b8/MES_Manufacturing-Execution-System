@@ -16,16 +16,21 @@ import { RolesGuard } from 'src/auth/guard/roles.guard';
 import { Roles } from 'src/auth/decorator/roles.decorator';
 
 import { Role } from 'src/auth/enum/roles.enum';
+import { UnifiedReceiptService } from './unified-receipt.service';
 import {
   GetEmployeeId,
   GetUser,
   GetUserId,
 } from 'src/auth/decorator/get-current-user.decorator';
+import { UnifiedReceiveDto } from './dto/unified-receive.dto';
 
 @Controller('material/sap-po')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SAPPOReceiptController {
-  constructor(private readonly sapPOReceiptService: SAPPOReceiptService) {}
+  constructor(
+    private readonly sapPOReceiptService: SAPPOReceiptService,
+    private readonly unifiedReceiptService: UnifiedReceiptService,
+  ) {}
 
   /**
    * รับวัตถุดิบจาก SAP PO
@@ -43,6 +48,18 @@ export class SAPPOReceiptController {
     dto.header.create_by = userId;
 
     return this.sapPOReceiptService.receiveFromSAPPO(dto, enployeeId);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async receive(
+    @Body() dto: UnifiedReceiveDto,
+    @GetUserId() userId: string,
+    @GetEmployeeId() employeeId: string,
+  ) {
+    dto.header.create_by = userId;
+    return this.unifiedReceiptService.receiveWithMode(dto, employeeId);
   }
 
   /**

@@ -13,6 +13,8 @@ import { SqlService } from 'src/shared/services/sql.service';
 import { SAPPOReceiptService } from './sap-po-receipt/receipt.service';
 import { SAPPOReceiptController } from './sap-po-receipt/receipt.controller';
 import { HttpModule } from '@nestjs/axios';
+import { UnifiedReceiptService } from './sap-po-receipt/unified-receipt.service';
+import { BatchReceiptService } from './sap-po-receipt/batch-receipt.service';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { HttpModule } from '@nestjs/axios';
     PositionService,
     SqlService,
     SAPPOReceiptService,
+    UnifiedReceiptService,
+    BatchReceiptService,
   ],
   exports: [MaterialService],
 })
