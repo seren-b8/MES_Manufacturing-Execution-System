@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { MongooseSchemaModule } from 'src/database/mongoose-schema.module';
-import { DatabaseModule } from 'src/database/database.module';
 import { MaterialController } from './material.controller';
 import { MaterialService } from './material.service';
 import { TransactionController } from './material-transaction/transaction.controller';
@@ -17,6 +16,8 @@ import { UnifiedReceiptService } from './sap-po-receipt/unified-receipt.service'
 import { BatchReceiptService } from './sap-po-receipt/batch-receipt.service';
 import { PurchasingDocumentController } from './purchasing-document/purchasing-document.controller';
 import { PurchasingDocumentService } from './purchasing-document/purchasing-document.service';
+import { PurchasingDocumentSyncService } from './purchasing-document/purchasing-document-sync.service';
+import { PurchasingDocumentCronService } from './purchasing-document/purchasing-document-cron.service';
 
 @Module({
   imports: [
@@ -44,6 +45,8 @@ import { PurchasingDocumentService } from './purchasing-document/purchasing-docu
     UnifiedReceiptService,
     BatchReceiptService,
     PurchasingDocumentService,
+    PurchasingDocumentSyncService, // ← เพิ่ม
+    PurchasingDocumentCronService, // ← เพิ่ม
   ],
   exports: [MaterialService],
 })

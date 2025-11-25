@@ -10,11 +10,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { PurchasingDocumentService } from './purchasing-document.service';
-import {
-  SyncPurchasingDocumentsDto,
-  QueryPurchasingDocumentDto,
-} from './dto/purchasing-document.dto';
+import { PurchasingDocumentSyncService } from './purchasing-document-sync.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
 import { Roles } from 'src/auth/decorator/roles.decorator';
@@ -23,39 +19,56 @@ import { Role } from 'src/auth/enum/roles.enum';
 @Controller('purchasing-documents')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PurchasingDocumentController {
-  constructor(private readonly poService: PurchasingDocumentService) {}
+  constructor(private readonly syncService: PurchasingDocumentSyncService) {}
 
   /**
-   * Sync PO data from external API
-   * POST /purchasing-documents/sync
+   * Manual sync - ระบุเงื่อนไข
    */
   @Post('sync')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.ADMIN, Role.MANAGER)
-  async syncPOData(@Body() dto: SyncPurchasingDocumentsDto) {
-    return this.poService.syncFromExternalAPI(dto);
-  }
-
-  /**
-   * Get all PO documents
-   * GET /purchasing-documents
-   */
-  @Get()
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async getAllPODocuments(@Query() query: QueryPurchasingDocumentDto) {
-    return this.poService.findAll(query);
-  }
-
-  /**
-   * Get specific PO by number and item
-   * GET /purchasing-documents/:po_number/:item
-   */
-  @Get(':po_number/:item')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATOR)
-  async getPODocument(
-    @Param('po_number') poNumber: string,
-    @Param('item') item: string,
+  async manualSync(
+    @Body()
+    dto: {
+      material?: string;
+      plant: string;
+      page?: number;
+      limit?: number;
+    },
   ) {
-    return this.poService.findByPOAndItem(poNumber, item);
+    return this.syncService.syncByParams(dto);
+  }
+
+  /**
+   * Trigger full sync ทันที
+   */
+  @Post('sync/all')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.ADMIN)
+  async triggerFullSync() {
+    return this.syncService.syncAll();
+  }
+
+  /**
+   * Sync open orders
+   */
+  @Post('sync/open')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async syncOpenOrders() {
+    return this.syncService.syncOpenOrders();
+  }
+
+  /**
+   * Sync specific PO
+   */
+  @Post('sync/:po_number')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async syncSinglePO(
+    @Param('po_number') poNumber: string,
+    @Query('plant') plant: string,
+  ) {
+    return this.syncService.syncSinglePO(poNumber, plant);
   }
 }
