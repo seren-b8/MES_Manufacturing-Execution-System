@@ -47,7 +47,7 @@ export class UnifiedReceiptService {
           po_doc: item.po_doc!,
           material: item.material,
           del_qty: item.del_qty,
-          to_location_code: item.to_location_code,
+          to_location_code: item.to_location_code || '1P10',
           to_position_code: item.to_position_code,
         })),
       };

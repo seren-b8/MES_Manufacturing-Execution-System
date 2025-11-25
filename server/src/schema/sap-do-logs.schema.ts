@@ -39,8 +39,8 @@ export class SAPDOLog extends Document {
   @Prop({ required: true })
   employee_id: string;
 
-  @Prop({ enum: ['N', 'Y'], default: 'N' })
-  sap_sync_status?: 'N' | 'Y'; // เพิ่ม
+  @Prop({ type: Boolean, default: false, index: true })
+  is_synced_to_sap: boolean;
 
   @Prop({ type: Date })
   sap_sync_timestamp?: Date; // เพิ่ม
@@ -99,3 +99,4 @@ SAPDOLogSchema.index({ overall_status: 1 });
 SAPDOLogSchema.index({ createdAt: -1 });
 SAPDOLogSchema.index({ 'items.material': 1 });
 SAPDOLogSchema.index({ 'items.po_doc': 1 });
+SAPDOLogSchema.index({ is_synced_to_sap: 1 });

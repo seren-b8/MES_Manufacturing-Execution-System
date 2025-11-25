@@ -73,6 +73,10 @@ import {
 import { OEEDaily, OEEDailySchema } from '../schema/oee-daily.schema';
 
 import { SAPDOLog, SAPDOLogSchema } from 'src/schema/sap-do-logs.schema';
+import {
+  PurchasingDocument,
+  PurchasingDocumentSchema,
+} from 'src/schema/purchasing-document.schema';
 
 @Module({
   imports: [
@@ -91,6 +95,7 @@ import { SAPDOLog, SAPDOLogSchema } from 'src/schema/sap-do-logs.schema';
       { name: MaterialLocation.name, schema: MaterialLocationSchema },
       { name: MaterialPosition.name, schema: MaterialPositionSchema },
       { name: MaterialTransaction.name, schema: MaterialTransactionSchema },
+      { name: PurchasingDocument.name, schema: PurchasingDocumentSchema },
 
       // Machine Management
       { name: MachineInfo.name, schema: MachineInfoSchema },

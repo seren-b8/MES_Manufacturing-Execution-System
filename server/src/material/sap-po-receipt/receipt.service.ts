@@ -119,7 +119,7 @@ export class SAPPOReceiptService {
 
       // Update sync status in MES
       await this.doLogModel.findByIdAndUpdate(doLog._id, {
-        sap_sync_status: 'Y',
+        is_synced_to_sap: true,
         sap_sync_timestamp: moment().tz('Asia/Bangkok').toDate(),
       });
 
@@ -136,7 +136,7 @@ export class SAPPOReceiptService {
 
         // Update DB ว่า Failed พร้อมเก็บ Log เต็มๆ
         await this.doLogModel.findByIdAndUpdate(doLog._id, {
-          sap_sync_status: 'N',
+          is_synced_to_sap: false,
           processing_notes: `${doLog.processing_notes || ''} | SAP Error: ${JSON.stringify(sapData)}`,
         });
 
@@ -152,7 +152,7 @@ export class SAPPOReceiptService {
 
       // กรณี Error อื่นๆ (Network, Time out)
       await this.doLogModel.findByIdAndUpdate(doLog._id, {
-        sap_sync_status: 'N',
+        is_synced_to_sap: false,
         processing_notes: `${doLog.processing_notes || ''} | System Error: ${(error as Error).message}`,
       });
 
@@ -170,7 +170,7 @@ export class SAPPOReceiptService {
       throw new NotFoundException(`DO ${doNum} not found`);
     }
 
-    if (doLog.sap_sync_status === 'Y') {
+    if (doLog.is_synced_to_sap === true) {
       return {
         status: 'success',
         message: `DO ${doNum} already synced to SAP`,
@@ -298,9 +298,8 @@ export class SAPPOReceiptService {
   async findByDONumber(doNum: string): Promise<SAPDOLog> {
     const doLog = await this.doLogModel
       .findOne({ do_num: doNum })
-      .populate('created_by', 'employee_id')
-      .populate('items.material_receipt_item_id')
-      .populate('items.material_transaction_id')
+      // .populate('employee_id')
+      // .populate('items.material_transaction_id')
       .exec();
 
     if (!doLog) {
@@ -342,7 +341,7 @@ export class SAPPOReceiptService {
 
     const doLogs = await this.doLogModel
       .find(filter)
-      .populate('created_by', 'employee_id')
+      .populate('employee_id')
       .sort({ createdAt: -1 })
       .limit(100)
       .exec();

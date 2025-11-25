@@ -15,6 +15,8 @@ import { SAPPOReceiptController } from './sap-po-receipt/receipt.controller';
 import { HttpModule } from '@nestjs/axios';
 import { UnifiedReceiptService } from './sap-po-receipt/unified-receipt.service';
 import { BatchReceiptService } from './sap-po-receipt/batch-receipt.service';
+import { PurchasingDocumentController } from './purchasing-document/purchasing-document.controller';
+import { PurchasingDocumentService } from './purchasing-document/purchasing-document.service';
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { BatchReceiptService } from './sap-po-receipt/batch-receipt.service';
     LocationController,
     PositionController,
     SAPPOReceiptController,
+    PurchasingDocumentController,
   ],
   providers: [
     MaterialService,
@@ -40,6 +43,7 @@ import { BatchReceiptService } from './sap-po-receipt/batch-receipt.service';
     SAPPOReceiptService,
     UnifiedReceiptService,
     BatchReceiptService,
+    PurchasingDocumentService,
   ],
   exports: [MaterialService],
 })
