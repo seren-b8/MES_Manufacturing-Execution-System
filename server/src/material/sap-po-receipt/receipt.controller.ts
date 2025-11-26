@@ -8,6 +8,7 @@ import {
   UseGuards,
   HttpStatus,
   HttpCode,
+  Header,
 } from '@nestjs/common';
 import { SAPPOReceiptService } from './receipt.service';
 import { ReceiveFromSAPPODto, QuerySAPDODto } from './dto/sap-po.dto';
@@ -58,8 +59,14 @@ export class SAPPOReceiptController {
     @GetUserId() userId: string,
     @GetEmployeeId() employeeId: string,
   ) {
-    dto.header.create_by = userId;
-    return this.unifiedReceiptService.receiveWithMode(dto, employeeId);
+    const payload = {
+      ...dto,
+      header: {
+        ...(dto.header ?? {}), // ถ้าไม่มี header ให้ใช้ object ว่าง
+        create_by: userId, // override หรือเพิ่ม create_by
+      },
+    };
+    return this.unifiedReceiptService.receiveWithMode(payload, employeeId);
   }
 
   /**
