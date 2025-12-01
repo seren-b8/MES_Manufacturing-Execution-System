@@ -93,6 +93,8 @@ export class SAPPOReceiptService {
           del_date: moment(doLog.del_date)
             .tz('Asia/Bangkok')
             .format('YYYY-MM-DD'),
+          vendor_code: '000000',
+          status: 'จัดส่งเรียบร้อย',
           create_by: doLog.employee_id,
         },
         items: doLog.items.map((item) => ({
