@@ -281,7 +281,7 @@ export class SAPPOReceiptService {
 
   private async generateDONumber(): Promise<string> {
     const today = moment().tz('Asia/Bangkok');
-    const prefix = `MESDO${today.format('YYYYMM')}`; // DO202511
+    const prefix = `MESDO${today.format('YYYYMM')}`; // MESDO202511
 
     const lastDO = await this.doLogModel
       .findOne({ do_num: new RegExp(`^${prefix}`) })
