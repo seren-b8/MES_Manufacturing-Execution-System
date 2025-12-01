@@ -35,7 +35,7 @@ export class PurchasingDocumentSyncService {
    */
   async syncAll(): Promise<SyncResult> {
     const plants = this.configService.get<string[]>('AUTO_SYNC_PLANTS', [
-      '1000',
+      '1620',
     ]);
     const results: SyncResult[] = [];
 
@@ -66,7 +66,7 @@ export class PurchasingDocumentSyncService {
    */
   async syncOpenOrders(): Promise<SyncResult> {
     const plants = this.configService.get<string[]>('AUTO_SYNC_PLANTS', [
-      '1000',
+      '1620',
     ]);
     const results: SyncResult[] = [];
 
@@ -119,38 +119,74 @@ export class PurchasingDocumentSyncService {
    * Sync ตาม plant
    */
   async syncByPlant(plant: string): Promise<SyncResult> {
+    // 1. เก็บ PO numbers ที่ดึงมาจาก SAP
+    const sapPONumbers = new Set<string>();
+
     let page = 1;
     let hasMore = true;
     const syncedDocs = [];
-    const errors = [];
 
     while (hasMore) {
-      try {
-        const result = await this.fetchAndSync({ plant, page, limit: 100 });
-        syncedDocs.push(...result.data);
+      const result = await this.fetchAndSync({ plant, page, limit: 100 });
 
-        hasMore = result.hasNextPage;
-        page++;
+      // เก็บ PO numbers
+      result.data.forEach((doc) => {
+        const key = `${doc.purchasing_document}-${doc.item}`;
+        sapPONumbers.add(key);
+      });
 
-        // Delay เพื่อไม่ให้ทำงานหนักเกินไป
-        await this.delay(500);
-      } catch (error) {
-        this.logger.error(
-          `Error syncing page ${page} for plant ${plant}`,
-          (error as Error).stack,
-        );
-        errors.push({ page, error: (error as Error).message });
-        hasMore = false;
-      }
+      syncedDocs.push(...result.data);
+      hasMore = result.hasNextPage;
+      page++;
+      await this.delay(500);
     }
 
-    return {
-      plant,
-      synced: syncedDocs.length,
-      failed: errors.length,
-      data: syncedDocs,
-      errors,
-    };
+    // 2. อัพเดท PO ที่ไม่มีใน SAP ให้เป็น inactive
+    await this.markInactivePOs(plant, sapPONumbers);
+
+    return { plant, synced: syncedDocs.length, failed: 0, data: syncedDocs };
+  }
+
+  /**
+   * Mark PO ที่ไม่มีใน SAP เป็น inactive
+   */
+  private async markInactivePOs(
+    plant: string,
+    activePONumbers: Set<string>,
+  ): Promise<void> {
+    try {
+      // หา PO ทั้งหมดใน MongoDB สำหรับ plant นี้
+      const allPOs = await this.poModel.find({
+        plant,
+        status: { $nin: ['cancelled', 'completed'] }, // เฉพาะที่ยังไม่จบ
+      });
+
+      const inactivePOs = [];
+
+      for (const po of allPOs) {
+        const key = `${po.purchasing_document}-${po.item}`;
+
+        // ถ้าไม่มีใน SAP
+        if (!activePONumbers.has(key)) {
+          inactivePOs.push(key);
+
+          // อัพเดท status เป็น inactive
+          await this.poModel.findByIdAndUpdate(po._id, {
+            status: 'cancelled', // หรือสร้าง status ใหม่เป็น 'inactive'
+            sap_inactive_date: new Date(),
+            sap_last_sync: new Date(),
+          });
+        }
+      }
+
+      if (inactivePOs.length > 0) {
+        this.logger.warn(
+          `Marked ${inactivePOs.length} POs as inactive in plant ${plant}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error('Failed to mark inactive POs', (error as Error).stack);
+    }
   }
 
   /**
@@ -313,5 +349,30 @@ export class PurchasingDocumentSyncService {
    */
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Mark records ที่ไม่ถูก sync มา > 24 ชั่วโมง
+   */
+  async markStaleRecords(): Promise<number> {
+    const threshold = new Date();
+    threshold.setHours(threshold.getHours() - 24);
+
+    const result = await this.poModel.updateMany(
+      {
+        sap_last_sync: { $lt: threshold },
+        sap_active: true,
+        status: { $in: ['open', 'partial'] },
+      },
+      {
+        $set: {
+          sap_active: false,
+          sap_inactive_date: new Date(),
+        },
+      },
+    );
+
+    this.logger.log(`Marked ${result.modifiedCount} stale POs as inactive`);
+    return result.modifiedCount;
   }
 }

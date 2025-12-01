@@ -39,6 +39,15 @@ export class PurchasingDocument extends Document {
   @Prop({ default: 0 })
   remaining_qty: number; // จำนวนคงเหลือ
 
+  @Prop({ type: Boolean, default: true, index: true })
+  sap_active: boolean; // ← ยังมีอยู่ใน SAP หรือไม่
+
+  @Prop({ type: Date, default: Date.now, index: true })
+  sap_last_sync: Date; // ← sync ครั้งล่าสุดเมื่อไหร่
+
+  @Prop({ type: Date })
+  sap_inactive_date?: Date; // ← เมื่อไหร่ที่หายจาก SAP
+
   @Prop({
     type: String,
     enum: ['open', 'partial', 'completed', 'cancelled'],
@@ -65,6 +74,10 @@ PurchasingDocumentSchema.index(
 PurchasingDocumentSchema.index({ material: 1, plant: 1 });
 PurchasingDocumentSchema.index({ status: 1, doc_date: -1 });
 PurchasingDocumentSchema.index({ doc_date: -1 });
+PurchasingDocumentSchema.index({
+  sap_active: 1,
+  sap_last_sync: -1,
+});
 
 // Pre-save middleware to calculate remaining_qty
 PurchasingDocumentSchema.pre('save', function (next) {

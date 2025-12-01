@@ -354,7 +354,7 @@ export class AuthService {
 
   // auth.service.ts
 
-  async createAllMissingUsers(defaultRole: string = 'operator'): Promise<
+  async createAllMissingUsers(defaultRole: string = 'user'): Promise<
     ResponseFormat<{
       total_employees: number;
       existing_users: number;
