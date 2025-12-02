@@ -866,14 +866,20 @@ export class ProductionRecordService {
   async autoConfirmOldNGRecords(): Promise<ResponseFormat<ProductionRecord>> {
     try {
       // คำนวณวันที่ย้อนหลัง 1 วัน
-      const oneDayAgo = new Date();
-      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+      // const oneDayAgo = moment()
+      //   .tz('Asia/Bangkok')
+      //   .subtract(1, 'days')
+      //   .toDate();
 
+      const fourHoursAgo = moment()
+        .tz('Asia/Bangkok')
+        .subtract(4, 'hours')
+        .toDate();
       // ค้นหา records ที่เป็น NG และมีอายุมากกว่า 1 วัน และยังไม่ได้ confirm
       const records = await this.productionRecordModel.find({
         is_not_good: true,
         confirmation_status: 'pending',
-        createdAt: { $lt: oneDayAgo },
+        createdAt: { $lt: fourHoursAgo },
       });
 
       if (records.length === 0) {
