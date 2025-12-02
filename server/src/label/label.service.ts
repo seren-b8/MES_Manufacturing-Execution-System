@@ -430,8 +430,12 @@ export class LabelService {
         );
       }
 
-      if (response.data.status !== 'success') {
-        throw new Error(`Print failed: ${response.data.message}`);
+      const status = response?.data?.status || response?.status;
+
+      if (status !== 'success') {
+        throw new Error(
+          `Print failed: ${response?.data?.message || response?.message}`,
+        );
       }
 
       // อัพเดตสถานะใน database
