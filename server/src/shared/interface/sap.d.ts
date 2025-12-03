@@ -63,6 +63,7 @@ export interface GroupedProductionData {
   snc_quantity: number;
   cycle_time_per_unit?: number;
   production_date: Date;
+  // sql_active: boolean;
 }
 
 export interface PopulatedUser {
