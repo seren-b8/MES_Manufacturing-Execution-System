@@ -223,8 +223,17 @@ export class SapProductionSyncService {
           ),
         );
       } catch (error) {
-        // จัดการ error ที่เกิดขึ้นทั้งชุด
-        console.error(`Batch error: ${(error as Error).message}`);
+        const errorMessage = (error as Error).message;
+
+        // ตรวจสอบว่าเป็น network error หรือ validation error
+        if (
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('ECONNREFUSED')
+        ) {
+          // Network issue - ไม่ควร retry ทันที
+          console.error(`Network error: ${errorMessage}`);
+          await new Promise((resolve) => setTimeout(resolve, 5000)); // รอ 5 วินาที
+        }
 
         // ส่งทีละรายการเมื่อเกิด error กับทั้งชุด
         for (const syncLog of chunk) {
@@ -324,6 +333,16 @@ export class SapProductionSyncService {
         }
         orderGroups[orderDateKey].push({ key, records: groupRecords });
       });
+
+      const tidPromises = Object.keys(orderGroups).map(async (orderDateKey) => {
+        if (!orderTidMap.has(orderDateKey)) {
+          const [orderId, dateStr] = orderDateKey.split('-');
+          const tid = await this.validationService.createTID(orderId, dateStr);
+          orderTidMap.set(orderDateKey, tid);
+        }
+      });
+
+      await Promise.all(tidPromises);
 
       const orderPromises = Object.entries(orderGroups).map(
         async ([orderDateKey, groups]) => {
@@ -533,66 +552,19 @@ export class SapProductionSyncService {
   async createSyncLogsFromPendingRecords() {
     try {
       const orderTidMap = new Map<string, string>();
+      const batchSize = 100;
+      let processedCount = 0;
+      let skip = 0;
+      let failedBatches = 0;
 
-      // ใช้ aggregation เพื่อกรอง sql_active เท่านั้น
-      const filteredRecordIds = await this.productionRecordModel.aggregate([
-        {
-          $match: {
-            confirmation_status: 'confirmed',
-            is_synced_to_sap: false,
-            assign_order_id: { $ne: null },
-          },
-        },
-        {
-          $lookup: {
-            from: 'assign_order',
-            localField: 'assign_order_id',
-            foreignField: '_id',
-            as: 'assign_order_data',
-          },
-        },
-        {
-          $unwind: {
-            path: '$assign_order_data',
-            preserveNullAndEmptyArrays: false,
-          },
-        },
-        {
-          $lookup: {
-            from: 'production_order',
-            let: {
-              production_order_id: '$assign_order_data.production_order_id',
-            },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$_id', '$$production_order_id'] },
-                      { $eq: ['$sql_active', true] },
-                    ],
-                  },
-                },
-              },
-            ],
-            as: 'production_order_data',
-          },
-        },
-        {
-          $unwind: {
-            path: '$production_order_data',
-            preserveNullAndEmptyArrays: false,
-          },
-        },
-        // Project เฉพาะ _id
-        {
-          $project: {
-            _id: 1,
-          },
-        },
-      ]);
+      // นับจำนวนรวม
+      const totalCount = await this.productionRecordModel.countDocuments({
+        confirmation_status: 'confirmed',
+        is_synced_to_sap: false,
+        assign_order_id: { $ne: null },
+      });
 
-      if (filteredRecordIds.length === 0) {
+      if (totalCount === 0) {
         return {
           status: 'success',
           message: 'No pending records found',
@@ -600,44 +572,137 @@ export class SapProductionSyncService {
         };
       }
 
-      // ใช้ populate แบบเดิม (ปลอดภัย 100%)
-      const pendingRecords = await this.productionRecordModel
-        .find({
-          _id: { $in: filteredRecordIds.map((r) => r._id) },
-        })
-        .select(
-          'quantity is_not_good assign_employee_ids assign_order_id master_not_good_id createdAt production_date',
-        )
-        .populate([
-          {
-            path: 'assign_order_id',
-            populate: {
-              path: 'production_order_id',
-            },
-          },
-          'master_not_good_id',
-          {
-            path: 'assign_employee_ids',
-            populate: {
-              path: 'user_id',
-            },
-          },
-        ])
-        .lean();
+      console.log(`Starting sync process: ${totalCount} records to process`);
 
-      // ประมวลผลข้อมูลทั้งหมด
-      const processedCount = await this.createSyncLogsFromRecords(
-        pendingRecords,
-        orderTidMap,
-      );
+      while (true) {
+        try {
+          // ใช้ aggregation เพื่อกรอง sql_active เท่านั้น
+          const filteredRecordIds = await this.productionRecordModel.aggregate([
+            {
+              $match: {
+                confirmation_status: 'confirmed',
+                is_synced_to_sap: false,
+                assign_order_id: { $ne: null },
+              },
+            },
+            {
+              $lookup: {
+                from: 'assign_order',
+                localField: 'assign_order_id',
+                foreignField: '_id',
+                as: 'assign_order_data',
+              },
+            },
+            {
+              $unwind: {
+                path: '$assign_order_data',
+                preserveNullAndEmptyArrays: false,
+              },
+            },
+            {
+              $lookup: {
+                from: 'production_order',
+                let: {
+                  production_order_id: '$assign_order_data.production_order_id',
+                },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ['$_id', '$$production_order_id'] },
+                          { $eq: ['$sql_active', true] },
+                        ],
+                      },
+                    },
+                  },
+                ],
+                as: 'production_order_data',
+              },
+            },
+            {
+              $unwind: {
+                path: '$production_order_data',
+                preserveNullAndEmptyArrays: false,
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+              },
+            },
+            { $skip: skip },
+            { $limit: batchSize },
+          ]);
+
+          if (filteredRecordIds.length === 0) break;
+
+          // ใช้ populate แบบเดิม
+          const pendingRecords = await this.productionRecordModel
+            .find({
+              _id: { $in: filteredRecordIds.map((r) => r._id) },
+            })
+            .select(
+              'quantity is_not_good assign_employee_ids assign_order_id master_not_good_id createdAt production_date',
+            )
+            .populate([
+              {
+                path: 'assign_order_id',
+                populate: [
+                  { path: 'production_order_id' },
+                  { path: 'machine_info' },
+                ],
+              },
+              'master_not_good_id',
+              {
+                path: 'assign_employee_ids',
+                populate: {
+                  path: 'user_id',
+                },
+              },
+            ])
+            .lean();
+
+          if (!pendingRecords || pendingRecords.length === 0) {
+            console.warn(
+              `Batch ${skip / batchSize + 1}: No records after populate`,
+            );
+            skip += batchSize;
+            continue;
+          }
+
+          const batchProcessed = await this.createSyncLogsFromRecords(
+            pendingRecords,
+            orderTidMap,
+          );
+
+          processedCount += batchProcessed;
+          console.log(
+            `Batch ${skip / batchSize + 1}: Processed ${batchProcessed}/${filteredRecordIds.length} records (Total: ${processedCount}/${totalCount})`,
+          );
+        } catch (batchError) {
+          failedBatches++;
+          console.error(
+            `Batch ${skip / batchSize + 1} failed:`,
+            (batchError as Error).message,
+          );
+          // Continue to next batch instead of failing entirely
+        }
+
+        skip += batchSize;
+      }
 
       return {
-        status: 'success',
-        message: 'Successfully synced pending records',
+        status: processedCount > 0 ? 'success' : 'error',
+        message:
+          failedBatches > 0
+            ? `Synced ${processedCount} records with ${failedBatches} failed batches`
+            : `Successfully synced ${processedCount} pending records`,
         data: [
           {
             processed: processedCount,
-            total: pendingRecords.length,
+            total: totalCount,
+            failedBatches,
           },
         ],
       };
@@ -655,7 +720,6 @@ export class SapProductionSyncService {
 
   async sendPendingSyncLogsByTid(tids: string[]) {
     try {
-      // ค้นหา SyncLog ที่มีสถานะ pending และ ID ตรงตามที่ระบุ
       const pendingSyncLogs = await this.sapSyncLogModel
         .find({ tid: { $in: tids }, status: 'pending' })
         .lean();
@@ -671,131 +735,116 @@ export class SapProductionSyncService {
         );
       }
 
-      // // วันที่ปัจจุบันในรูปแบบที่ต้องการ
-      // const currentDate = moment().tz('Asia/Bangkok');
-      // const currentMonth = currentDate.month();
-      // const currentYear = currentDate.year();
-
-      // วันที่ 1 ของเดือนปัจจุบัน ในรูปแบบ YYYYMMDD
-      // const firstDayOfCurrentMonth = moment()
-      //   .tz('Asia/Bangkok')
-      //   .startOf('month')
-      //   .format('YYYYMMDD');
-
-      // // 1. ตรวจสอบและปรับ budat ให้ตรงกับเดือนปัจจุบันก่อน
-      // const updatedSyncLogs = [];
-
-      // for (const syncLog of pendingSyncLogs) {
-      //   // สร้าง copy ของ syncLog เพื่อไม่แก้ไขข้อมูลต้นฉบับ
-      //   const updatedLog = { ...syncLog };
-
-      //   // ตรวจสอบเดือนของ budat
-      //   const budatMonth = moment(syncLog.budat, 'YYYYMMDD').month();
-      //   const budatYear = moment(syncLog.budat, 'YYYYMMDD').year();
-
-      //   // ถ้าเดือนไม่ตรงกับเดือนปัจจุบัน ให้ปรับเป็นวันที่ 1 ของเดือนปัจจุบัน
-      //   if (budatMonth !== currentMonth || budatYear !== currentYear) {
-      //     updatedLog.budat = firstDayOfCurrentMonth;
-
-      //     // อัพเดท budat ใน database
-      //     await this.sapSyncLogModel.findByIdAndUpdate(syncLog._id, {
-      //       budat: firstDayOfCurrentMonth,
-      //     });
-      //   }
-
-      //   updatedSyncLogs.push(updatedLog);
-      // }
-
-      // 2. แปลง aufnr เป็น order_id โดยตัด 0 ด้านหน้าออก
-      const orderIds = pendingSyncLogs.map((log) => {
-        return log.aufnr.replace(/^0+/, '');
-      });
-
-      // 3. ดึงข้อมูล production orders
+      // Get production orders
+      const orderIds = pendingSyncLogs.map((log) =>
+        log.aufnr.replace(/^0+/, ''),
+      );
       const productionOrders = await this.productionOrderModel
         .find({ order_id: { $in: orderIds }, sql_active: true })
         .lean();
 
-      // สร้าง map เพื่อค้นหาข้อมูล order ได้เร็วขึ้น
       const orderMap = new Map();
       for (const order of productionOrders) {
         orderMap.set(order.order_id, order);
       }
 
-      // 4. ตรวจสอบความถูกต้องของเดือนเทียบกับ order
+      // Validate logs
       const validLogs = [];
       const invalidLogs = [];
+      const bulkOps = [];
 
       for (const syncLog of pendingSyncLogs) {
         const orderId = syncLog.aufnr.replace(/^0+/, '');
         const order = orderMap.get(orderId);
 
+        let failReason = null;
+
         if (!order) {
-          invalidLogs.push({
-            syncLogId: syncLog._id,
-            aufnr: syncLog.aufnr,
-            orderId: orderId,
-            reason: `Order ${orderId} not found or not active in SQL`,
-          });
-          continue;
+          failReason = `Order ${orderId} not found or not active in SQL`;
+        } else if (!order.basic_start_date) {
+          failReason = `Order ${orderId} has no basic_start_date`;
+        } else {
+          const orderStartMonth = moment(order.basic_start_date).month();
+          const orderStartYear = moment(order.basic_start_date).year();
+          const syncMonth = moment(syncLog.budat, 'YYYYMMDD').month();
+          const syncYear = moment(syncLog.budat, 'YYYYMMDD').year();
+
+          if (orderStartMonth !== syncMonth || orderStartYear !== syncYear) {
+            failReason = `Month/Year mismatch: order start date (${moment(order.basic_start_date).format('YYYY-MM')}) vs sync date (${moment(syncLog.budat, 'YYYYMMDD').format('YYYY-MM')})`;
+          }
         }
 
-        if (!order.basic_start_date) {
+        if (failReason) {
           invalidLogs.push({
             syncLogId: syncLog._id,
             aufnr: syncLog.aufnr,
             orderId: orderId,
-            reason: `Order ${orderId} has no basic_start_date`,
-          });
-          continue;
-        }
-
-        // ตรวจสอบเดือน
-        const orderStartMonth = moment(order.basic_start_date).month();
-        const orderStartYear = moment(order.basic_start_date).year();
-        const syncMonth = moment(syncLog.budat, 'YYYYMMDD').month();
-        const syncYear = moment(syncLog.budat, 'YYYYMMDD').year();
-
-        // ตรวจสอบทั้งเดือนและปี
-        if (orderStartMonth !== syncMonth || orderStartYear !== syncYear) {
-          invalidLogs.push({
-            syncLogId: syncLog._id,
-            aufnr: syncLog.aufnr,
-            orderId: orderId,
-            orderStartDate: order.basic_start_date,
+            orderStartDate: order?.basic_start_date,
             syncDate: syncLog.budat,
-            reason: `Month/Year mismatch: order start date (${moment(order.basic_start_date).format('YYYY-MM')}) vs sync date (${moment(syncLog.budat, 'YYYYMMDD').format('YYYY-MM')})`,
+            reason: failReason,
+          });
+
+          bulkOps.push({
+            updateOne: {
+              filter: { _id: syncLog._id },
+              update: {
+                $set: {
+                  status: 'failed',
+                  error_message: failReason,
+                  sync_timestamp: moment.tz('Asia/Bangkok').toDate(),
+                },
+              },
+            },
           });
         } else {
           validLogs.push(syncLog);
         }
       }
 
-      // ถ้ามี logs ที่ไม่ถูกต้อง
-      if (invalidLogs.length > 0) {
-        throw new HttpException(
-          {
-            status: 'error',
-            message:
-              'Cannot send sync logs with month/year mismatch between order start date and sync date',
-            data: invalidLogs,
-          },
-          HttpStatus.BAD_REQUEST,
+      // Update failed logs
+      if (bulkOps.length > 0) {
+        await this.sapSyncLogModel.bulkWrite(bulkOps);
+        console.warn(
+          `Marked ${bulkOps.length} sync logs as failed due to validation errors`,
         );
       }
 
-      // ส่งเฉพาะ logs ที่ผ่านการตรวจสอบแล้ว
+      // 🟢 Option 2: Flexible - ส่งต่อ valid logs (แนะนำ)
+      if (validLogs.length === 0) {
+        return {
+          status: 'error',
+          message: 'All sync logs failed validation',
+          data: [
+            {
+              sent: 0,
+              rejected: invalidLogs.length,
+              rejectedDetails: invalidLogs,
+            },
+          ],
+        };
+      }
+
+      // Send valid logs to SAP
       if (validLogs.length > 0) {
         await this.sendToSapInBatches(validLogs);
-        console.warn(
+        console.log(
           `Sent ${validLogs.length} valid sync logs to SAP with TID: ${validLogs[0].tid}`,
         );
       }
 
       return {
-        status: 'success',
-        message: 'Successfully sent pending sync logs to SAP',
-        data: [{ sent: validLogs.length }],
+        status: invalidLogs.length > 0 ? 'partial_success' : 'success',
+        message:
+          invalidLogs.length > 0
+            ? `Sent ${validLogs.length} logs, ${invalidLogs.length} logs failed validation`
+            : `Successfully sent all ${validLogs.length} sync logs to SAP`,
+        data: [
+          {
+            sent: validLogs.length,
+            rejected: invalidLogs.length,
+            rejectedDetails: invalidLogs.length > 0 ? invalidLogs : undefined,
+          },
+        ],
       };
     } catch (error) {
       if (error instanceof HttpException) {
@@ -804,14 +853,13 @@ export class SapProductionSyncService {
       throw new HttpException(
         {
           status: 'error',
-          message: `Failed to send pending sync logs by ID: ${(error as Error).message}`,
+          message: `Failed to send pending sync logs: ${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
-
   /**
    * อัปเดต order ID ใน sync logs ทุกตัวที่มีสถานะ pending ให้เป็น order ที่มี basic start date ตรงกับเดือนปัจจุบัน
    * @returns ข้อมูลการอัปเดต
@@ -819,27 +867,16 @@ export class SapProductionSyncService {
   async updateOrdersToCurrentMonth() {
     try {
       // ค้นหา sync logs ทั้งหมดที่มีสถานะ pending
-      const allPendingSyncLogs = await this.sapSyncLogModel
-        .find({ status: 'pending' })
-        .lean();
+      const cursor = this.sapSyncLogModel.find({ status: 'pending' }).cursor();
 
-      if (allPendingSyncLogs.length === 0) {
-        return {
-          status: 'success',
-          message: 'No pending sync logs found',
-          data: [],
-        };
-      }
-
-      // จัดกลุ่ม logs ตาม order ID (aufnr)
       const orderIdGroups = {};
-      allPendingSyncLogs.forEach((log) => {
+      for await (const log of cursor) {
         const orderId = log.aufnr.replace(/^0+/, '');
         if (!orderIdGroups[orderId]) {
           orderIdGroups[orderId] = [];
         }
         orderIdGroups[orderId].push(log);
-      });
+      }
 
       // เลือก 1 รายการต่อ order ID เพื่อตรวจสอบ
       const pendingSyncLogs = Object.values(orderIdGroups).map(
