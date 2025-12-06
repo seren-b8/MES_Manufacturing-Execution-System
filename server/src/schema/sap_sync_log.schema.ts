@@ -74,6 +74,15 @@ export class SAPSyncLog {
 
   @Prop({ type: Number, default: 60 })
   cycle_time_per_unit?: number; //Cycle time per unit (in seconds)
+
+  @Prop({ type: Boolean, default: false })
+  is_pending_allocation: boolean; // รอ allocate ไป order ใหม่
+
+  @Prop({ type: String })
+  pending_allocation_reason?: string; // เหตุผลที่รอ
+
+  @Prop({ type: String })
+  allocated_to_order_id?: string; // ถูก allocate ไป order ไหน (ถ้ามี)
 }
 
 export const SAPSyncLogSchema = SchemaFactory.createForClass(SAPSyncLog);

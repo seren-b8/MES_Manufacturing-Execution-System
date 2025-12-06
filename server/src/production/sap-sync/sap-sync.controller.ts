@@ -10,7 +10,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { SapProductionSyncService } from './sap-sync.service';
-import { Types } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { ResponseFormat } from 'src/shared/interface';
 import { SapSyncLogService } from './sap-sync-log.service';
@@ -24,6 +24,8 @@ import {
 } from 'src/machine/interceptors/simple-cache.interceptor';
 import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
 import { toObjectId } from 'src/shared/utils/type.utils';
+import { InjectModel } from '@nestjs/mongoose';
+import { SAPSyncLog } from 'src/schema/sap_sync_log.schema';
 
 @Controller('sap-sync')
 @UseGuards(JwtAuthGuard, CustomThrottlerGuard)
@@ -31,6 +33,8 @@ export class SapSyncController {
   constructor(
     private readonly sapSyncService: SapProductionSyncService,
     private readonly sapSyncLogService: SapSyncLogService,
+    @InjectModel(SAPSyncLog.name)
+    private readonly sapSyncLogModel: Model<SAPSyncLog>,
   ) {}
 
   @Post('create-sync-log')
@@ -113,5 +117,102 @@ export class SapSyncController {
   @Roles(Role.ADMIN)
   async updateOrderToCurrentMonth() {
     return this.sapSyncService.updateOrdersToCurrentMonth();
+  }
+
+  // 1. ดู pending allocation logs
+  @Get('/sync-logs/pending-allocation')
+  async getPendingAllocationLogs(
+    @Query('material_number') materialNumber?: string,
+  ) {
+    const query: any = {
+      is_pending_allocation: true,
+      status: 'pending',
+    };
+
+    if (materialNumber) {
+      // Join กับ production_order เพื่อ filter material
+      const logs = await this.sapSyncLogModel.aggregate([
+        { $match: query },
+        {
+          $lookup: {
+            from: 'production_order',
+            let: {
+              orderId: { $toLong: { $ltrim: { input: '$aufnr', chars: '0' } } },
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$order_id', { $toString: '$$orderId' }] },
+                      { $eq: ['$material_number', materialNumber] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'order',
+          },
+        },
+        { $unwind: '$order' },
+      ]);
+
+      return { status: 'success', data: logs };
+    }
+
+    const logs = await this.sapSyncLogModel.find(query);
+    return { status: 'success', data: logs };
+  }
+
+  // 2. Trigger auto-allocation manually
+  @Post('/sync-logs/allocate-pending/:materialNumber')
+  async allocatePending(@Param('materialNumber') materialNumber: string) {
+    return this.sapSyncService.tryAllocatePendingLogs(materialNumber);
+  }
+
+  // 3. Summary pending by material
+  @Get('/sync-logs/pending-summary')
+  async getPendingSummary() {
+    const summary = await this.sapSyncLogModel.aggregate([
+      {
+        $match: {
+          is_pending_allocation: true,
+          status: 'pending',
+        },
+      },
+      {
+        $lookup: {
+          from: 'production_order',
+          let: {
+            orderId: { $toLong: { $ltrim: { input: '$aufnr', chars: '0' } } },
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$order_id', { $toString: '$$orderId' }] },
+              },
+            },
+          ],
+          as: 'order',
+        },
+      },
+      { $unwind: '$order' },
+      {
+        $group: {
+          _id: {
+            material: '$order.material_number',
+            material_desc: '$order.material_description',
+            is_not_good: '$is_not_good',
+          },
+          total_pending_quantity: { $sum: '$quantity' },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $sort: { total_pending_quantity: -1 },
+      },
+    ]);
+
+    return { status: 'success', data: summary };
   }
 }

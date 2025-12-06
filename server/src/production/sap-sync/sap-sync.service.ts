@@ -308,7 +308,6 @@ export class SapProductionSyncService {
             ? record.master_not_good_id.case_code || 'UNKNOWN'
             : '';
 
-        // ใช้งาน object เป็น key กำหนด pattern ให้ชัดเจน
         const key = `${order.order_id}-${order.sequence_number || '000000'}-${
           order.activity || '0010'
         }-${dateStr}-${record.is_not_good ? 'NG' : 'OK'}-${record.is_not_good ? caseCode : ''}`;
@@ -319,12 +318,10 @@ export class SapProductionSyncService {
         groupedRecords[key].push(record);
       }
 
-      // เก็บข้อมูลทั้งหมดของแต่ละ order ก่อนประมวลผล
       const orderGroups: {
         [orderDateKey: string]: { key: string; records: any[] }[];
       } = {};
 
-      // จัดกลุ่มตาม orderId
       Object.entries(groupedRecords).forEach(([key, groupRecords]) => {
         const [orderId, , , dateStr] = key.split('-');
         const orderDateKey = `${orderId}-${dateStr}`;
@@ -348,21 +345,18 @@ export class SapProductionSyncService {
         async ([orderDateKey, groups]) => {
           const [baseOrderId, baseDateStr] = orderDateKey.split('-');
 
-          // ใช้ TID ที่มีอยู่แล้วหรือสร้างใหม่
           let sharedTid = orderTidMap.get(orderDateKey);
           if (!sharedTid) {
             sharedTid = await this.validationService.createTID(
               baseOrderId,
               baseDateStr,
             );
-
             orderTidMap.set(orderDateKey, sharedTid);
           }
-          // เตรียมข้อมูลสำหรับทุกกลุ่มใน order นี้
-          let globalItemCounter = 1; // itemno เริ่มที่ 1 สำหรับแต่ละ order
+
+          let globalItemCounter = 1;
           const allSyncLogEntries: SAPSyncLog[] = [];
 
-          // ประมวลผลแต่ละกลุ่มในแต่ละ order
           for (const { key, records } of groups) {
             const keySplit = key.split('-');
             const orderId = keySplit[0];
@@ -374,14 +368,16 @@ export class SapProductionSyncService {
 
             const isNotGood = recordType === 'NG';
 
-            // ใช้ reduce แทน loop + map เพื่อเพิ่มประสิทธิภาพ
+            // 🔹 สร้าง recordIds สำหรับ group นี้
+            const recordIds = records.map((r) => r._id);
+
+            // คำนวณข้อมูลพื้นฐาน
             let totalQuantity = 0;
             let employeeIds: string[] = [];
             let cycleTimePerUnit = 60;
 
             for (const record of records) {
               totalQuantity += record.quantity;
-              // เก็บรวบรวม employee IDs จากทุก record
               for (const assignEmp of record.assign_employee_ids) {
                 const empId = assignEmp.user_id.employee_id;
                 if (!employeeIds.includes(empId)) {
@@ -395,80 +391,135 @@ export class SapProductionSyncService {
               }
             }
 
-            // คำนวณจำนวนต่อพนักงานที่ควรได้ (ทุกคนเท่ากัน)
             const employeeCount = employeeIds.length;
             const equalSharePerEmployee = Math.floor(
               totalQuantity / employeeCount,
             );
-
-            // คำนวณเศษที่เหลือ (ไม่สามารถแบ่งเท่ากันได้)
             const remainder =
               totalQuantity - equalSharePerEmployee * employeeCount;
 
-            // สร้าง map จำนวนต่อพนักงาน
-            const empQuantitiesObj: { [empId: string]: number } = {};
+            // 🔹 Split quantity by target
+            const splitResults = new Map<
+              string,
+              {
+                sendable: number;
+                pending: number;
+              }
+            >();
 
-            // แบ่งให้แต่ละพนักงานเท่าๆ กัน
             for (const empId of employeeIds) {
-              empQuantitiesObj[empId] = equalSharePerEmployee;
+              const proposedQty = equalSharePerEmployee;
+
+              const split = await this.splitQuantityByTarget(
+                orderId,
+                empId,
+                proposedQty,
+                isNotGood,
+              );
+
+              splitResults.set(empId, {
+                sendable: split.sendableQuantity,
+                pending: split.pendingQuantity,
+              });
             }
 
-            // เศษทั้งหมดไปเข้า SNC
-            const sncQuantity = remainder;
+            // Handle remainder (SNC)
+            let sncSendable = 0;
+            let sncPending = 0;
 
-            // แปลง obj เป็น Map
-            const empQuantities = new Map(Object.entries(empQuantitiesObj));
+            if (remainder > 0) {
+              const sncSplit = await this.splitQuantityByTarget(
+                orderId,
+                'SNC',
+                remainder,
+                isNotGood,
+              );
+              sncSendable = sncSplit.sendableQuantity;
+              sncPending = sncSplit.pendingQuantity;
+            }
 
-            // เตรียมข้อมูลสำหรับส่ง SAP
+            // 🔹 สร้าง groupedData สำหรับ group นี้
+            const sendableEmployeeQuantities = new Map<string, number>();
+            for (const [empId, split] of splitResults) {
+              if (split.sendable > 0) {
+                sendableEmployeeQuantities.set(empId, split.sendable);
+              }
+            }
+
             const groupedData: GroupedProductionData = {
               order_id: orderId,
               sequence_no: sequenceNo,
               activity: activity,
               is_not_good: isNotGood,
               case_ng: isNotGood ? caseCode : undefined,
-              employee_quantities: empQuantities,
-              snc_quantity: sncQuantity,
+              employee_quantities: sendableEmployeeQuantities,
+              snc_quantity: sncSendable,
               cycle_time_per_unit: cycleTimePerUnit,
               production_date: moment
                 .tz(dateStr, 'YYYYMMDD', 'Asia/Bangkok')
                 .toDate(),
             };
 
-            // สร้าง sync log entries สำหรับกลุ่มนี้ และเพิ่มเข้าไปในรายการรวม
-            const recordIds = records.map((r) => r._id);
+            // === Create sync logs ===
 
-            for (const [
-              employeeId,
-              quantity,
-            ] of groupedData.employee_quantities) {
-              const syncLog = await this.createSyncLogEntryWithSharedTid(
-                recordIds,
-                employeeId,
-                quantity,
-                'EMP',
-                groupedData,
-                sharedTid,
-                globalItemCounter++, // ใช้ globalItemCounter
-              );
-              allSyncLogEntries.push(syncLog);
+            // 1. สร้าง logs สำหรับส่วนที่ส่งได้
+            for (const [empId, split] of splitResults) {
+              if (split.sendable > 0) {
+                const syncLog = await this.createSyncLogEntryWithSharedTid(
+                  recordIds, // ✅
+                  empId,
+                  split.sendable,
+                  'EMP',
+                  groupedData, // ✅
+                  sharedTid,
+                  globalItemCounter++,
+                );
+                allSyncLogEntries.push(syncLog);
+              }
+
+              // 2. สร้าง pending logs สำหรับส่วนที่เหลือ
+              if (split.pending > 0) {
+                await this.createPendingAllocationLog(
+                  recordIds, // ✅
+                  empId,
+                  split.pending,
+                  'EMP',
+                  groupedData, // ✅
+                  orderId,
+                  dateStr,
+                );
+              }
             }
 
-            if (groupedData.snc_quantity > 0) {
-              const sncSyncLog = await this.createSyncLogEntryWithSharedTid(
-                recordIds,
+            // 3. Handle SNC
+            if (sncSendable > 0) {
+              const sncLog = await this.createSyncLogEntryWithSharedTid(
+                recordIds, // ✅
                 'SNC',
-                groupedData.snc_quantity,
+                sncSendable,
                 'SNC',
-                groupedData,
+                groupedData, // ✅
                 sharedTid,
-                globalItemCounter++, // ใช้ globalItemCounter
+                globalItemCounter++,
               );
-              allSyncLogEntries.push(sncSyncLog);
+              allSyncLogEntries.push(sncLog);
             }
 
-            // อัพเดทสถานะ records
+            if (sncPending > 0) {
+              await this.createPendingAllocationLog(
+                recordIds, // ✅
+                'SNC',
+                sncPending,
+                'SNC',
+                groupedData, // ✅
+                orderId,
+                dateStr,
+              );
+            }
+
+            // === Update production records ===
             await this.productionRecordModel.updateMany(
-              { _id: { $in: recordIds } },
+              { _id: { $in: recordIds } }, // ✅
               {
                 is_synced_to_sap: true,
                 sap_sync_timestamp: moment.tz('Asia/Bangkok').toDate(),
@@ -476,9 +527,9 @@ export class SapProductionSyncService {
             );
           }
 
-          // ในฟังก์ชัน processRecords
-          // ส่งข้อมูลทั้งหมดไป SAP
+          // ส่ง SAP เฉพาะส่วนที่ sendable
           // await this.sendToSapInBatches(allSyncLogEntries);
+
           return groups.reduce(
             (total, { records }) => total + records.length,
             0,
@@ -486,7 +537,6 @@ export class SapProductionSyncService {
         },
       );
 
-      // รอให้ทุก order ทำงานเสร็จและรวมจำนวนที่ประมวลผล
       const results = await Promise.all(orderPromises);
       processedCount = results.reduce((sum, count) => sum + count, 0);
 
@@ -1175,6 +1225,306 @@ export class SapProductionSyncService {
         {
           status: 'error',
           message: `Failed to retry sync log: ${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  private async splitQuantityByTarget(
+    orderId: string,
+    employeeId: string,
+    proposedQuantity: number,
+    isNotGood: boolean,
+  ): Promise<{
+    sendableQuantity: number;
+    pendingQuantity: number;
+    targetQuantity: number;
+    alreadySent: number;
+  }> {
+    // 1. หา target quantity
+    const order = await this.productionOrderModel.findOne({
+      order_id: orderId,
+      sql_active: true,
+    });
+
+    if (!order) {
+      throw new Error(`Order ${orderId} not found or inactive`);
+    }
+
+    const targetQuantity = order.target_quantity || 0;
+
+    // 2. หาจำนวนที่ส่งไปแล้ว (เฉพาะที่ส่งสำเร็จ + pending)
+    const sentLogs = await this.sapSyncLogModel.aggregate([
+      {
+        $match: {
+          aufnr: orderId.padStart(12, '0'),
+          status: { $in: ['pending', 'completed'] },
+          is_not_good: isNotGood,
+          is_pending_allocation: { $ne: true }, // ไม่นับพวกรอ allocate
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$quantity' },
+        },
+      },
+    ]);
+
+    const alreadySent = sentLogs[0]?.total || 0;
+    const remainingCapacity = targetQuantity - alreadySent;
+
+    // 3. คำนวณแยก
+    let sendableQuantity = proposedQuantity;
+    let pendingQuantity = 0;
+
+    if (proposedQuantity > remainingCapacity) {
+      sendableQuantity = Math.max(0, remainingCapacity);
+      pendingQuantity = proposedQuantity - sendableQuantity;
+    }
+
+    return {
+      sendableQuantity,
+      pendingQuantity,
+      targetQuantity,
+      alreadySent,
+    };
+  }
+
+  private async createPendingAllocationLog(
+    productionRecordIds: Types.ObjectId[],
+    employeeId: string,
+    quantity: number,
+    syncType: 'EMP' | 'SNC',
+    groupedData: GroupedProductionData,
+    originalOrderId: string,
+    dateStr: string,
+  ): Promise<SAPSyncLog> {
+    const productionDate = moment(groupedData.production_date).tz(
+      'Asia/Bangkok',
+    );
+    const now = moment.tz('Asia/Bangkok');
+
+    return await this.sapSyncLogModel.create({
+      production_record_ids: productionRecordIds,
+      employee_id: employeeId,
+      quantity,
+      sync_type: syncType,
+      status: 'pending',
+
+      // Mark as pending allocation
+      is_pending_allocation: true,
+      pending_allocation_reason: `Exceeded target for order ${originalOrderId}`,
+
+      // ยังไม่มี TID (รอ allocate)
+      tid: `PENDING-${originalOrderId}-${dateStr}`,
+      itemno: 0,
+      aufnr: originalOrderId.padStart(12, '0'),
+      aplfl: groupedData.sequence_no.padStart(6, '0'),
+      vornr: groupedData.activity.padStart(4, '0'),
+      budat: this.formatDate(productionDate),
+      erdat: this.formatDate(now),
+      erzet: this.formatTime(now),
+
+      is_not_good: groupedData.is_not_good,
+      agrnd: groupedData.is_not_good ? groupedData.case_ng : undefined,
+      cycle_time_per_unit: groupedData.cycle_time_per_unit || 60,
+      production_date: groupedData.production_date,
+    });
+  }
+
+  /**
+   * พยายาม allocate pending logs ไปยัง orders ที่มี capacity
+   */
+  async tryAllocatePendingLogs(materialNumber: string) {
+    try {
+      // 1. หา pending logs ของ material นี้
+      const pendingLogs = await this.sapSyncLogModel.aggregate([
+        {
+          $match: {
+            is_pending_allocation: true,
+            status: 'pending',
+          },
+        },
+        {
+          $lookup: {
+            from: 'production_order',
+            let: {
+              orderId: {
+                $toLong: {
+                  $ltrim: { input: '$aufnr', chars: '0' },
+                },
+              },
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$order_id', { $toString: '$$orderId' }] },
+                      { $eq: ['$material_number', materialNumber] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'original_order',
+          },
+        },
+        {
+          $unwind: '$original_order',
+        },
+        {
+          $sort: { createdAt: 1 }, // FIFO
+        },
+      ]);
+
+      if (pendingLogs.length === 0) {
+        return {
+          status: 'success',
+          message: 'No pending logs to allocate',
+          data: [],
+        };
+      }
+
+      // 2. หา active orders ที่ยังมี capacity
+      const activeOrders = await this.productionOrderModel
+        .find({
+          material_number: materialNumber,
+          sql_active: true,
+        })
+        .lean();
+
+      const allocatedLogs = [];
+
+      for (const order of activeOrders) {
+        // คำนวณ capacity ที่เหลือ
+        const sentLogs = await this.sapSyncLogModel.aggregate([
+          {
+            $match: {
+              aufnr: order.order_id.padStart(12, '0'),
+              status: { $in: ['pending', 'completed'] },
+              is_pending_allocation: { $ne: true },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$quantity' },
+            },
+          },
+        ]);
+
+        const alreadySent = sentLogs[0]?.total || 0;
+        let remainingCapacity = (order.target_quantity || 0) - alreadySent;
+
+        if (remainingCapacity <= 0) continue;
+
+        // 3. พยายาม allocate pending logs เข้าไป
+        for (const pendingLog of pendingLogs) {
+          if (remainingCapacity <= 0) break;
+
+          // เช็คว่า is_not_good ตรงกันไหม
+          if (pendingLog.is_not_good !== (pendingLog.is_not_good || false)) {
+            continue;
+          }
+
+          const allocateQty = Math.min(pendingLog.quantity, remainingCapacity);
+
+          // สร้าง TID ใหม่
+          const dateStr = moment(pendingLog.production_date)
+            .tz('Asia/Bangkok')
+            .format('YYYYMMDD');
+          const newTid = await this.validationService.createTID(
+            order.order_id,
+            dateStr,
+          );
+
+          // หา itemno ล่าสุด
+          const lastItem = await this.sapSyncLogModel
+            .findOne({
+              tid: newTid,
+            })
+            .sort({ itemno: -1 })
+            .lean();
+
+          const newItemNo = (lastItem?.itemno || 0) + 1;
+
+          if (allocateQty === pendingLog.quantity) {
+            // Allocate ทั้งหมด
+            await this.sapSyncLogModel.findByIdAndUpdate(pendingLog._id, {
+              tid: newTid,
+              itemno: newItemNo,
+              aufnr: order.order_id.padStart(12, '0'),
+              is_pending_allocation: false,
+              allocated_to_order_id: order.order_id,
+              budat: dateStr,
+            });
+
+            allocatedLogs.push({
+              logId: pendingLog._id,
+              quantity: allocateQty,
+              from_order: pendingLog.aufnr.replace(/^0+/, ''),
+              to_order: order.order_id,
+            });
+
+            remainingCapacity -= allocateQty;
+          } else {
+            // Allocate บางส่วน - split log
+            // 1. อัพเดท log เดิมให้เหลือน้อยลง
+            await this.sapSyncLogModel.findByIdAndUpdate(pendingLog._id, {
+              quantity: pendingLog.quantity - allocateQty,
+            });
+
+            // 2. สร้าง log ใหม่สำหรับส่วนที่ allocate ได้
+            const newLog = await this.sapSyncLogModel.create({
+              ...pendingLog,
+              _id: undefined,
+              tid: newTid,
+              itemno: newItemNo,
+              aufnr: order.order_id.padStart(12, '0'),
+              quantity: allocateQty,
+              is_pending_allocation: false,
+              allocated_to_order_id: order.order_id,
+              budat: dateStr,
+            });
+
+            allocatedLogs.push({
+              logId: newLog._id,
+              quantity: allocateQty,
+              from_order: pendingLog.aufnr.replace(/^0+/, ''),
+              to_order: order.order_id,
+              partial: true,
+            });
+
+            remainingCapacity -= allocateQty;
+          }
+        }
+      }
+
+      // 4. ส่ง allocated logs ไป SAP
+      if (allocatedLogs.length > 0) {
+        const logsToSend = await this.sapSyncLogModel
+          .find({
+            _id: { $in: allocatedLogs.map((l) => l.logId) },
+          })
+          .lean();
+
+        await this.sendToSapInBatches(logsToSend);
+      }
+
+      return {
+        status: 'success',
+        message: `Allocated ${allocatedLogs.length} pending logs`,
+        data: allocatedLogs,
+      };
+    } catch (error) {
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to allocate pending logs: ${(error as Error).message}`,
           data: [],
         },
         HttpStatus.INTERNAL_SERVER_ERROR,
