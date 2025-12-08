@@ -1,104 +1,53 @@
-# --- Stage 1: Build Stage ---
-# ใช้สำหรับ build C++ addons และ transpile TypeScript
-FROM node:20-alpine AS builder
-
-RUN apk upgrade --no-cache
+# --- Stage 1: Build Stage (ต้องลงทุกอย่างที่ใช้ Compile) ---
+FROM node:20-slim AS builder
 
 WORKDIR /usr/src/app
 
-# ติดตั้ง dependencies สำหรับ build C++ addons (เหมือนเดิม)
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
-    vips-dev \
-    libusb-dev \
-    iputils \
-    cairo-dev \
-    jpeg-dev \
-    pango-dev \
-    musl-dev \
-    giflib-dev \
-    pixman-dev \
-    pangomm-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    fontconfig \
-    ttf-liberation
+# [ACTION 1: ติดตั้ง Dependencies สำหรับ Build ทั้งหมด]
+# รวมของสำหรับ sharp, canvas, และ build-essential (python3, make, g++)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build tools
+    python3 make g++ build-essential \
+    # Canvas / Cairo / Pango Libraries (Development headers for compilation)
+    libcairo-dev libpango1.0-dev libjpeg-dev libgif-dev \
+    # Vips for sharp (Development headers for compilation)
+    libvips-dev \
+    # Cleaning up apt cache
+    && rm -rf /var/lib/apt/lists/*
 
-# คัดลอก package.json และติดตั้ง dependencies
 COPY package*.json ./
+
+# สั่ง npm install (จะทำการ Compile canvas และ sharp ที่นี่)
 RUN npm install && npm cache clean --force
 
-# คัดลอก source code ที่เหลือ
 COPY . .
-
-# Build NestJS app
 RUN npm run build
+RUN npm prune --production
 
-# --- Stage 2: Production Stage ---
-# Image สุดท้ายที่จะนำไปใช้งานจริง
-FROM node:20-alpine
-
-RUN apk upgrade --no-cache
+# --- Stage 2: Production Stage (ต้องลงแค่ Libs ที่ใช้รัน) ---
+FROM node:20-slim
 
 WORKDIR /usr/src/app
 
-# ติดตั้ง *เฉพาะ* dependencies ที่จำเป็นตอนรัน (เหมือนเดิม)
-# (สังเกตว่าเราใช้ vips, libusb ไม่ใช่ ...-dev)
-RUN apk add --no-cache \
-    vips \
-    libusb \
-    iputils \
-    cairo \
-    jpeg \
-    pango \
-    musl \
-    giflib \
-    pixman \
-    pangomm \
-    libjpeg-turbo \
-    freetype \
-    fontconfig \
-    ttf-liberation
+# [ACTION 2: ติดตั้ง Dependencies สำหรับ Runtime (ลดขนาด Image)]
+# ติดตั้งเฉพาะ Shared Libraries ที่จำเป็นสำหรับการรัน canvas และ sharp
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Canvas / Cairo / Pango Libraries (Runtime)
+    libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libjpeg62 libgif7 \
+    # Vips for sharp (Runtime)
+    libvips \
+    # Utilities (ถ้าจำเป็น)
+    iputils-ping \
+    # Font (สำคัญสำหรับ Canvas)
+    fonts-dejavu-core \
+    # Cleaning up apt cache
+    && rm -rf /var/lib/apt/lists/*
 
-# อัปเดต font cache (เหมือนเดิม)
-RUN fc-cache -f -v
-
-# คัดลอก package.json (สำหรับ start:prod)
 COPY package*.json ./
 
-# --- !!! ส่วนที่เปลี่ยนแปลง (อีกครั้ง) !!! ---
-#
-# เราต้องเพิ่ม dev libraries ทั้งหมดที่จำเป็นต่อการ compile
-# เข้าไปใน .build-deps (กลุ่มที่จะติดตั้งชั่วคราว) ด้วย
-#
-RUN apk add --no-cache --virtual .build-deps \
-    python3 \
-    make \
-    g++ \
-    vips-dev \
-    libusb-dev \
-    cairo-dev \
-    jpeg-dev \
-    pango-dev \
-    musl-dev \
-    giflib-dev \
-    pixman-dev \
-    pangomm-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    && npm install --omit=dev \
-    && apk del .build-deps \
-    && npm cache clean --force
-
-# คัดลอก NestJS app ที่ build เสร็จแล้ว (โฟลเดอร์ dist) จาก stage 1
+# Copy modules และ dist มาจาก builder
+COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/dist ./dist
-#
-# --- จบส่วนที่เปลี่ยนแปลง ---
 
-# Expose port
 EXPOSE 3000
-
-# Command to run the application (ใช้ path ที่แก้แล้ว)
 CMD ["node", "dist/src/main.js"]
