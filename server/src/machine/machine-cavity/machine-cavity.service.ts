@@ -1,0 +1,295 @@
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import mongoose, { Model } from 'mongoose';
+import { ResponseFormat } from 'src/shared/interface';
+import { MasterCavity } from 'src/schema/master-cavity.schema';
+import {
+  CreateMasterCavityDto,
+  UpdateMasterCavityDto,
+} from '../dto/master-cavity.dto';
+import { MasterPart } from 'src/schema/master_parts.schema';
+import { TimelineMachine } from 'src/schema/timeline-machine.schema';
+
+@Injectable()
+export class MachineCavityService {
+  constructor(
+    @InjectModel(MasterCavity.name)
+    private readonly machineCavityModel: Model<MasterCavity>,
+    @InjectModel(MasterPart.name) // เพิ่ม Part Model
+    private readonly masterPartModel: Model<MasterPart>,
+    @InjectModel(TimelineMachine.name)
+    private readonly timelineMachineModel: Model<TimelineMachine>,
+  ) {}
+
+  async findAll(query: any = {}): Promise<ResponseFormat<MasterCavity>> {
+    try {
+      const cavities = await this.machineCavityModel
+        .find(query)
+        // .populate({
+        //   path: 'parts',
+        //   select: 'material_number part_number part_name weight',
+        //   model: 'MasterPart',
+        // })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return {
+        status: 'success',
+        message: 'Retrieved machine cavities successfully',
+        data: cavities,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to retrieve machine cavities',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async findByMaterialNumber(
+    materialNumber: string,
+  ): Promise<ResponseFormat<MasterCavity>> {
+    try {
+      const cavity = await this.machineCavityModel
+        .findOne({
+          'parts.material_number': materialNumber,
+        })
+        .lean();
+
+      if (!cavity) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Cavity not found for this material',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      return {
+        status: 'success',
+        message: 'Retrieved cavity successfully',
+        data: [cavity],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to retrieve cavity',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async create(
+    createDto: CreateMasterCavityDto,
+  ): Promise<ResponseFormat<MasterCavity>> {
+    try {
+      // Validate unique material numbers within the request
+
+      const objectIdParts = createDto.parts.map(
+        (id) => new mongoose.Types.ObjectId(id.toString()),
+      );
+      const parts = await this.masterPartModel.find({
+        _id: { $in: objectIdParts },
+      });
+
+      if (parts.length !== createDto.parts.length) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'One ormore part IDs not found',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const materialNumbers = parts.map((p) => p.material_number);
+      if (new Set(materialNumbers).size !== materialNumbers.length) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message:
+              'Duplicate material numbers are not allowed in the same cavity',
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const existingCavities = await this.machineCavityModel
+        .find()
+        .populate('parts');
+
+      const existingMaterials = existingCavities
+        .map((cavity) =>
+          cavity.parts
+            .filter((part: any) =>
+              materialNumbers.includes(part.material_number),
+            )
+            .map((part: any) => part.material_number),
+        )
+        .flat();
+
+      if (existingMaterials.length > 0) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: `Material number(s) ${existingMaterials.join(', ')} already exist in other cavities`,
+            data: [],
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const newCavity = await this.machineCavityModel.create({
+        ...createDto,
+        parts: objectIdParts,
+      });
+
+      const populatedCavity = await this.machineCavityModel
+        .findById(newCavity._id)
+        .populate('parts');
+
+      return {
+        status: 'success',
+        message: 'Created machine cavity successfully',
+        data: [populatedCavity],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: `Failed to create machine cavity${(error as Error).message}`,
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async update(
+    id: string,
+    updateDto: UpdateMasterCavityDto,
+  ): Promise<ResponseFormat<MasterCavity>> {
+    try {
+      // ถ้ามีการอัพเดท parts
+      if (updateDto.parts) {
+        // ตรวจสอบ duplicate material numbers
+        const materialNumbers = updateDto.parts.map((p) => p.material_number);
+        if (new Set(materialNumbers).size !== materialNumbers.length) {
+          throw new HttpException(
+            {
+              status: 'error',
+              message: 'Duplicate material numbers are not allowed',
+              data: [],
+            },
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        // ตรวจสอบว่า material_number ที่จะอัพเดทไม่ซ้ำกับ records อื่น
+        for (const part of updateDto.parts) {
+          if (part.material_number) {
+            const existingCavity = await this.machineCavityModel.findOne({
+              _id: { $ne: id }, // ไม่รวม record ปัจจุบัน
+              'parts.material_number': part.material_number,
+            });
+
+            if (existingCavity) {
+              throw new HttpException(
+                {
+                  status: 'error',
+                  message: `Material number ${part.material_number} already exists in another cavity`,
+                  data: [],
+                },
+                HttpStatus.BAD_REQUEST,
+              );
+            }
+          }
+        }
+      }
+
+      const updatedCavity = await this.machineCavityModel
+        .findByIdAndUpdate(id, updateDto, { new: true })
+        .lean();
+
+      if (!updatedCavity) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine cavity not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      return {
+        status: 'success',
+        message: 'Updated machine cavity successfully',
+        data: [updatedCavity],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to update machine cavity',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async remove(id: string): Promise<ResponseFormat<MasterCavity>> {
+    try {
+      const deletedCavity = await this.machineCavityModel
+        .findByIdAndDelete(id)
+        .lean();
+
+      if (!deletedCavity) {
+        throw new HttpException(
+          {
+            status: 'error',
+            message: 'Machine cavity not found',
+            data: [],
+          },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      return {
+        status: 'success',
+        message: 'Deleted machine cavity successfully',
+        data: [deletedCavity],
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error; // ส่งต่อ HTTP exceptions ที่เราสร้างเอง
+      }
+      throw new HttpException(
+        {
+          status: 'error',
+          message: 'Failed to delete machine cavity',
+          data: [],
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+}

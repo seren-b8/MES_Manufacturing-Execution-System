@@ -1,0 +1,56 @@
+import { Module } from '@nestjs/common';
+import { MachineInfoController } from './machine-info/machine-info.controller';
+import { MachineCavityController } from './machine-cavity/machine-cavity.controller';
+import { MachineService } from './machine.service';
+import { MachineInfoService } from './machine-info/machine-info.service';
+import { MongooseSchemaModule } from 'src/database/mongoose-schema.module';
+import { DatabaseModule } from 'src/database/database.module';
+import { MachineCavityService } from './machine-cavity/machine-cavity.service';
+import { MasterNotGoodController } from './master-not-good/master-not-good.controller';
+import { MasterNotGoodService } from './master-not-good/master-not-good.service';
+import { MasterPartsController } from './master-parts/master-parts.controller';
+import { MasterPartsService } from './master-parts/master-parts.service';
+import { PrinterDevicesController } from './printer/printer.controller';
+import { ConfigModule } from '@nestjs/config';
+import { CustomCacheKeyGenerator } from 'src/shared/utils/custom-cache-key.generator';
+import { MachineAnalysisCacheInterceptor } from './interceptors/machine-analysis-cache.interceptor';
+import { MesCacheModule } from 'src/shared/cache/cache.module';
+import { FileClientModule } from 'src/shared/services/file-client/file-client.module';
+import { TimelineMachineCleanupController } from './timeline-machine/timeline-machine-cleanup.controller';
+import { TimelineMachineCleanupService } from './timeline-machine/timeline-machine-cleanup.service';
+import { HttpModule } from '@nestjs/axios';
+import { PrinterDevicesService } from './printer/service/printer-devices.service';
+import { PrinterOperationService } from './printer/service/printer-operation.service';
+
+@Module({
+  imports: [
+    MongooseSchemaModule,
+    DatabaseModule,
+    MesCacheModule,
+    ConfigModule,
+    FileClientModule,
+    HttpModule,
+  ],
+  controllers: [
+    MachineInfoController,
+    MachineCavityController,
+    MasterNotGoodController,
+    MasterPartsController,
+    PrinterDevicesController,
+    TimelineMachineCleanupController,
+  ],
+  providers: [
+    MachineService,
+    MachineInfoService,
+    MachineCavityService,
+    MasterNotGoodService,
+    MasterPartsService,
+    PrinterDevicesService,
+    PrinterOperationService,
+    CustomCacheKeyGenerator,
+    MachineAnalysisCacheInterceptor,
+    TimelineMachineCleanupService,
+  ],
+  exports: [MachineInfoService, PrinterDevicesService, PrinterOperationService],
+})
+export class MachineModule {}

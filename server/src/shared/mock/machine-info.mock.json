@@ -1,0 +1,102 @@
+{
+    "machine_info": {
+        "machine_name": "DAIKIN",
+        "work_center": "SP1IJG02",
+        "machine_number": "MC18",
+        "line": "B1",
+        "status": "ON",
+        "counter": 1470,
+        "available_counter": 5275,
+        "cavity_info": {
+            "cavity_count": 4,
+            "runner": 25.5,
+            "part_info": {
+                "material_number": "49001923",
+                "part_number": "2PD06237/2-1D",
+                "part_name": "Insulator A",
+                "weight": 0
+            }
+        },
+        "is_counter_paused": false,
+        "cycle_time": 50.006,
+        "tonnage": 250
+    },
+    "orders_summary": {
+        "total_orders": 7,
+        "completed_orders": 0,
+        "suspended_orders": 4,
+        "waiting_assign_orders": 5
+    },
+    "active_orders": [
+        {
+            "order_id": "67f4e5c84e956f2c330b6472",
+            "production_order": {
+                "id": "67f4dd764e956f2c330b2f87",
+                "order_number": "1650008564",
+                "material_number": "49001923",
+                "material_description": "2PD06237/2-1D Insulator A",
+                "target_quantity": 50000,
+                "target_daily": 4937.2557087019295,
+                "plan_cycle_time": 17.4996,
+                "part_info": {
+                    "weight": 0,
+                    "weight_runner": 25.5
+                }
+            },
+            "production_summary": {
+                "total_good_quantity": 39443,
+                "total_not_good_quantity": 0,
+                "last_update": "2025-05-08T00:59:35.459Z",
+                "achievement_rate": 78.89
+            },
+            "datetime_open_order": "2025-04-08T09:00:56.340Z",
+            "daily_summary": {
+                "total_quantity": 0,
+                "good_quantity": 0,
+                "not_good_quantity": 0
+            },
+            "employees": [
+                {
+                    "id": "67dd323e9d723e59ede1b577",
+                    "employee_id": "1066703095",
+                    "name": "ณภัทรา สลาประโคน"
+                }
+            ]
+        },
+        {
+            "order_id": "680abf724ff6901ef0b5b294",
+            "production_order": {
+                "id": "67dd22378fbfbdbd9a281951",
+                "order_number": "1650008235",
+                "material_number": "49001922",
+                "material_description": "2PD06236/2-1D Insulator B",
+                "target_quantity": 36366,
+                "target_daily": 4937.255708701913,
+                "plan_cycle_time": 17.4996,
+                "part_info": {
+                    "weight": 0,
+                    "weight_runner": 25.5
+                }
+            },
+            "production_summary": {
+                "total_good_quantity": 28380,
+                "total_not_good_quantity": 0,
+                "last_update": "2025-05-08T00:59:35.399Z",
+                "achievement_rate": 78.04
+            },
+            "datetime_open_order": "2025-04-24T22:47:14.905Z",
+            "daily_summary": {
+                "total_quantity": 0,
+                "good_quantity": 0,
+                "not_good_quantity": 0
+            },
+            "employees": [
+                {
+                    "id": "67dd323e9d723e59ede1b577",
+                    "employee_id": "1066703095",
+                    "name": "ณภัทรา สลาประโคน"
+                }
+            ]
+        }
+    ]
+}

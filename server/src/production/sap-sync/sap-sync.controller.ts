@@ -1,0 +1,218 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { SapProductionSyncService } from './sap-sync.service';
+import { Model, Types } from 'mongoose';
+import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
+import { ResponseFormat } from 'src/shared/interface';
+import { SapSyncLogService } from './sap-sync-log.service';
+import { Role } from 'src/auth/enum/roles.enum';
+import { Roles } from 'src/auth/decorator/roles.decorator';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
+import {
+  LongCacheInterceptor,
+  MicroCacheInterceptor,
+  ShortCacheInterceptor,
+} from 'src/machine/interceptors/simple-cache.interceptor';
+import { TimeoutInterceptor } from 'src/machine/interceptors/timeout.interceptor';
+import { toObjectId } from 'src/shared/utils/type.utils';
+import { InjectModel } from '@nestjs/mongoose';
+import { SAPSyncLog } from 'src/schema/sap_sync_log.schema';
+
+@Controller('sap-sync')
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
+export class SapSyncController {
+  constructor(
+    private readonly sapSyncService: SapProductionSyncService,
+    private readonly sapSyncLogService: SapSyncLogService,
+    @InjectModel(SAPSyncLog.name)
+    private readonly sapSyncLogModel: Model<SAPSyncLog>,
+  ) {}
+
+  @Post('create-sync-log')
+  async createSyncLog() {
+    return this.sapSyncService.createSyncLogsFromPendingRecords();
+  }
+
+  @Post('send-logs-by-tid')
+  async sendPendingSyncLogsById(
+    @Body() payload: { tids: string[] },
+  ): Promise<ResponseFormat<any>> {
+    const tIds = payload.tids;
+    const result = await this.sapSyncService.sendPendingSyncLogsByTid(tIds);
+
+    // รับประกันว่า status เป็น 'success' หรือ 'error' เท่านั้น
+    return {
+      status: result.status as 'success' | 'error',
+      message: result.message,
+      data: result.data,
+    };
+  }
+
+  @Post('logs/:id/retry')
+  async retrySyncLog(@Param('id') id: string) {
+    if (!Types.ObjectId.isValid(id)) {
+      return {
+        status: 'error',
+        message: 'Invalid log ID format',
+        data: [],
+      };
+    }
+
+    return this.sapSyncService.retrySyncLog(toObjectId(id));
+  }
+
+  @Get('logs')
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
+  async getSyncLogs(
+    @Query('status') status?: 'pending' | 'completed' | 'failed',
+    @Query('sync_type') syncType?: 'EMP' | 'SNC',
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string,
+    @Query('employee_id') employeeId?: string,
+    @Query('aufnr') aufnr?: string,
+    @Query('tid') tid?: string,
+  ) {
+    const filter: any = {};
+
+    // Basic filters
+    if (status) filter.status = status;
+    if (syncType) filter.sync_type = syncType;
+    if (employeeId) filter.employee_id = employeeId;
+    if (aufnr) filter.aufnr = aufnr;
+    if (tid) filter.tid = tid;
+
+    // Date range filter
+    if (startDate || endDate) {
+      filter.sync_timestamp = {};
+      if (startDate) {
+        filter.sync_timestamp.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        filter.sync_timestamp.$lte = endDateTime;
+      }
+    }
+
+    return this.sapSyncLogService.getSyncLogs(filter);
+  }
+
+  @Get('pending-tids-summary')
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
+  @Roles(Role.ADMIN)
+  async getPendingTidsSummary() {
+    return this.sapSyncLogService.getPendingTidsSummary();
+  }
+
+  @Put('update-orders-current-month')
+  @Roles(Role.ADMIN)
+  async updateOrderToCurrentMonth() {
+    return this.sapSyncService.updateOrdersToCurrentMonth();
+  }
+
+  // 1. ดู pending allocation logs
+  @Get('/sync-logs/pending-allocation')
+  async getPendingAllocationLogs(
+    @Query('material_number') materialNumber?: string,
+  ) {
+    const query: any = {
+      is_pending_allocation: true,
+      status: 'pending',
+    };
+
+    if (materialNumber) {
+      // Join กับ production_order เพื่อ filter material
+      const logs = await this.sapSyncLogModel.aggregate([
+        { $match: query },
+        {
+          $lookup: {
+            from: 'production_order',
+            let: {
+              orderId: { $toLong: { $ltrim: { input: '$aufnr', chars: '0' } } },
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$order_id', { $toString: '$$orderId' }] },
+                      { $eq: ['$material_number', materialNumber] },
+                    ],
+                  },
+                },
+              },
+            ],
+            as: 'order',
+          },
+        },
+        { $unwind: '$order' },
+      ]);
+
+      return { status: 'success', data: logs };
+    }
+
+    const logs = await this.sapSyncLogModel.find(query);
+    return { status: 'success', data: logs };
+  }
+
+  // 2. Trigger auto-allocation manually
+  @Post('/sync-logs/allocate-pending/:materialNumber')
+  async allocatePending(@Param('materialNumber') materialNumber: string) {
+    return this.sapSyncService.tryAllocatePendingLogs(materialNumber);
+  }
+
+  // 3. Summary pending by material
+  @Get('/sync-logs/pending-summary')
+  async getPendingSummary() {
+    const summary = await this.sapSyncLogModel.aggregate([
+      {
+        $match: {
+          is_pending_allocation: true,
+          status: 'pending',
+        },
+      },
+      {
+        $lookup: {
+          from: 'production_order',
+          let: {
+            orderId: { $toLong: { $ltrim: { input: '$aufnr', chars: '0' } } },
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$order_id', { $toString: '$$orderId' }] },
+              },
+            },
+          ],
+          as: 'order',
+        },
+      },
+      { $unwind: '$order' },
+      {
+        $group: {
+          _id: {
+            material: '$order.material_number',
+            material_desc: '$order.material_description',
+            is_not_good: '$is_not_good',
+          },
+          total_pending_quantity: { $sum: '$quantity' },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $sort: { total_pending_quantity: -1 },
+      },
+    ]);
+
+    return { status: 'success', data: summary };
+  }
+}

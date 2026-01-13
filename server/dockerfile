@@ -1,0 +1,53 @@
+# --- Stage 1: Build Stage (ต้องลงทุกอย่างที่ใช้ Compile) ---
+FROM node:20-slim AS builder
+
+WORKDIR /usr/src/app
+
+# [ACTION 1: ติดตั้ง Dependencies สำหรับ Build ทั้งหมด]
+# รวมของสำหรับ sharp, canvas, และ build-essential (python3, make, g++)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build tools
+    python3 make g++ build-essential \
+    # Canvas / Cairo / Pango Libraries (Development headers for compilation)
+    libcairo-dev libpango1.0-dev libjpeg-dev libgif-dev \
+    # Vips for sharp (Development headers for compilation)
+    libvips-dev \
+    # Cleaning up apt cache
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+
+# สั่ง npm install (จะทำการ Compile canvas และ sharp ที่นี่)
+RUN npm install && npm cache clean --force
+
+COPY . .
+RUN npm run build
+RUN npm prune --production
+
+# --- Stage 2: Production Stage (ต้องลงแค่ Libs ที่ใช้รัน) ---
+FROM node:20-slim
+
+WORKDIR /usr/src/app
+
+# [ACTION 2: ติดตั้ง Dependencies สำหรับ Runtime (ลดขนาด Image)]
+# ติดตั้งเฉพาะ Shared Libraries ที่จำเป็นสำหรับการรัน canvas และ sharp
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Canvas / Cairo / Pango Libraries (Runtime)
+    libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libjpeg62 libgif7 \
+    # Vips for sharp (Runtime)
+    libvips \
+    # Utilities (ถ้าจำเป็น)
+    iputils-ping \
+    # Font (สำคัญสำหรับ Canvas)
+    fonts-dejavu-core \
+    # Cleaning up apt cache
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+
+# Copy modules และ dist มาจาก builder
+COPY --from=builder /usr/src/app/node_modules ./node_modules
+COPY --from=builder /usr/src/app/dist ./dist
+
+EXPOSE 3000
+CMD ["node", "dist/src/main.js"]

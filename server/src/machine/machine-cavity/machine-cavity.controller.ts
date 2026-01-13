@@ -1,0 +1,51 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { MachineCavityService } from './machine-cavity.service';
+import { ResponseFormat } from 'src/shared/interface';
+import { MasterCavity } from 'src/schema/master-cavity.schema';
+import {
+  CreateFromPartsDto,
+  CreateMasterCavityDto,
+  UpdateMasterCavityDto,
+} from '../dto/master-cavity.dto';
+import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
+import { CustomThrottlerGuard } from 'src/auth/guard/custom-throttler.guard';
+import { ShortCacheInterceptor } from '../interceptors/simple-cache.interceptor';
+import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
+
+@Controller('machine-cavity')
+@UseGuards(JwtAuthGuard, CustomThrottlerGuard)
+export class MachineCavityController {
+  constructor(private readonly machineCavityService: MachineCavityService) {}
+
+  @Put(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateMasterCavityDto,
+  ): Promise<ResponseFormat<MasterCavity>> {
+    return this.machineCavityService.update(id, updateDto);
+  }
+
+  @Get()
+  @UseInterceptors(ShortCacheInterceptor, new TimeoutInterceptor(20000))
+  async findAll(@Query() query: any): Promise<ResponseFormat<MasterCavity>> {
+    return this.machineCavityService.findAll(query);
+  }
+
+  @Post()
+  async create(
+    @Body() createDto: CreateMasterCavityDto,
+  ): Promise<ResponseFormat<MasterCavity>> {
+    return this.machineCavityService.create(createDto);
+  }
+}
